@@ -250,6 +250,9 @@ public struct LiveControlRoomDTO: Codable, Equatable, Sendable {
     public let apiVersion: String
     public let tournamentID: String
     public let revision: Int
+    public let publishedRevision: Int?
+    public let operationalRevision: Int?
+    public let stateProofHash: String?
     public let asOf: String
     public let timezone: String
     public let summary: LiveControlRoomSummaryDTO
@@ -259,6 +262,9 @@ public struct LiveControlRoomDTO: Codable, Equatable, Sendable {
         apiVersion: String,
         tournamentID: String,
         revision: Int,
+        publishedRevision: Int? = nil,
+        operationalRevision: Int? = nil,
+        stateProofHash: String? = nil,
         asOf: String,
         timezone: String,
         summary: LiveControlRoomSummaryDTO,
@@ -267,6 +273,9 @@ public struct LiveControlRoomDTO: Codable, Equatable, Sendable {
         self.apiVersion = apiVersion
         self.tournamentID = tournamentID
         self.revision = revision
+        self.publishedRevision = publishedRevision
+        self.operationalRevision = operationalRevision
+        self.stateProofHash = stateProofHash
         self.asOf = asOf
         self.timezone = timezone
         self.summary = summary

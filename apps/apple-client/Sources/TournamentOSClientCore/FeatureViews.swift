@@ -1251,6 +1251,7 @@ private struct LiveOperationsContent: View {
     var body: some View {
         LoadStateView(state: model.operationsState, retry: retry) { operations in
             VStack(alignment: .leading, spacing: 22) {
+                OfflineEventPackView(model: model)
                 OfflineCommandJournalView(model: model)
                 OperationPulse(summary: operations.summary)
                 ForEach(LiveOperationStatusDTO.allCases, id: \.self) { status in
@@ -1284,6 +1285,46 @@ private struct LiveOperationsContent: View {
         }
     }
     private func retry() { Task { await model.loadSelectedTournament() } }
+}
+
+private struct OfflineEventPackView: View {
+    let model: TournamentOSAppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Verified offline event pack").font(.headline)
+                    if let body = model.offlineEventPack?.body {
+                        Text("Published \(body.publishedRevision) · Operational \(body.operationalRevision) · Live \(body.liveVersion)")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text("No trusted cached truth available").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Button("Refresh pack") { Task { await model.refreshOfflineEventPack() } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.isRefreshingOfflineEventPack)
+            }
+            if let body = model.offlineEventPack?.body {
+                Text("\(body.publicProjection.contests.count) fixtures · \(body.participantLookup.count) participant lookups · expires \(displayTime(body.expiresAt))")
+                    .font(.caption)
+                if body.emergencyReadiness.status != "READY" {
+                    Text("Emergency pack blocked: \(body.emergencyReadiness.missingDecisionCodes.joined(separator: ", "))")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+            }
+            if let message = model.offlineEventPackMessage {
+                Text(message).font(.caption).foregroundStyle(.secondary)
+                    .accessibilityLabel("Offline event pack status: \(message)")
+            }
+        }
+        .padding(16)
+        .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.primary.opacity(0.08)) }
+        .task { await model.loadOfflineEventPack() }
+    }
 }
 
 private struct OfflineCommandJournalView: View {

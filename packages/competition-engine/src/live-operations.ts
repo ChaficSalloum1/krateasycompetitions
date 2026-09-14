@@ -450,6 +450,7 @@ export function submitLiveOperationsCommand(state: LiveOperationsState, command:
 
 function projectLiveOperations(definition: LiveOperationsDefinition, events: readonly LiveOperationsEvent[]): LiveOperationsState {
   const initial = createLiveOperationsState(definition);
+  const { proofHash: _initialProofHash, ...initialWithoutProof } = initial;
   const entrantPresence: Record<string, EntrantPresenceStatus> = {};
   const contests = { ...initial.contests };
   const resolvedEntrants: Record<string, readonly string[]> = { ...initial.resolvedEntrants };
@@ -506,7 +507,7 @@ function projectLiveOperations(definition: LiveOperationsDefinition, events: rea
   }
   const last = events.at(-1);
   const withoutProof: Omit<LiveOperationsState, "proofHash"> = {
-    ...initial,
+    ...initialWithoutProof,
     version: events.length,
     lastEventHash: last?.eventHash ?? null,
     events: [...events],

@@ -139,23 +139,34 @@ public protocol CompetitionJourneyClient: Sendable {
     func createApprovedCompetition(_ source: CompetitionCreationSourceInput) async throws -> CompetitionJourneyDTO
 }
 
+public protocol OfflineEventPackClient: Sendable {
+    func fetchOfflineEventPack(competitionID: String, organizationID: String, expectedPublishedRevision: Int,
+                               expectedOperationalRevision: Int, expiresAt: String, now: Date) async throws -> VerifiedOfflineEventPack
+    func verifyOfflineEventPack(_ envelope: SignedOfflineEventPackDTO, organizationID: String, competitionID: String,
+                                expectedPublishedRevision: Int, expectedOperationalRevision: Int,
+                                now: Date) throws -> VerifiedOfflineEventPack
+}
+
 public extension TournamentAPIClient {
     var workspaceKind: TournamentWorkspaceKind { .connected }
 }
 
-public final class URLSessionTournamentAPIClient: TournamentAPIClient, CompetitionJourneyClient, OfflineCommandTransport, @unchecked Sendable {
+public final class URLSessionTournamentAPIClient: TournamentAPIClient, CompetitionJourneyClient, OfflineCommandTransport, OfflineEventPackClient, @unchecked Sendable {
     private let baseURL: URL
     private let session: URLSession
     private let supportedAPIVersion: String
+    private let trustedOfflinePackPublicKey: Data?
 
     public init(
         baseURL: URL,
         session: URLSession = .shared,
-        supportedAPIVersion: String = "1.0"
+        supportedAPIVersion: String = "1.0",
+        trustedOfflinePackPublicKey: Data? = nil
     ) {
         self.baseURL = baseURL
         self.session = session
         self.supportedAPIVersion = supportedAPIVersion
+        self.trustedOfflinePackPublicKey = trustedOfflinePackPublicKey
     }
 
     public var competitionWebBaseURL: URL { baseURL }
@@ -192,6 +203,32 @@ public final class URLSessionTournamentAPIClient: TournamentAPIClient, Competiti
         guard compiled.compiled?.guardStatus == "PASSED" else { throw TournamentAPIClientError.invalidResponse }
         return try await approveCompetition(id: draft.id, expectedRevision: compiled.revision,
                                             acknowledgedFindingCodes: compiled.compiled?.requiredAcknowledgementCodes ?? [])
+    }
+
+    public func fetchOfflineEventPack(competitionID: String, organizationID: String,
+                                      expectedPublishedRevision: Int, expectedOperationalRevision: Int,
+                                      expiresAt: String, now: Date = Date()) async throws -> VerifiedOfflineEventPack {
+        guard let trustedOfflinePackPublicKey else { throw OfflineEventPackError.trustNotConfigured }
+        let envelope: SignedOfflineEventPackDTO = try await send(
+            pathComponents: ["v1", "competition-journey", competitionID, "offline-pack"],
+            body: OfflineEventPackCommand(expectedPublishedRevision: expectedPublishedRevision,
+                                          expectedOperationalRevision: expectedOperationalRevision,
+                                          expiresAt: expiresAt)
+        )
+        return try OfflineEventPackVerifier(trustedPublicKey: trustedOfflinePackPublicKey).verify(
+            envelope, organizationID: organizationID, competitionID: competitionID,
+            publishedRevision: expectedPublishedRevision, operationalRevision: expectedOperationalRevision, now: now
+        )
+    }
+
+    public func verifyOfflineEventPack(_ envelope: SignedOfflineEventPackDTO, organizationID: String,
+                                       competitionID: String, expectedPublishedRevision: Int,
+                                       expectedOperationalRevision: Int, now: Date = Date()) throws -> VerifiedOfflineEventPack {
+        guard let trustedOfflinePackPublicKey else { throw OfflineEventPackError.trustNotConfigured }
+        return try OfflineEventPackVerifier(trustedPublicKey: trustedOfflinePackPublicKey).verify(
+            envelope, organizationID: organizationID, competitionID: competitionID,
+            publishedRevision: expectedPublishedRevision, operationalRevision: expectedOperationalRevision, now: now
+        )
     }
 
     public func submit(_ envelope: OfflineCommandEnvelope) async throws -> OfflineCommandReceipt {
@@ -352,4 +389,9 @@ private struct CompileJourneyCommand: Encodable { let expectedDraftVersion: Int 
 private struct ApproveJourneyCommand: Encodable {
     let expectedRevision: Int
     let acknowledgedFindingCodes: [String]
+}
+private struct OfflineEventPackCommand: Encodable {
+    let expectedPublishedRevision: Int
+    let expectedOperationalRevision: Int
+    let expiresAt: String
 }

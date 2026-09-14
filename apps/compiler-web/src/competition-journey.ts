@@ -75,6 +75,7 @@ import {
   type CourtOutageProposalRequest,
   type DelayOverrunProposalRequest,
 } from "./court-outage-journey.js";
+import { signOfflineEventPack, type SignedOfflineEventPack } from "./offline-event-pack.js";
 
 export type CompetitionJourneyStatus = "NEEDS_INPUT" | "DRAFT" | "GUARD_BLOCKED" | "READY_FOR_APPROVAL" | "PUBLISHED";
 
@@ -248,6 +249,7 @@ export interface CompetitionJourneyOptions {
   readonly organizationId?: string;
   readonly participantTokenSecret?: string;
   readonly participantTokenKeyVersion?: string;
+  readonly offlinePackSigningSeedHex?: string;
 }
 
 const exactAcknowledgements = (left: readonly string[], right: readonly string[]): boolean =>
@@ -287,7 +289,7 @@ function verifyRecord(record: StoredJourneyRecord): boolean {
   const replay = replayLiveOperationsEvents(record.live.state.definition, record.live.state.events);
   if (!replay.valid || replay.state.proofHash !== record.live.state.proofHash) return false;
   const progressionEntrants = record.workbench ? entrantsFromProductionLock(record.workbench) : null;
-  if (record.compiled && progressionEntrants
+  if (record.compiled && progressionEntrants && replay.state.version > 0
     && !verifyLiveProgression(record.compiled.spec, record.compiled.graph, progressionEntrants, replay.state)) return false;
   if (record.live.proposal && !verifyNoShowProposal(record.live.proposal)) return false;
   if (record.live.courtOutageProposal) {
@@ -470,6 +472,7 @@ export class CompetitionJourney {
   private readonly organizationId: string;
   private readonly participantTokenSecret: string;
   private readonly participantTokenKeyVersion: string;
+  private readonly offlinePackSigningSeedHex: string;
 
   public constructor(options: CompetitionJourneyOptions = {}) {
     this.storagePath = options.storagePath;
@@ -477,6 +480,7 @@ export class CompetitionJourney {
     this.organizationId = options.organizationId ?? "org.local";
     this.participantTokenSecret = options.participantTokenSecret ?? "";
     this.participantTokenKeyVersion = options.participantTokenKeyVersion ?? "v1";
+    this.offlinePackSigningSeedHex = options.offlinePackSigningSeedHex ?? "";
     if (!this.organizationId.trim()) throw new Error("invalid_journey_organization");
     this.load();
   }
@@ -1039,6 +1043,43 @@ export class CompetitionJourney {
       public: publicProjection, liveVersion: live.state.version, stateProofHash: live.state.proofHash,
       participants, deliveryEvidence };
     return { ...body, projectionHash: canonicalHash(body) };
+  }
+
+  public issueOfflineEventPack(input: { readonly organizationId: string; readonly competitionId: string;
+    readonly expectedPublishedRevision: number; readonly expectedOperationalRevision: number;
+    readonly expiresAt: string }): SignedOfflineEventPack {
+    const current = this.requireScoped(input.organizationId, input.competitionId);
+    const live = this.requireProjectedLive(current, input.expectedOperationalRevision);
+    if (current.publication!.revision !== input.expectedPublishedRevision
+      || live.baseRevision !== input.expectedPublishedRevision) throw new Error("journey_revision_conflict");
+    const generatedAt = this.canonicalNow();
+    const expiry = Date.parse(input.expiresAt);
+    if (!Number.isFinite(expiry) || new Date(expiry).toISOString() !== input.expiresAt
+      || expiry <= Date.parse(generatedAt) || expiry > Date.parse(generatedAt) + 24 * 60 * 60_000)
+      throw new Error("invalid_offline_pack_expiry");
+    const participantNames = participantNamesFromProductionLock(current.workbench!);
+    const participantIds = [...new Set(live.state.definition.contests.flatMap(({ entrantIds }) => entrantIds))].sort();
+    const assignments = live.publication?.operationalAssignments ?? current.compiled!.schedule.contests;
+    const competitionName = recognisedCompetitionName(current.workbench!) ?? current.proposal.blueprint.name ?? "Competition";
+    const publicProjection = this.readPublicLive({ organizationId: input.organizationId,
+      competitionId: input.competitionId, expectedOperationalRevision: input.expectedOperationalRevision });
+    const participantLookup = participantIds.map((participantId) => ({ participantId,
+      projection: deriveParticipantNext({ competitionId: current.id, competitionName,
+        publishedRevision: current.publication!.revision, operationalRevision: input.expectedOperationalRevision,
+        affectedParticipantIds: live.publication?.affectedEntrantIds ?? [], participantRevisions: live.participantRevisions,
+        participantId, participantNames, state: live.state, assignments }) }));
+    return signOfflineEventPack({ schemaVersion: "1.0.0", organizationId: input.organizationId,
+      competitionId: current.id, competitionName, publishedRevision: current.publication!.revision,
+      operationalRevision: input.expectedOperationalRevision, liveVersion: live.state.version,
+      generatedAt, expiresAt: input.expiresAt, timezone: current.compiled!.spec.scheduling.timezone,
+      authority: { publicationCertificateHash: current.publication!.certificateHash,
+        definitionHash: current.publication!.definitionHash, guardReportHash: current.publication!.guardReportHash,
+        stateProofHash: live.state.proofHash }, publicProjection, participantLookup,
+      emergencyReadiness: { status: "BLOCKED_MISSING_AUTHORITY_DATA",
+        missingDecisionCodes: ["AED_AND_FIRST_AID_LOCATION", "AMBULANCE_ACCESS", "EMERGENCY_CONTACT_NUMBER",
+          "EVACUATION_AND_ASSEMBLY", "INCIDENT_LIAISON", "NAMED_RESPONDERS_AND_BACKUPS",
+          "PRINTED_COPY_REHEARSAL", "VENUE_ADDRESS"], emergencyContacts: [], instructions: [] } },
+    this.offlinePackSigningSeedHex);
   }
 
   public participantDeliveryStore(organizationId: string, competitionId: string): OutboxDeliveryStore {

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import XCTest
 @testable import TournamentOSClientCore
 
@@ -233,6 +234,62 @@ final class APIClientTests: XCTestCase {
             "/v1/competition-journey/st-albans",
         ])
     }
+
+    func testOfflineEventPackIsVerifiedAgainstPinnedTrustAndRequestContainsOnlyRevisionIdentityAndExpiry() async throws {
+        let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: Data(repeating: 9, count: 32))
+        let payload = Data(#"{"schemaVersion":"1.0.0","organizationId":"org.st-albans","competitionId":"st-albans","competitionName":"St Albans","publishedRevision":1,"operationalRevision":2,"liveVersion":8,"generatedAt":"2026-09-20T13:00:00.000Z","expiresAt":"2026-09-20T21:00:00.000Z","timezone":"Europe/London","authority":{"publicationCertificateHash":"cert","definitionHash":"definition","guardReportHash":"guard","stateProofHash":"state"},"publicProjection":{"publishedRevision":1,"operationalRevision":2,"contests":[{"contestId":"M1","participantNames":["Pair 1","Pair 2"],"court":"Court 1","startsAt":"2026-09-20T14:00:00.000Z","status":"SCHEDULED","revision":2,"projectionHash":"contest-hash"}],"projectionHash":"public-hash"},"participantLookup":[{"participantId":"pair.1","projection":{"participant":{"displayName":"Pair 1","status":"CHECKED_IN"},"revision":2,"next":{"contestId":"M1","opponent":"Pair 2","court":"Court 1","reportingTime":"2026-09-20T13:50:00.000Z","startsAt":"2026-09-20T14:00:00.000Z","status":"SCHEDULED"},"projectionHash":"participant-hash"}}],"emergencyReadiness":{"status":"BLOCKED_MISSING_AUTHORITY_DATA","missingDecisionCodes":["VENUE_ADDRESS"],"emergencyContacts":[],"instructions":[]}}"#.utf8)
+        let publicKey = privateKey.publicKey.rawRepresentation
+        let keyID = "sha256:\(SHA256.hash(data: publicKey).map { String(format: "%02x", $0) }.joined())"
+        let signature = try privateKey.signature(for: payload)
+        let response = SignedOfflineEventPackDTO(apiVersion: "1.0", algorithm: "Ed25519", keyId: keyID,
+            publicKeyBase64: publicKey.base64EncodedString(), payloadBase64: payload.base64EncodedString(),
+            signatureBase64: signature.base64EncodedString())
+        let (client, transport) = makeClient(trustedOfflinePackPublicKey: publicKey)
+        transport.respond(status: 200, json: String(data: try JSONEncoder().encode(response), encoding: .utf8)!)
+
+        let pack = try await client.fetchOfflineEventPack(competitionID: "st-albans", organizationID: "org.st-albans",
+            expectedPublishedRevision: 1, expectedOperationalRevision: 2,
+            expiresAt: "2026-09-20T21:00:00.000Z",
+            now: ISO8601DateFormatter().date(from: "2026-09-20T13:30:00Z")!)
+
+        XCTAssertEqual(pack.body.liveVersion, 8)
+        XCTAssertEqual(pack.body.publicProjection.contests.count, 1)
+        XCTAssertEqual(pack.body.participantLookup.first?.projection.next?.court, "Court 1")
+        XCTAssertEqual(pack.body.emergencyReadiness.status, "BLOCKED_MISSING_AUTHORITY_DATA")
+        XCTAssertEqual(transport.lastRequest?.url?.path, "/v1/competition-journey/st-albans/offline-pack")
+        let requestBody = try XCTUnwrap(transport.allRequestBodies.last ?? nil)
+        let command = try XCTUnwrap(JSONSerialization.jsonObject(with: requestBody) as? [String: Any])
+        XCTAssertEqual(Set(command.keys), ["expectedPublishedRevision", "expectedOperationalRevision", "expiresAt"])
+    }
+
+    func testOfflineEventPackFailsClosedForTamperingWrongTrustScopeRevisionAndExpiry() throws {
+        let privateKey = Curve25519.Signing.PrivateKey()
+        let payload = Data(#"{"schemaVersion":"1.0.0","organizationId":"org.alpha","competitionId":"event.1","competitionName":"Event","publishedRevision":1,"operationalRevision":1,"liveVersion":0,"generatedAt":"2026-09-20T13:00:00.000Z","expiresAt":"2026-09-20T14:00:00.000Z","timezone":"UTC","authority":{"publicationCertificateHash":"c","definitionHash":"d","guardReportHash":"g","stateProofHash":"s"},"publicProjection":{"publishedRevision":1,"operationalRevision":1,"contests":[],"projectionHash":"p"},"participantLookup":[],"emergencyReadiness":{"status":"BLOCKED_MISSING_AUTHORITY_DATA","missingDecisionCodes":[],"emergencyContacts":[],"instructions":[]}}"#.utf8)
+        let key = privateKey.publicKey.rawRepresentation
+        let envelope = SignedOfflineEventPackDTO(apiVersion: "1.0", algorithm: "Ed25519",
+            keyId: "sha256:\(SHA256.hash(data: key).map { String(format: "%02x", $0) }.joined())",
+            publicKeyBase64: key.base64EncodedString(), payloadBase64: payload.base64EncodedString(),
+            signatureBase64: (try privateKey.signature(for: payload)).base64EncodedString())
+        let verifier = OfflineEventPackVerifier(trustedPublicKey: key)
+        let now = ISO8601DateFormatter().date(from: "2026-09-20T13:30:00Z")!
+        XCTAssertNoThrow(try verifier.verify(envelope, organizationID: "org.alpha", competitionID: "event.1",
+            publishedRevision: 1, operationalRevision: 1, now: now))
+        XCTAssertThrowsError(try verifier.verify(envelope, organizationID: "org.beta", competitionID: "event.1",
+            publishedRevision: 1, operationalRevision: 1, now: now))
+        XCTAssertThrowsError(try verifier.verify(envelope, organizationID: "org.alpha", competitionID: "event.1",
+            publishedRevision: 1, operationalRevision: 2, now: now))
+        XCTAssertThrowsError(try OfflineEventPackVerifier(trustedPublicKey: Data(repeating: 2, count: 32)).verify(
+            envelope, organizationID: "org.alpha", competitionID: "event.1", publishedRevision: 1,
+            operationalRevision: 1, now: now))
+        XCTAssertThrowsError(try verifier.verify(SignedOfflineEventPackDTO(apiVersion: envelope.apiVersion,
+            algorithm: envelope.algorithm, keyId: envelope.keyId, publicKeyBase64: envelope.publicKeyBase64,
+            payloadBase64: envelope.payloadBase64, signatureBase64: Data(repeating: 0, count: 64).base64EncodedString()),
+            organizationID: "org.alpha", competitionID: "event.1", publishedRevision: 1,
+            operationalRevision: 1, now: now))
+        let expired = ISO8601DateFormatter().date(from: "2026-09-20T14:00:00Z")!
+        XCTAssertThrowsError(try verifier.verify(envelope, organizationID: "org.alpha", competitionID: "event.1",
+            publishedRevision: 1, operationalRevision: 1, now: expired))
+    }
 }
 
 private func XCTAssertThrowsErrorAsync<T>(
@@ -249,13 +306,14 @@ private func XCTAssertThrowsErrorAsync<T>(
     }
 }
 
-private func makeClient() -> (URLSessionTournamentAPIClient, StubTransport) {
+private func makeClient(trustedOfflinePackPublicKey: Data? = nil) -> (URLSessionTournamentAPIClient, StubTransport) {
     let transport = StubTransport()
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [StubURLProtocol.self]
     StubURLProtocol.transport = transport
     let session = URLSession(configuration: configuration)
-    return (URLSessionTournamentAPIClient(baseURL: URL(string: "https://example.test")!, session: session), transport)
+    return (URLSessionTournamentAPIClient(baseURL: URL(string: "https://example.test")!, session: session,
+                                           trustedOfflinePackPublicKey: trustedOfflinePackPublicKey), transport)
 }
 
 private final class StubTransport: @unchecked Sendable {

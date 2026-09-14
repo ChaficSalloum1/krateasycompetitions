@@ -416,6 +416,9 @@ function journeyClientApiResponse(path: string, journey: CompetitionJourney): un
     ];
     const definitions = new Map(state.definition.contests.map((contest) => [contest.contestId, contest]));
     return immutable({ apiVersion: CLIENT_API_VERSION, tournamentID: snapshot.id, revision: state.version,
+      publishedRevision: snapshot.publication?.revision ?? snapshot.revision,
+      operationalRevision: snapshot.live.publication?.revision ?? snapshot.publication?.revision ?? snapshot.revision,
+      stateProofHash: state.proofHash,
       asOf: operations.generatedAt, timezone: compiled?.timezone ?? "UTC",
       summary: { now: operations.now.length, next: operations.next.length, late: operations.late.length,
         blocked: operations.blocked.length, unreported: operations.unreported.length },
@@ -451,6 +454,8 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
     ...(production ? {} : { storagePath: process.env.KRATEASY_JOURNEY_STORE ?? `${process.cwd()}/work/competition-journey.json` }),
     organizationId, ...(process.env.KRATEASY_PARTICIPANT_TOKEN_SECRET
       ? { participantTokenSecret: process.env.KRATEASY_PARTICIPANT_TOKEN_SECRET } : {}),
+    ...(process.env.KRATEASY_OFFLINE_PACK_SIGNING_SEED
+      ? { offlinePackSigningSeedHex: process.env.KRATEASY_OFFLINE_PACK_SIGNING_SEED } : {}),
   });
   const readiness = () => options.productionReadiness?.()
     ?? compilerReadiness({ production, hasAuthorizer: Boolean(options.authorize) });
@@ -670,7 +675,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           : competitionJourney.readOrganiserLive({ ...input, at: serverNow() }));
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access))?$/.exec(request.url ?? "");
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|offline-pack))?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
@@ -752,6 +757,17 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           json(response, 201, competitionJourney.issueParticipantAccess({ organizationId, competitionId,
             expectedPublishedRevision: command.expectedPublishedRevision as number,
             participantId: command.participantId, expiresAt: command.expiresAt }));
+          return;
+        }
+        if (operation === "offline-pack") {
+          if (Object.keys(command).some((key) => !["expectedPublishedRevision", "expectedOperationalRevision", "expiresAt"].includes(key))
+            || !Number.isSafeInteger(command.expectedPublishedRevision)
+            || !Number.isSafeInteger(command.expectedOperationalRevision) || typeof command.expiresAt !== "string")
+            throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.issueOfflineEventPack({ organizationId, competitionId,
+            expectedPublishedRevision: command.expectedPublishedRevision as number,
+            expectedOperationalRevision: command.expectedOperationalRevision as number,
+            expiresAt: command.expiresAt }));
           return;
         }
         if (operation === "no-show-preview") {

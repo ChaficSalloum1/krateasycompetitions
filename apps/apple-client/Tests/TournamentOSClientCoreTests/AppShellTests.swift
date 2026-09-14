@@ -1,4 +1,5 @@
 import XCTest
+import CryptoKit
 @testable import TournamentOSClientCore
 
 @MainActor
@@ -221,6 +222,38 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(submissionsAfterRestart, 1)
     }
 
+    func testConnectedMacVerifiesAndCachesExactOfflinePackAcrossRestart() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("krateasy-app-pack-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let client = OfflineCapableClient()
+        let now = ISO8601DateFormatter().date(from: "2026-09-20T13:00:00Z")!
+        let first = TournamentOSAppModel(client: client, offlineJournalDirectory: directory)
+        first.selectedTournamentID = "st-albans"
+        await first.loadSelectedTournament()
+
+        await first.refreshOfflineEventPack(now: now)
+
+        XCTAssertEqual(first.offlineEventPack?.body.publishedRevision, 1)
+        XCTAssertEqual(first.offlineEventPack?.body.operationalRevision, 2)
+        XCTAssertEqual(first.offlineEventPack?.body.liveVersion, 7)
+        XCTAssertEqual(first.offlineEventPack?.body.participantLookup.first?.projection.next?.contestId, "M1")
+        let firstFetchCount = await client.packFetchCount()
+        XCTAssertEqual(firstFetchCount, 1)
+        let safeCompetition = "st-albans".addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
+        let cachedFile = directory.appendingPathComponent("Offline Event Packs/connected/\(safeCompetition).signed-pack.json")
+        let attributes = try FileManager.default.attributesOfItem(atPath: cachedFile.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+
+        let restarted = TournamentOSAppModel(client: client, offlineJournalDirectory: directory)
+        restarted.selectedTournamentID = "st-albans"
+        await restarted.loadSelectedTournament()
+        await restarted.loadOfflineEventPack(now: now.addingTimeInterval(60))
+        XCTAssertEqual(restarted.offlineEventPack?.body.authority.stateProofHash, "state-proof")
+        let restartedFetchCount = await client.packFetchCount()
+        XCTAssertEqual(restartedFetchCount, 1, "a valid cache must not need a network fetch after restart")
+    }
+
     private func assertFailure<Value>(_ state: ContentState<Value>, file: StaticString = #filePath, line: UInt = #line) {
         guard case .failed(let failure) = state else {
             return XCTFail("Expected failure state", file: file, line: line)
@@ -290,14 +323,43 @@ private struct FailingClient: TournamentAPIClient {
     func fetchCertification(tournamentID: String) async throws -> CertificationDTO { throw TournamentAPIClientError.httpStatus(503) }
 }
 
-private actor OfflineCapableClient: TournamentAPIClient, OfflineCommandTransport {
+private actor OfflineCapableClient: TournamentAPIClient, OfflineCommandTransport, OfflineEventPackClient {
     private var submissions = 0
+    private var packFetches = 0
+    nonisolated private static let packPrivateKey = try! Curve25519.Signing.PrivateKey(
+        rawRepresentation: Data(repeating: 11, count: 32)
+    )
 
     func submissionCount() -> Int { submissions }
+    func packFetchCount() -> Int { packFetches }
 
     func submit(_ envelope: OfflineCommandEnvelope) throws -> OfflineCommandReceipt {
         submissions += 1
         return OfflineCommandReceipt(aggregateVersion: envelope.expectedAggregateVersion + 1)
+    }
+
+    func fetchOfflineEventPack(competitionID: String, organizationID: String, expectedPublishedRevision: Int,
+                               expectedOperationalRevision: Int, expiresAt: String, now: Date) throws -> VerifiedOfflineEventPack {
+        packFetches += 1
+        let payload = Data("""
+        {"schemaVersion":"1.0.0","organizationId":"\(organizationID)","competitionId":"\(competitionID)","competitionName":"St Albans","publishedRevision":\(expectedPublishedRevision),"operationalRevision":\(expectedOperationalRevision),"liveVersion":7,"generatedAt":"2026-09-20T13:00:00.000Z","expiresAt":"\(expiresAt)","timezone":"Europe/London","authority":{"publicationCertificateHash":"certificate","definitionHash":"definition","guardReportHash":"guard","stateProofHash":"state-proof"},"publicProjection":{"publishedRevision":\(expectedPublishedRevision),"operationalRevision":\(expectedOperationalRevision),"contests":[{"contestId":"M1","participantNames":["Pair 1","Pair 2"],"court":"Court 1","startsAt":"2026-09-20T14:00:00.000Z","status":"SCHEDULED","revision":\(expectedOperationalRevision),"projectionHash":"contest"}],"projectionHash":"public"},"participantLookup":[{"participantId":"pair.1","projection":{"participant":{"displayName":"Pair 1","status":"CHECKED_IN"},"revision":\(expectedOperationalRevision),"next":{"contestId":"M1","opponent":"Pair 2","court":"Court 1","reportingTime":"2026-09-20T13:50:00.000Z","startsAt":"2026-09-20T14:00:00.000Z","status":"SCHEDULED"},"projectionHash":"next"}}],"emergencyReadiness":{"status":"BLOCKED_MISSING_AUTHORITY_DATA","missingDecisionCodes":["VENUE_ADDRESS"],"emergencyContacts":[],"instructions":[]}}
+        """.utf8)
+        let key = Self.packPrivateKey.publicKey.rawRepresentation
+        let envelope = SignedOfflineEventPackDTO(apiVersion: "1.0", algorithm: "Ed25519",
+            keyId: "sha256:\(SHA256.hash(data: key).map { String(format: "%02x", $0) }.joined())",
+            publicKeyBase64: key.base64EncodedString(), payloadBase64: payload.base64EncodedString(),
+            signatureBase64: (try Self.packPrivateKey.signature(for: payload)).base64EncodedString())
+        return try verifyOfflineEventPack(envelope, organizationID: organizationID, competitionID: competitionID,
+            expectedPublishedRevision: expectedPublishedRevision,
+            expectedOperationalRevision: expectedOperationalRevision, now: now)
+    }
+
+    nonisolated func verifyOfflineEventPack(_ envelope: SignedOfflineEventPackDTO, organizationID: String,
+                                            competitionID: String, expectedPublishedRevision: Int,
+                                            expectedOperationalRevision: Int, now: Date) throws -> VerifiedOfflineEventPack {
+        try OfflineEventPackVerifier(trustedPublicKey: Self.packPrivateKey.publicKey.rawRepresentation).verify(
+            envelope, organizationID: organizationID, competitionID: competitionID,
+            publishedRevision: expectedPublishedRevision, operationalRevision: expectedOperationalRevision, now: now)
     }
 
     func fetchPortfolio() throws -> PortfolioDTO {
@@ -320,6 +382,7 @@ private actor OfflineCapableClient: TournamentAPIClient, OfflineCommandTransport
 
     func fetchLiveControlRoom(tournamentID: String) throws -> LiveControlRoomDTO {
         LiveControlRoomDTO(apiVersion: "1.0", tournamentID: tournamentID, revision: 7,
+                           publishedRevision: 1, operationalRevision: 2, stateProofHash: "state-proof",
                            asOf: "2026-09-20T12:00:00Z", timezone: "Europe/London",
                            summary: LiveControlRoomSummaryDTO(now: 0, next: 1, late: 0, blocked: 0, unreported: 0),
                            items: [])

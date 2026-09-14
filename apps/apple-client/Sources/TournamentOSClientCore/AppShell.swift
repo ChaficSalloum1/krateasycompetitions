@@ -218,6 +218,9 @@ public final class TournamentOSAppModel {
     public private(set) var offlineCommands: [OfflineCommandEnvelope] = []
     public private(set) var offlineJournalMessage: String?
     public private(set) var isSynchronizingOfflineCommands = false
+    public private(set) var offlineEventPack: VerifiedOfflineEventPack?
+    public private(set) var offlineEventPackMessage: String?
+    public private(set) var isRefreshingOfflineEventPack = false
 
     private let sessionsByWorkspaceID: [String: TournamentWorkspaceSession]
     private let draftStorage: UserDefaults?
@@ -296,6 +299,8 @@ public final class TournamentOSAppModel {
         clearCompetitionState()
         offlineCommands = []
         offlineJournalMessage = nil
+        offlineEventPack = nil
+        offlineEventPackMessage = nil
         localDrafts = Self.readDrafts(from: draftStorage, workspaceID: workspaceID)
         resetNavigationPaths()
     }
@@ -483,6 +488,60 @@ public final class TournamentOSAppModel {
         await loadPortfolio()
         await loadSelectedTournament()
         await loadOfflineJournal()
+        await loadOfflineEventPack()
+    }
+
+    public func loadOfflineEventPack(now: Date = Date()) async {
+        guard !isDemoWorkspace, let competitionID = selectedTournamentID,
+              !isLocalDraft(competitionID), let packClient = activeClient as? any OfflineEventPackClient,
+              case .loaded(let blueprint) = blueprintState, case .loaded(let operations) = operationsState else {
+            offlineEventPack = nil
+            return
+        }
+        let operationalRevision = operations.operationalRevision ?? blueprint.revision
+        do {
+            guard let envelope = try offlineEventPackStore(for: competitionID).load() else {
+                offlineEventPack = nil
+                offlineEventPackMessage = "No verified offline event pack is cached yet."
+                return
+            }
+            offlineEventPack = try packClient.verifyOfflineEventPack(envelope, organizationID: selectedWorkspaceID,
+                competitionID: competitionID, expectedPublishedRevision: blueprint.revision,
+                expectedOperationalRevision: operationalRevision, now: now)
+            offlineEventPackMessage = "Verified cached truth is available offline."
+        } catch {
+            offlineEventPack = nil
+            offlineEventPackMessage = "The cached event pack is expired, stale, untrusted, or damaged."
+        }
+    }
+
+    public func refreshOfflineEventPack(now: Date = Date()) async {
+        guard !isRefreshingOfflineEventPack, !isDemoWorkspace, let competitionID = selectedTournamentID,
+              !isLocalDraft(competitionID), let packClient = activeClient as? any OfflineEventPackClient,
+              case .loaded(let blueprint) = blueprintState, case .loaded(let operations) = operationsState else {
+            offlineEventPackMessage = "Only a connected published competition can refresh offline truth."
+            return
+        }
+        isRefreshingOfflineEventPack = true
+        defer { isRefreshingOfflineEventPack = false }
+        let operationalRevision = operations.operationalRevision ?? blueprint.revision
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        let expiresAt = formatter.string(from: now.addingTimeInterval(8 * 60 * 60))
+        do {
+            let verified = try await packClient.fetchOfflineEventPack(competitionID: competitionID,
+                organizationID: selectedWorkspaceID, expectedPublishedRevision: blueprint.revision,
+                expectedOperationalRevision: operationalRevision, expiresAt: expiresAt, now: now)
+            try offlineEventPackStore(for: competitionID).save(verified.envelope)
+            offlineEventPack = verified
+            offlineEventPackMessage = "Signed offline truth refreshed for operational revision \(operationalRevision)."
+        } catch OfflineEventPackError.trustNotConfigured {
+            offlineEventPack = nil
+            offlineEventPackMessage = "Offline-pack trust is not configured. Install the organiser-approved public key."
+        } catch {
+            offlineEventPackMessage = "Offline truth was not replaced because the server response failed trust, scope, revision, or freshness checks."
+        }
     }
 
     public func loadOfflineJournal() async {
@@ -635,6 +694,17 @@ public final class TournamentOSAppModel {
         let queue = OfflineCommandQueue(persistence: persistence)
         offlineQueues[cacheKey] = queue
         return queue
+    }
+
+    private func offlineEventPackStore(for competitionID: String) throws -> FileOfflineEventPackStore {
+        guard let offlineJournalDirectory else { throw OfflineEventPackError.invalidPayload }
+        let safeWorkspace = selectedWorkspaceID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "workspace"
+        let safeCompetition = competitionID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "competition"
+        let file = offlineJournalDirectory
+            .appendingPathComponent("Offline Event Packs", isDirectory: true)
+            .appendingPathComponent(safeWorkspace, isDirectory: true)
+            .appendingPathComponent("\(safeCompetition).signed-pack.json", isDirectory: false)
+        return FileOfflineEventPackStore(fileURL: file)
     }
 
     private func currentRemotePortfolioItems() -> [PortfolioTournamentDTO] {
@@ -995,7 +1065,8 @@ private func demoWorkspaceSessions() -> [TournamentWorkspaceSession] {
                 id: "local-compiler", name: "Local Krateasy compiler", kind: .club,
                 roleName: "Organiser", publicHost: "127.0.0.1:4173", isLocalPreview: true
             ),
-            client: URLSessionTournamentAPIClient(baseURL: localCompilerBaseURL())
+            client: URLSessionTournamentAPIClient(baseURL: localCompilerBaseURL(),
+                trustedOfflinePackPublicKey: configuredOfflinePackPublicKey())
         ),
         TournamentWorkspaceSession(
             workspace: CompetitionWorkspaceSummaryDTO(
@@ -1033,6 +1104,11 @@ private func defaultOfflineJournalDirectory() -> URL? {
     FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
         .appendingPathComponent("Krateasy Competitions", isDirectory: true)
         .appendingPathComponent("Offline Command Journals", isDirectory: true)
+}
+
+private func configuredOfflinePackPublicKey() -> Data? {
+    guard let encoded = ProcessInfo.processInfo.environment["KRATEASY_OFFLINE_PACK_PUBLIC_KEY"] else { return nil }
+    return Data(base64Encoded: encoded)
 }
 
 #Preview("Krateasy Competitions – Mac") {
