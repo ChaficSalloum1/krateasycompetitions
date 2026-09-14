@@ -201,6 +201,20 @@ export function entrantsFromProductionLock(workbench: CompetitionWorkbenchProjec
   return result;
 }
 
+export function participantNamesFromProductionLock(workbench: CompetitionWorkbenchProjection): Readonly<Record<string, string>> {
+  const root = sourceRoot(workbench); const sourcePools = asRecord(root?.pools); if (!sourcePools) return {};
+  const names: Record<string, string> = {};
+  for (const [divisionLabel, poolValue] of Object.entries(sourcePools)) {
+    const divisionId = idFor(divisionLabel); const pools = asRecord(poolValue); if (!pools) continue;
+    let entrantIndex = 0;
+    for (const entrants of Object.values(pools)) for (const name of Array.isArray(entrants) ? entrants : []) {
+      entrantIndex += 1;
+      if (typeof name === "string") names[`${divisionId}.team.${entrantIndex}`] = name;
+    }
+  }
+  return names;
+}
+
 function sourceRoundOrder(row: Record<string, unknown>): number {
   const round = String(row.round ?? "").toLowerCase();
   if (round.includes("play-in")) return 1;

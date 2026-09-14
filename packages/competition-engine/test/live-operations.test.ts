@@ -131,6 +131,37 @@ test("actual start, finish, and result receipt move a contest through now and un
   assert.deepEqual(deriveLiveControlRoom(state, "2026-09-07T09:44:00.000Z").unreported, []);
 });
 
+test("call, score, finish, and correction remain immutable replayable operational facts", () => {
+  let state = createLiveOperationsState(definition);
+  state = execute(state, { kind: "CHECK_IN", commandId: "checkin-a", entrantId: "pair-a" });
+  state = execute(state, { kind: "CHECK_IN", commandId: "checkin-b", entrantId: "pair-b" });
+  state = execute(state, { kind: "CALL_CONTEST", commandId: "call-semi", contestId: "semi-1" },
+    "2026-09-07T08:58:00.000Z");
+  assert.equal(state.contests["semi-1"]?.calledAt, "2026-09-07T08:58:00.000Z");
+  state = execute(state, { kind: "START_CONTEST", commandId: "start-called-semi", contestId: "semi-1",
+    courtId: "court-1", startedAt: "2026-09-07T09:00:00.000Z" }, "2026-09-07T09:00:00.000Z");
+  state = execute(state, { kind: "RECORD_SCORE", commandId: "score-semi", contestId: "semi-1",
+    scores: [{ entrantId: "pair-a", value: 5 }, { entrantId: "pair-b", value: 3 }] },
+  "2026-09-07T09:35:00.000Z");
+  const scoreEventId = state.events.at(-1)!.eventId;
+  state = execute(state, { kind: "COMPLETE_CONTEST", commandId: "finish-called-semi", contestId: "semi-1",
+    endedAt: "2026-09-07T09:40:00.000Z" }, "2026-09-07T09:40:00.000Z");
+  state = execute(state, { kind: "CORRECT_OPERATION", commandId: "correct-score-semi",
+    supersedesEventId: scoreEventId, reason: "Signed score card verified",
+    replacement: { kind: "SET_CONTEST_SCORE", contestId: "semi-1",
+      scores: [{ entrantId: "pair-a", value: 5 }, { entrantId: "pair-b", value: 4 }],
+      reason: "Second side was transcribed incorrectly" } }, "2026-09-07T09:42:00.000Z");
+
+  assert.deepEqual(state.contests["semi-1"]?.scores,
+    [{ entrantId: "pair-a", value: 5 }, { entrantId: "pair-b", value: 4 }]);
+  assert.equal(state.contests["semi-1"]?.status, "COMPLETED");
+  assert.equal(state.events.filter(({ kind }) => kind === "SCORE_RECORDED").length, 1);
+  assert.equal(state.events.at(-1)?.kind, "OPERATION_CORRECTED");
+  const replay = replayLiveOperationsEvents(definition, state.events);
+  assert.equal(replay.valid, true);
+  if (replay.valid) assert.equal(replay.state.proofHash, state.proofHash);
+});
+
 test("court, official, and equipment outages block affected contests until explicitly restored", () => {
   let state = createLiveOperationsState(definition);
   state = execute(state, { kind: "CHECK_IN", commandId: "checkin-a", entrantId: "pair-a" });

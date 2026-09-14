@@ -24,7 +24,6 @@ import { parseCreationProposalPayload } from "./creation-proposal.js";
 import { CompetitionJourney, competitionJourneyHtml, parseConnectedLiveCommand, parseCreationSource } from "./competition-journey.js";
 import { playerHtml } from "./player-view.js";
 import { participantOperationsHtml, venueDisplayHtml } from "./attention-views.js";
-import { createParticipantAttentionDemo, parseParticipantAttentionAction } from "./participant-attention.js";
 import { createPlatformDemo } from "./platform-demo.js";
 import type { ProductionPilotApi } from "./production-pilot-api.js";
 
@@ -70,6 +69,8 @@ export interface CompilerServerOptions {
   productionReadiness?: () => Readonly<ProductionReadinessReport> | Promise<Readonly<ProductionReadinessReport>>;
   productionLiveness?: () => Readonly<LivenessReport>;
   competitionJourney?: CompetitionJourney;
+  organizationId?: string;
+  now?: () => string;
 }
 
 function normalizedHeaders(request: IncomingMessage): Readonly<Record<string, string | undefined>> {
@@ -80,22 +81,6 @@ function normalizedHeaders(request: IncomingMessage): Readonly<Record<string, st
 
 let platformDemo: ReturnType<typeof createPlatformDemo> | undefined;
 const getPlatformDemo = () => platformDemo ??= createPlatformDemo();
-let attentionDemo: ReturnType<typeof createParticipantAttentionDemo> | undefined;
-
-const getAttentionDemo = () => {
-  if (attentionDemo) return attentionDemo;
-  const { scenario } = compilerWorkspace();
-  attentionDemo = createParticipantAttentionDemo({
-    competitionId: scenario.spec.metadata.specId,
-    competitionName: "Play & Konnect Padel Tournament",
-    revision: scenario.spec.metadata.revision,
-    certificationHash: scenario.certification.certificationHash,
-    updatedAt: scenario.schedule.contests[0]?.start ?? scenario.spec.metadata.createdAt,
-    contests: scenario.schedule.contests,
-  });
-  return attentionDemo;
-};
-
 export type PilotDemoAction = "read" | "publish" | "propose-outage" | "approve-outage";
 
 export async function pilotDemoAction(action: PilotDemoAction) {
@@ -432,8 +417,12 @@ function journeyClientApiResponse(path: string, journey: CompetitionJourney): un
 
 export function createCompilerServer(options: CompilerServerOptions = {}) {
   const production = options.production ?? process.env.NODE_ENV === "production";
+  const organizationId = options.organizationId ?? process.env.KRATEASY_ORGANIZATION_ID ?? "org.local";
+  const serverNow = options.now ?? (() => new Date().toISOString());
   const competitionJourney = options.competitionJourney ?? new CompetitionJourney({
     ...(production ? {} : { storagePath: process.env.KRATEASY_JOURNEY_STORE ?? `${process.cwd()}/work/competition-journey.json` }),
+    organizationId, ...(process.env.KRATEASY_PARTICIPANT_TOKEN_SECRET
+      ? { participantTokenSecret: process.env.KRATEASY_PARTICIPANT_TOKEN_SECRET } : {}),
   });
   const readiness = () => options.productionReadiness?.()
     ?? compilerReadiness({ production, hasAuthorizer: Boolean(options.authorize) });
@@ -456,34 +445,23 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end();
         return;
       }
-      if (!production && request.url === "/api/participant-attention" && request.method === "GET") {
-        json(response, 200, getAttentionDemo().snapshot());
-        return;
-      }
-      if (!production && request.url === "/api/participant-attention/actions" && request.method === "POST") {
-        if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(String(request.headers["content-type"] ?? ""))) {
-          json(response, 415, { apiVersion: "1.0", error: "unsupported_media_type" });
-          return;
-        }
-        const action = parseParticipantAttentionAction(await readJsonRequestBody(request, 16_384));
-        if (!action) {
-          json(response, 400, { apiVersion: "1.0", error: "invalid_attention_action" });
-          return;
-        }
-        json(response, 200, getAttentionDemo().perform(action));
-        return;
-      }
-      if (!production && request.url === "/next-qr.svg" && request.method === "GET") {
+      if (!production && request.url?.startsWith("/next-qr.svg") && request.method === "GET") {
+        const query = new URL(request.url, "http://local.invalid").searchParams;
+        const competition = query.get("competition"); const revision = query.get("revision"); const token = query.get("token");
+        if (!competition || !revision || !token) { json(response, 400, { error: "participant_access_denied" }); return; }
         const host = String(request.headers.host ?? "127.0.0.1:4173");
         const safeHost = /^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host) ? host : "127.0.0.1:4173";
-        const svg = await QRCode.toString(`http://${safeHost}/next`, { type: "svg", margin: 1,
+        const target = new URL(`http://${safeHost}/next`);
+        target.searchParams.set("competition", competition); target.searchParams.set("revision", revision);
+        target.searchParams.set("token", token);
+        const svg = await QRCode.toString(target.toString(), { type: "svg", margin: 1,
           color: { dark: "#17201d", light: "#ffffff" }, errorCorrectionLevel: "M" });
         response.writeHead(200, { "content-type": "image/svg+xml; charset=utf-8", "cache-control": "no-store",
           "x-content-type-options": "nosniff" });
         response.end(svg);
         return;
       }
-      if (!production && request.url === "/attention" && request.method === "GET") {
+      if (!production && (request.url === "/attention" || request.url?.startsWith("/attention?")) && request.method === "GET") {
         response.writeHead(200, {
           "content-type": "text/html; charset=utf-8",
           "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
@@ -492,7 +470,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end(participantOperationsHtml);
         return;
       }
-      if (!production && request.url === "/display" && request.method === "GET") {
+      if (!production && (request.url === "/display" || request.url?.startsWith("/display?")) && request.method === "GET") {
         response.writeHead(200, {
           "content-type": "text/html; charset=utf-8",
           "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
@@ -643,7 +621,28 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         json(response, 201, competitionJourney.create(parseCreationSource((body as { source: unknown }).source)));
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve))?$/.exec(request.url ?? "");
+      const journeyRequestUrl = new URL(request.url ?? "/", "http://local.invalid");
+      const participantProjection = !production && /^\/v1\/competition-journey\/([^/]+)\/participant-next$/.exec(journeyRequestUrl.pathname);
+      if (participantProjection && request.method === "GET") {
+        const expectedOperationalRevision = Number(journeyRequestUrl.searchParams.get("revision"));
+        const token = journeyRequestUrl.searchParams.get("token") ?? "";
+        if (!Number.isSafeInteger(expectedOperationalRevision)) throw new Error("invalid_journey_command");
+        json(response, 200, competitionJourney.readParticipantNext({ organizationId,
+          competitionId: decodeURIComponent(participantProjection[1]!), expectedOperationalRevision, token,
+          at: serverNow() }));
+        return;
+      }
+      const publicProjection = !production && /^\/v1\/competition-journey\/([^/]+)\/(public-live|organiser-live)$/.exec(journeyRequestUrl.pathname);
+      if (publicProjection && request.method === "GET") {
+        const expectedOperationalRevision = Number(journeyRequestUrl.searchParams.get("revision"));
+        if (!Number.isSafeInteger(expectedOperationalRevision)) throw new Error("invalid_journey_command");
+        const input = { organizationId, competitionId: decodeURIComponent(publicProjection[1]!),
+          expectedOperationalRevision };
+        json(response, 200, publicProjection[2] === "public-live" ? competitionJourney.readPublicLive(input)
+          : competitionJourney.readOrganiserLive({ ...input, at: serverNow() }));
+        return;
+      }
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|participant-access))?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
@@ -715,7 +714,16 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           if (Object.keys(command).some((key) => !["expectedRevision", "command"].includes(key))
             || !Number.isSafeInteger(command.expectedRevision)) throw new Error("invalid_journey_command");
           json(response, 200, competitionJourney.submitLiveCommand(competitionId, command.expectedRevision as number,
-            parseConnectedLiveCommand(command.command, "local.live-operator", new Date().toISOString())));
+            parseConnectedLiveCommand(command.command, "local.live-operator", serverNow())));
+          return;
+        }
+        if (operation === "participant-access") {
+          if (Object.keys(command).some((key) => !["expectedPublishedRevision", "participantId", "expiresAt"].includes(key))
+            || !Number.isSafeInteger(command.expectedPublishedRevision) || typeof command.participantId !== "string"
+            || typeof command.expiresAt !== "string") throw new Error("invalid_journey_command");
+          json(response, 201, competitionJourney.issueParticipantAccess({ organizationId, competitionId,
+            expectedPublishedRevision: command.expectedPublishedRevision as number,
+            participantId: command.participantId, expiresAt: command.expiresAt }));
           return;
         }
         if (operation === "no-show-preview") {
@@ -727,7 +735,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           json(response, 200, competitionJourney.proposeNoShow(competitionId, command.expectedRevision as number,
             command.expectedLiveVersion as number, { proposalId: command.proposalId as string,
               contestId: command.contestId as string, entrantId: command.entrantId as string,
-              reason: command.reason as string, proposedBy: "local.live-operator", proposedAt: new Date().toISOString() }));
+              reason: command.reason as string, proposedBy: "local.live-operator", proposedAt: serverNow() }));
           return;
         }
         if (operation === "no-show-approve") {
@@ -737,7 +745,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
             throw new Error("invalid_journey_command");
           json(response, 200, competitionJourney.approveNoShow(competitionId, command.expectedRevision as number,
             command.expectedProposalHash, command.strategy as "KEEP_ANNOUNCED_SLOTS" | "RELEASE_WALKOVER_SLOTS",
-            "local.tournament-director", new Date().toISOString()));
+            "local.tournament-director", serverNow()));
           return;
         }
       }

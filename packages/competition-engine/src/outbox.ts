@@ -94,9 +94,18 @@ const snapshot = (message: OutboxMessage): Readonly<OutboxMessage> => deepFreeze
 export class InMemoryTransactionalOutbox implements TransactionalOutboxStore {
   readonly #messages = new Map<string, OutboxMessage>();
 
-  constructor(readonly tenantId = "local") {
+  constructor(readonly tenantId = "local", initialMessages: readonly Readonly<OutboxMessage>[] = []) {
     if (!tenantId.trim() || tenantId.length > 200 || /[\u0000-\u001f]/.test(tenantId)) {
       throw new Error("tenantId must be a non-empty bounded identifier");
+    }
+    for (const supplied of initialMessages) {
+      const expectedDedupeKey = canonicalHash({ eventId: supplied.eventId, topic: supplied.topic,
+        publicationKey: supplied.publicationKey });
+      if (supplied.tenantId !== tenantId || supplied.dedupeKey !== expectedDedupeKey
+        || supplied.id !== `outbox.${expectedDedupeKey}` || this.#messages.has(supplied.dedupeKey)) {
+        throw new Error("Initial outbox messages failed tenant, identity, or deduplication validation");
+      }
+      this.#messages.set(supplied.dedupeKey, structuredClone(supplied) as OutboxMessage);
     }
   }
 

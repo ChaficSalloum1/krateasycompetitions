@@ -33,7 +33,9 @@ export type LiveOperationsCommand = CommandAudit & (
   | { readonly kind: "WITHDRAW_ENTRANT"; readonly entrantId: string; readonly reason: string }
   | { readonly kind: "DECLARE_NO_SHOW"; readonly contestId: string; readonly entrantId: string; readonly reason: string }
   | { readonly kind: "AWARD_WALKOVER"; readonly contestId: string; readonly winnerEntrantId: string; readonly absentEntrantId: string; readonly reason: string }
+  | { readonly kind: "CALL_CONTEST"; readonly contestId: string }
   | { readonly kind: "START_CONTEST"; readonly contestId: string; readonly courtId: string; readonly startedAt: string }
+  | { readonly kind: "RECORD_SCORE"; readonly contestId: string; readonly scores: readonly ContestScore[] }
   | { readonly kind: "COMPLETE_CONTEST"; readonly contestId: string; readonly endedAt: string }
   | { readonly kind: "RECORD_RETIREMENT"; readonly contestId: string; readonly retiredEntrantId: string; readonly winnerEntrantId: string; readonly endedAt: string; readonly reason: string }
   | { readonly kind: "RECORD_RESULT_RECEIPT"; readonly contestId: string; readonly source: string }
@@ -55,6 +57,8 @@ export type LiveContestStatus = "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "WAL
 
 export interface LiveContestState {
   readonly status: LiveContestStatus;
+  readonly calledAt?: string;
+  readonly scores?: readonly ContestScore[];
   readonly winnerEntrantId?: string;
   readonly absentEntrantId?: string;
   readonly retiredEntrantId?: string;
@@ -63,6 +67,11 @@ export interface LiveContestState {
   readonly actualEnd?: string;
   readonly actualDurationMinutes?: number;
   readonly resultRecordedAt?: string;
+}
+
+export interface ContestScore {
+  readonly entrantId: string;
+  readonly value: number;
 }
 
 export interface ResourceAvailability {
@@ -95,6 +104,7 @@ export interface AppealState {
 export type LiveOperationCorrection =
   | { readonly kind: "SET_ENTRANT_PRESENCE"; readonly entrantId: string; readonly status: EntrantPresenceStatus; readonly reason: string }
   | { readonly kind: "SET_CONTEST_TIMING"; readonly contestId: string; readonly actualStart: string; readonly actualEnd?: string; readonly reason: string }
+  | { readonly kind: "SET_CONTEST_SCORE"; readonly contestId: string; readonly scores: readonly ContestScore[]; readonly reason: string }
   | { readonly kind: "SET_RESOURCE_AVAILABILITY"; readonly resourceKind: "COURT" | "OFFICIAL" | "EQUIPMENT"; readonly resourceId: string; readonly available: boolean; readonly reason: string; readonly expectedAvailableAt?: string };
 
 interface LiveOperationsEventAudit {
@@ -115,7 +125,9 @@ type LiveOperationsEventData =
   | { readonly kind: "ENTRANT_WITHDRAWN"; readonly entrantId: string; readonly reason: string }
   | { readonly kind: "ENTRANT_DECLARED_NO_SHOW"; readonly contestId: string; readonly entrantId: string; readonly reason: string }
   | { readonly kind: "WALKOVER_AWARDED"; readonly contestId: string; readonly winnerEntrantId: string; readonly absentEntrantId: string; readonly reason: string }
+  | { readonly kind: "CONTEST_CALLED"; readonly contestId: string }
   | { readonly kind: "CONTEST_STARTED"; readonly contestId: string; readonly courtId: string; readonly startedAt: string }
+  | { readonly kind: "SCORE_RECORDED"; readonly contestId: string; readonly scores: readonly ContestScore[] }
   | { readonly kind: "CONTEST_COMPLETED"; readonly contestId: string; readonly endedAt: string }
   | { readonly kind: "RETIREMENT_RECORDED"; readonly contestId: string; readonly retiredEntrantId: string; readonly winnerEntrantId: string; readonly endedAt: string; readonly reason: string }
   | { readonly kind: "RESULT_RECEIVED"; readonly contestId: string; readonly source: string }
@@ -247,7 +259,10 @@ function eventData(command: LiveOperationsCommand): LiveOperationsEventData {
   if (command.kind === "WITHDRAW_ENTRANT") return { kind: "ENTRANT_WITHDRAWN", entrantId: command.entrantId, reason: command.reason };
   if (command.kind === "DECLARE_NO_SHOW") return { kind: "ENTRANT_DECLARED_NO_SHOW", contestId: command.contestId, entrantId: command.entrantId, reason: command.reason };
   if (command.kind === "AWARD_WALKOVER") return { kind: "WALKOVER_AWARDED", contestId: command.contestId, winnerEntrantId: command.winnerEntrantId, absentEntrantId: command.absentEntrantId, reason: command.reason };
+  if (command.kind === "CALL_CONTEST") return { kind: "CONTEST_CALLED", contestId: command.contestId };
   if (command.kind === "START_CONTEST") return { kind: "CONTEST_STARTED", contestId: command.contestId, courtId: command.courtId, startedAt: command.startedAt };
+  if (command.kind === "RECORD_SCORE") return { kind: "SCORE_RECORDED", contestId: command.contestId,
+    scores: [...command.scores].sort((left, right) => left.entrantId.localeCompare(right.entrantId)) };
   if (command.kind === "COMPLETE_CONTEST") return { kind: "CONTEST_COMPLETED", contestId: command.contestId, endedAt: command.endedAt };
   if (command.kind === "RECORD_RETIREMENT") return { kind: "RETIREMENT_RECORDED", contestId: command.contestId, retiredEntrantId: command.retiredEntrantId, winnerEntrantId: command.winnerEntrantId, endedAt: command.endedAt, reason: command.reason };
   if (command.kind === "RECORD_RESULT_RECEIPT") return { kind: "RESULT_RECEIVED", contestId: command.contestId, source: command.source };
@@ -272,6 +287,12 @@ function resourceCommand(command: LiveOperationsCommand): { kind: "COURT" | "OFF
   if (command.kind === "REPORT_EQUIPMENT_FAILURE") return { kind: "EQUIPMENT", id: command.equipmentId, available: false };
   if (command.kind === "RESTORE_EQUIPMENT") return { kind: "EQUIPMENT", id: command.equipmentId, available: true };
   return undefined;
+}
+
+function validScores(scores: readonly ContestScore[], entrantIds: readonly string[]): boolean {
+  return scores.length === entrantIds.length && new Set(scores.map(({ entrantId }) => entrantId)).size === scores.length
+    && scores.every(({ entrantId, value }) => entrantIds.includes(entrantId)
+      && Number.isSafeInteger(value) && value >= 0);
 }
 
 function acceptedEvent(state: LiveOperationsState, command: LiveOperationsCommand, commandFingerprint: string): LiveOperationsEvent {
@@ -320,6 +341,10 @@ export function submitLiveOperationsCommand(state: LiveOperationsState, command:
       if (state.contests[command.contestId]?.status !== "SCHEDULED") findings.push({ code: "LIVE422", path: "/contestId", message: "Walkover can only settle a scheduled contest." });
       if (command.winnerEntrantId === command.absentEntrantId || !contest.entrantIds.includes(command.winnerEntrantId) || !contest.entrantIds.includes(command.absentEntrantId)) findings.push({ code: "LIVE422", path: "/winnerEntrantId", message: "Walkover winner and absent entrant must be distinct registered contest entrants." });
       if (state.entrantPresence[command.absentEntrantId] !== "NO_SHOW" && state.entrantPresence[command.absentEntrantId] !== "WITHDRAWN") findings.push({ code: "LIVE422", path: "/absentEntrantId", message: "A walkover requires an established no-show or withdrawal fact." });
+    } else if (command.kind === "CALL_CONTEST") {
+      const contestState = state.contests[command.contestId];
+      if (contestState?.status !== "SCHEDULED" || contestState.calledAt)
+        findings.push({ code: "LIVE422", path: "/contestId", message: "Only an uncalled scheduled contest can be called." });
     } else if (command.kind === "START_CONTEST") {
       const contestState = state.contests[command.contestId];
       const missing = contest.entrantIds.filter((id) => state.entrantPresence[id] !== "CHECKED_IN" && state.entrantPresence[id] !== "LATE");
@@ -330,6 +355,9 @@ export function submitLiveOperationsCommand(state: LiveOperationsState, command:
       if (!canonicalTimestamp(command.startedAt)) findings.push({ code: "LIVE400", path: "/startedAt", message: "Actual start must be a canonical timestamp." });
       if (missing.length) findings.push({ code: "LIVE422", path: "/entrantPresence", message: "All contest entrants must be checked in or marked late before start.", evidence: { entrantIds: missing } });
       if (pendingDependencies.length) findings.push({ code: "LIVE422", path: "/dependencyContestIds", message: "All predecessor contests must be settled before start.", evidence: { contestIds: pendingDependencies } });
+    } else if (command.kind === "RECORD_SCORE") {
+      if (state.contests[command.contestId]?.status !== "IN_PROGRESS" || !validScores(command.scores, contest.entrantIds))
+        findings.push({ code: "LIVE422", path: "/scores", message: "A score requires an in-progress contest and one non-negative integer value for every entrant." });
     } else if (command.kind === "COMPLETE_CONTEST") {
       const contestState = state.contests[command.contestId];
       if (contestState?.status !== "IN_PROGRESS" || !canonicalTimestamp(command.endedAt) || !contestState.actualStart || Date.parse(command.endedAt) < Date.parse(contestState.actualStart)) {
@@ -368,6 +396,12 @@ export function submitLiveOperationsCommand(state: LiveOperationsState, command:
     if (replacement.kind === "SET_CONTEST_TIMING") {
       if (!state.contests[replacement.contestId] || !canonicalTimestamp(replacement.actualStart) || (replacement.actualEnd !== undefined && (!canonicalTimestamp(replacement.actualEnd) || Date.parse(replacement.actualEnd) < Date.parse(replacement.actualStart)))) findings.push({ code: "LIVE422", path: "/replacement", message: "Corrected contest timing must target a registered contest and contain a valid interval." });
     }
+    if (replacement.kind === "SET_CONTEST_SCORE") {
+      const contest = state.definition.contests.find(({ contestId }) => contestId === replacement.contestId);
+      if (!contest || !validScores(replacement.scores, contest.entrantIds)
+        || target?.kind !== "SCORE_RECORDED" || target.contestId !== replacement.contestId)
+        findings.push({ code: "LIVE422", path: "/replacement", message: "A score correction must replace a score event for the same registered contest." });
+    }
     if (replacement.kind === "SET_RESOURCE_AVAILABILITY") {
       const map = replacement.resourceKind === "COURT" ? state.resources.courts : replacement.resourceKind === "OFFICIAL" ? state.resources.officials : state.resources.equipment;
       if (!map[replacement.resourceId]) findings.push({ code: "LIVE404", path: "/replacement/resourceId", message: "Correction resource is not registered." });
@@ -404,6 +438,10 @@ function projectLiveOperations(definition: LiveOperationsDefinition, events: rea
         ...contests[replacement.contestId]!, status: replacement.actualEnd === undefined ? "IN_PROGRESS" : "COMPLETED", actualStart: replacement.actualStart,
         ...(replacement.actualEnd === undefined ? {} : { actualEnd: replacement.actualEnd, actualDurationMinutes: Math.round((Date.parse(replacement.actualEnd) - Date.parse(replacement.actualStart)) / 60_000) }),
       };
+      else if (replacement.kind === "SET_CONTEST_SCORE") contests[replacement.contestId] = {
+        ...contests[replacement.contestId]!,
+        scores: [...replacement.scores].sort((left, right) => left.entrantId.localeCompare(right.entrantId)),
+      };
       else setResource(replacement.resourceKind, replacement.resourceId, replacement.available, event.occurredAt, replacement.reason, replacement.expectedAvailableAt);
       continue;
     }
@@ -413,7 +451,9 @@ function projectLiveOperations(definition: LiveOperationsDefinition, events: rea
     else if (event.kind === "ENTRANT_WITHDRAWN") entrantPresence[event.entrantId] = "WITHDRAWN";
     else if (event.kind === "ENTRANT_DECLARED_NO_SHOW") entrantPresence[event.entrantId] = "NO_SHOW";
     else if (event.kind === "WALKOVER_AWARDED") contests[event.contestId] = { status: "WALKOVER", winnerEntrantId: event.winnerEntrantId, absentEntrantId: event.absentEntrantId };
+    else if (event.kind === "CONTEST_CALLED") contests[event.contestId] = { ...contests[event.contestId]!, calledAt: event.occurredAt };
     else if (event.kind === "CONTEST_STARTED") contests[event.contestId] = { ...contests[event.contestId]!, status: "IN_PROGRESS", actualCourtId: event.courtId, actualStart: event.startedAt };
+    else if (event.kind === "SCORE_RECORDED") contests[event.contestId] = { ...contests[event.contestId]!, scores: [...event.scores] };
     else if (event.kind === "CONTEST_COMPLETED") {
       const contest = contests[event.contestId]!;
       contests[event.contestId] = { ...contest, status: "COMPLETED", actualEnd: event.endedAt, actualDurationMinutes: Math.round((Date.parse(event.endedAt) - Date.parse(contest.actualStart!)) / 60_000) };

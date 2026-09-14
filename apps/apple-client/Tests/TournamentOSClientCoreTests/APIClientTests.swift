@@ -162,6 +162,8 @@ final class APIClientTests: XCTestCase {
         let approved = try await client.createApprovedCompetition(.quick(input))
 
         XCTAssertEqual(approved.status, "PUBLISHED")
+        XCTAssertEqual(approved.revision, 1)
+        XCTAssertEqual(approved.webPath, "/competitions/t1")
         XCTAssertEqual(transport.allRequests.map { $0.url?.path }, [
             "/v1/competition-journey", "/v1/competition-journey/t1/compile", "/v1/competition-journey/t1/approve",
         ])

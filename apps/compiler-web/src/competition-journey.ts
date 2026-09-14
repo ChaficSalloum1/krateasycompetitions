@@ -20,6 +20,9 @@ import {
   type CompetitionGuardReport,
   type ScheduleSolution,
   type SimulationRun,
+  InMemoryTransactionalOutbox,
+  type OutboxDeliveryStore,
+  type OutboxMessage,
 } from "@tournament-os/competition-engine";
 import {
   createCompetitionProposal,
@@ -38,7 +41,7 @@ import {
   type StructuredWorkbenchEditPreview,
   workbenchSourceDocument,
 } from "./competition-workbench.js";
-import { definitionFromProductionLock, entrantsFromProductionLock,
+import { definitionFromProductionLock, entrantsFromProductionLock, participantNamesFromProductionLock,
   verifiedScheduleFromProductionLock } from "./production-lock-definition.js";
 import {
   activatePublishedLiveState,
@@ -51,6 +54,17 @@ import {
   type NoShowRepairStrategy,
   type OperationalAssignment,
 } from "./no-show-journey.js";
+import {
+  createParticipantAccessGrant,
+  deriveParticipantNext,
+  derivePublicLive,
+  resolveParticipantAccess,
+  type ParticipantAccess,
+  type ParticipantAccessGrant,
+  type ParticipantNextProjection,
+  type OrganiserLiveProjection,
+  type PublicLiveProjection,
+} from "./participant-information.js";
 
 export type CompetitionJourneyStatus = "NEEDS_INPUT" | "DRAFT" | "GUARD_BLOCKED" | "READY_FOR_APPROVAL" | "PUBLISHED";
 
@@ -100,6 +114,7 @@ export interface LiveJourneyPublication {
   readonly proposalHash: string;
   readonly optionHash: string;
   readonly stateProofHash: string;
+  readonly stateVersion: number;
   readonly approvedBy: string;
   readonly approvedAt: string;
   readonly publishedBy: "competition-journey.live-publisher";
@@ -117,6 +132,8 @@ export interface LiveJourneyPublication {
       readonly recipientEntrantId: string;
       readonly affectedContestIds: readonly string[];
       readonly stateProofHash: string;
+      readonly organizationId: string;
+      readonly projection: ParticipantNextProjection;
     };
   }[];
   readonly publicationHash: string;
@@ -127,12 +144,16 @@ interface JourneyLiveState {
   readonly activatedBy: string;
   readonly activatedAt: string;
   readonly state: LiveOperationsState;
+  readonly delivery: readonly Readonly<OutboxMessage>[];
+  readonly participantRevisions: Readonly<Record<string, number>>;
+  readonly contestRevisions: Readonly<Record<string, number>>;
   readonly proposal?: NoShowProposal;
   readonly publication?: LiveJourneyPublication;
 }
 
 interface StoredJourneyRecord {
   readonly id: string;
+  readonly organizationId: string;
   readonly draftVersion: number;
   readonly createdBy: string;
   readonly createdAt: string;
@@ -146,6 +167,7 @@ interface StoredJourneyRecord {
   readonly approval?: JourneyApproval;
   readonly publication?: JourneyPublication;
   readonly live?: JourneyLiveState;
+  readonly participantAccess?: readonly ParticipantAccessGrant[];
   readonly recordHash: string;
 }
 
@@ -209,6 +231,9 @@ export interface CompetitionJourneySnapshot {
 export interface CompetitionJourneyOptions {
   readonly storagePath?: string;
   readonly now?: () => string;
+  readonly organizationId?: string;
+  readonly participantTokenSecret?: string;
+  readonly participantTokenKeyVersion?: string;
 }
 
 const exactAcknowledgements = (left: readonly string[], right: readonly string[]): boolean =>
@@ -241,15 +266,31 @@ function sealRecord(record: Omit<StoredJourneyRecord, "recordHash">): StoredJour
 function verifyRecord(record: StoredJourneyRecord): boolean {
   const { recordHash, ...body } = record;
   if (recordHash !== makeRecordHash(body)) return false;
+  if (record.participantAccess && (new Set(record.participantAccess.map(({ tokenHash }) => tokenHash)).size
+    !== record.participantAccess.length || record.participantAccess.some((grant) => grant.organizationId !== record.organizationId
+      || grant.competitionId !== record.id || !/^[a-f0-9]{64}$/.test(grant.tokenHash)))) return false;
   if (!record.live) return true;
-  const replay = replayLiveOperationsEvents(record.live.state.definition, record.live.state.events);
+    const replay = replayLiveOperationsEvents(record.live.state.definition, record.live.state.events);
   if (!replay.valid || replay.state.proofHash !== record.live.state.proofHash) return false;
   if (record.live.proposal && !verifyNoShowProposal(record.live.proposal)) return false;
   if (record.live.publication) {
     const { publicationHash, ...publicationBody } = record.live.publication;
-    if (publicationHash !== canonicalHash(publicationBody)
-      || publicationBody.stateProofHash !== record.live.state.proofHash) return false;
+    const publishedState = replayLiveOperationsEvents(record.live.state.definition,
+      record.live.state.events.slice(0, publicationBody.stateVersion));
+    const option = record.live.proposal?.options.find(({ optionHash }) => optionHash === publicationBody.optionHash);
+    if (publicationHash !== canonicalHash(publicationBody) || !publishedState.valid
+      || publicationBody.stateProofHash !== publishedState.state.proofHash || !record.live.proposal || !option
+      || publicationBody.proposalHash !== record.live.proposal.proposalHash
+      || publicationBody.baseRevision !== record.live.baseRevision
+      || publicationBody.revision !== publicationBody.baseRevision + 1
+      || publicationBody.approvedBy === record.live.proposal.proposedBy
+      || publicationBody.approvedBy === publicationBody.publishedBy
+      || canonicalHash(publicationBody.affectedContestIds) !== canonicalHash(record.live.proposal.affectedContestIds)
+      || canonicalHash(publicationBody.affectedEntrantIds) !== canonicalHash(record.live.proposal.affectedEntrantIds)
+      || canonicalHash(publicationBody.operationalAssignments) !== canonicalHash(option.operationalAssignments)
+      || canonicalHash(publicationBody.settledAsWalkoverContestIds) !== canonicalHash(option.settledAsWalkoverContestIds)) return false;
   }
+  try { new InMemoryTransactionalOutbox(record.organizationId, record.live.delivery); } catch { return false; }
   return true;
 }
 
@@ -366,10 +407,17 @@ export class CompetitionJourney {
   private records = new Map<string, StoredJourneyRecord>();
   private readonly storagePath: string | undefined;
   private readonly now: () => string;
+  private readonly organizationId: string;
+  private readonly participantTokenSecret: string;
+  private readonly participantTokenKeyVersion: string;
 
   public constructor(options: CompetitionJourneyOptions = {}) {
     this.storagePath = options.storagePath;
     this.now = options.now ?? (() => new Date().toISOString());
+    this.organizationId = options.organizationId ?? "org.local";
+    this.participantTokenSecret = options.participantTokenSecret ?? "";
+    this.participantTokenKeyVersion = options.participantTokenKeyVersion ?? "v1";
+    if (!this.organizationId.trim()) throw new Error("invalid_journey_organization");
     this.load();
   }
 
@@ -392,7 +440,7 @@ export class CompetitionJourney {
     let id = `${base}.${proposal.proposalHash.slice(0, 10)}`;
     let suffix = 1;
     while (this.records.has(id)) { suffix += 1; id = `${base}.${proposal.proposalHash.slice(0, 10)}.${suffix}`; }
-    const record = sealRecord({ id, draftVersion: 1, createdBy, createdAt: timestamp, updatedAt: timestamp,
+    const record = sealRecord({ id, organizationId: this.organizationId, draftVersion: 1, createdBy, createdAt: timestamp, updatedAt: timestamp,
       source, sources: [source], proposal, workbench,
       supportFindings: workbench.understoodFacts.length ? [] : supportedMilestoneFindings(proposal.blueprint) });
     this.records.set(id, record);
@@ -410,6 +458,7 @@ export class CompetitionJourney {
     const workbench = analyseCompetitionSources(sources, updatedAt);
     const revised = sealRecord({
       id: current.id,
+      organizationId: current.organizationId,
       draftVersion: current.draftVersion + 1,
       createdBy: current.createdBy,
       createdAt: current.createdAt,
@@ -531,7 +580,8 @@ export class CompetitionJourney {
       return snapshotOf(current);
     }
     const activatedAt = this.canonicalNow();
-    const live: JourneyLiveState = { baseRevision: expectedRevision, activatedBy, activatedAt,
+    const live: JourneyLiveState = { baseRevision: expectedRevision, activatedBy, activatedAt, delivery: [],
+      participantRevisions: {}, contestRevisions: {},
       state: activatePublishedLiveState(id, compiled.graph, compiled.schedule) };
     const revised = sealRecord({ ...withoutSeal(current), updatedAt: activatedAt, live });
     this.records.set(id, revised);
@@ -542,11 +592,50 @@ export class CompetitionJourney {
   public submitLiveCommand(id: string, expectedRevision: number,
     command: LiveOperationsCommand): CompetitionJourneySnapshot {
     const current = this.require(id);
-    const live = this.requireLive(current, expectedRevision);
-    if (live.publication) throw new Error("live_revision_already_published");
+    const live = this.requireProjectedLive(current, expectedRevision);
     const result = submitLiveOperationsCommand(live.state, command);
     if (!result.accepted) throw new Error(`live_command_rejected:${result.findings.map(({ code }) => code).join(",")}`);
-    const revisedLive: JourneyLiveState = { ...live, state: result.state };
+    if (result.idempotentReplay) return snapshotOf(current);
+    const touchedContestIds = new Set<string>();
+    const touchedEntrantIds = new Set<string>();
+    for (const event of result.events) {
+      if ("contestId" in event) touchedContestIds.add(event.contestId);
+      if ("entrantId" in event) touchedEntrantIds.add(event.entrantId);
+      if ("winnerEntrantId" in event) touchedEntrantIds.add(event.winnerEntrantId);
+      if ("absentEntrantId" in event) touchedEntrantIds.add(event.absentEntrantId);
+      if (event.kind === "OPERATION_CORRECTED") {
+        if ("contestId" in event.replacement) touchedContestIds.add(event.replacement.contestId);
+        if ("entrantId" in event.replacement) touchedEntrantIds.add(event.replacement.entrantId);
+      }
+    }
+    for (const contestId of touchedContestIds) {
+      const definition = result.state.definition.contests.find((contest) => contest.contestId === contestId);
+      definition?.entrantIds.forEach((entrantId) => touchedEntrantIds.add(entrantId));
+    }
+    const participantRevisions = { ...live.participantRevisions,
+      ...Object.fromEntries([...touchedEntrantIds].map((entrantId) => [entrantId, expectedRevision])) };
+    const contestRevisions = { ...live.contestRevisions,
+      ...Object.fromEntries([...touchedContestIds].map((contestId) => [contestId, expectedRevision])) };
+    const outbox = new InMemoryTransactionalOutbox(current.organizationId, live.delivery);
+    const participantNames = participantNamesFromProductionLock(current.workbench!);
+    const assignments = live.publication?.operationalAssignments ?? current.compiled!.schedule.contests;
+    for (const event of result.events) for (const participantId of [...touchedEntrantIds].sort()) {
+      const projection = deriveParticipantNext({ competitionId: current.id,
+        competitionName: recognisedCompetitionName(current.workbench!) ?? current.proposal.blueprint.name ?? "Competition",
+        publishedRevision: current.publication!.revision, operationalRevision: expectedRevision,
+        affectedParticipantIds: live.publication?.affectedEntrantIds ?? [], participantRevisions,
+        participantId, participantNames, state: result.state, assignments });
+      outbox.enqueueFromCommittedEvent({ id: event.eventId, streamId: current.id,
+        streamVersion: event.sequence, type: event.kind, occurredAt: event.occurredAt,
+        committedAt: command.occurredAt, payload: projection }, {
+        topic: "competition.participant-next.v1",
+        key: `${current.id}:v${expectedRevision}:live-${event.sequence}:${participantId}`,
+        payload: { organizationId: current.organizationId, competitionId: current.id,
+          revision: expectedRevision, recipientEntrantId: participantId, projection },
+      });
+    }
+    const revisedLive: JourneyLiveState = { ...live, state: result.state, participantRevisions,
+      contestRevisions, delivery: outbox.list() };
     const revised = sealRecord({ ...withoutSeal(current), updatedAt: command.occurredAt, live: revisedLive });
     this.records.set(id, revised);
     this.persist();
@@ -602,30 +691,166 @@ export class CompetitionJourney {
     if (approvedBy === publishedBy) throw new Error("live_publication_requires_independent_actor");
     const publicationBody = {
       revision: expectedRevision + 1, baseRevision: expectedRevision, proposalHash: proposal.proposalHash,
-      optionHash: option.optionHash, stateProofHash: option.proposedLiveState.proofHash, approvedBy, approvedAt,
+      optionHash: option.optionHash, stateProofHash: option.proposedLiveState.proofHash,
+      stateVersion: option.proposedLiveState.version, approvedBy, approvedAt,
       publishedBy, affectedContestIds: [...proposal.affectedContestIds],
       affectedEntrantIds: [...proposal.affectedEntrantIds], operationalAssignments: [...option.operationalAssignments],
       settledAsWalkoverContestIds: [...option.settledAsWalkoverContestIds],
       outboxIntents: proposal.affectedEntrantIds.map((recipientEntrantId) => ({
         topic: "competition.live-update.v1" as const,
         key: `${id}:v${expectedRevision + 1}:${recipientEntrantId}`,
-        payload: { competitionId: id, revision: expectedRevision + 1, baseRevision: expectedRevision,
+        payload: { organizationId: current.organizationId, competitionId: id,
+          revision: expectedRevision + 1, baseRevision: expectedRevision,
           recipientEntrantId, affectedContestIds: [...proposal.affectedContestIds],
-          stateProofHash: option.proposedLiveState.proofHash },
+          stateProofHash: option.proposedLiveState.proofHash,
+          projection: deriveParticipantNext({ competitionId: current.id,
+            competitionName: recognisedCompetitionName(current.workbench!) ?? current.proposal.blueprint.name ?? "Competition",
+            publishedRevision: expectedRevision, operationalRevision: expectedRevision + 1,
+            affectedParticipantIds: proposal.affectedEntrantIds, participantId: recipientEntrantId,
+            participantNames: participantNamesFromProductionLock(current.workbench!), state: option.proposedLiveState,
+            assignments: option.operationalAssignments }) },
       })),
     };
     const publication: LiveJourneyPublication = { ...publicationBody, publicationHash: canonicalHash(publicationBody) };
-    const revisedLive: JourneyLiveState = { ...live, state: option.proposedLiveState, publication };
+    const outbox = new InMemoryTransactionalOutbox(current.organizationId, live.delivery);
+    for (const intent of publication.outboxIntents) outbox.enqueueFromCommittedEvent({
+      id: `live-publication.${publication.publicationHash}`, streamId: current.id,
+      streamVersion: publication.stateVersion, type: "competition.live-revision-published",
+      occurredAt: approvedAt, committedAt: approvedAt, payload: intent.payload,
+    }, { topic: "competition.participant-next.v1", key: intent.key, payload: intent.payload });
+    const revisedLive: JourneyLiveState = { ...live, state: option.proposedLiveState, publication,
+      participantRevisions: { ...live.participantRevisions,
+        ...Object.fromEntries(proposal.affectedEntrantIds.map((entrantId) => [entrantId, expectedRevision + 1])) },
+      contestRevisions: { ...live.contestRevisions,
+        ...Object.fromEntries(proposal.affectedContestIds.map((contestId) => [contestId, expectedRevision + 1])) },
+      delivery: outbox.list() };
     const revised = sealRecord({ ...withoutSeal(current), updatedAt: approvedAt, live: revisedLive });
     this.records.set(id, revised);
     this.persist();
     return snapshotOf(revised);
   }
 
+  public issueParticipantAccess(input: { readonly organizationId: string; readonly competitionId: string;
+    readonly expectedPublishedRevision: number; readonly participantId: string; readonly expiresAt: string }): ParticipantAccess {
+    const current = this.requireScoped(input.organizationId, input.competitionId);
+    if (!current.publication || !current.live || current.publication.revision !== input.expectedPublishedRevision
+      || current.live.baseRevision !== input.expectedPublishedRevision) throw new Error("journey_revision_conflict");
+    const knownParticipants = new Set(current.live.state.definition.contests.flatMap(({ entrantIds }) => entrantIds));
+    if (!knownParticipants.has(input.participantId)) throw new Error("participant_access_denied");
+    const issuedAt = this.canonicalNow();
+    if (Date.parse(input.expiresAt) <= Date.parse(issuedAt)) throw new Error("invalid_participant_access_grant");
+    const { grant, access } = createParticipantAccessGrant({ organizationId: input.organizationId,
+      competitionId: input.competitionId, publishedRevision: input.expectedPublishedRevision,
+      participantId: input.participantId, expiresAt: input.expiresAt,
+      keyVersion: this.participantTokenKeyVersion }, this.participantTokenSecret);
+    const grants = current.participantAccess ?? [];
+    if (!grants.some(({ tokenHash }) => tokenHash === grant.tokenHash)) {
+      const revised = sealRecord({ ...withoutSeal(current), updatedAt: issuedAt, participantAccess: [...grants, grant]
+        .sort((left, right) => left.participantId.localeCompare(right.participantId) || left.expiresAt.localeCompare(right.expiresAt)) });
+      this.records.set(current.id, revised);
+      this.persist();
+    }
+    return access;
+  }
+
+  public readParticipantNext(input: { readonly organizationId: string; readonly competitionId: string;
+    readonly expectedOperationalRevision: number; readonly token: string; readonly at: string }): ParticipantNextProjection {
+    const current = this.requireScoped(input.organizationId, input.competitionId);
+    const live = this.requireProjectedLive(current, input.expectedOperationalRevision);
+    const grant = resolveParticipantAccess(current.participantAccess ?? [], input.token, this.participantTokenSecret,
+      input.organizationId, input.competitionId, input.at);
+    if (grant.publishedRevision !== current.publication!.revision) throw new Error("participant_access_denied");
+    return deriveParticipantNext({ competitionId: current.id,
+      competitionName: recognisedCompetitionName(current.workbench!) ?? current.proposal.blueprint.name ?? "Competition",
+      publishedRevision: current.publication!.revision, operationalRevision: input.expectedOperationalRevision,
+      affectedParticipantIds: live.publication?.affectedEntrantIds ?? [], participantId: grant.participantId,
+      participantRevisions: live.participantRevisions,
+      participantNames: participantNamesFromProductionLock(current.workbench!), state: live.state,
+      assignments: live.publication?.operationalAssignments ?? current.compiled!.schedule.contests });
+  }
+
+  public readPublicLive(input: { readonly organizationId: string; readonly competitionId: string;
+    readonly expectedOperationalRevision: number }): PublicLiveProjection {
+    const current = this.requireScoped(input.organizationId, input.competitionId);
+    const live = this.requireProjectedLive(current, input.expectedOperationalRevision);
+    return derivePublicLive({ competitionId: current.id,
+      competitionName: recognisedCompetitionName(current.workbench!) ?? current.proposal.blueprint.name ?? "Competition",
+      publishedRevision: current.publication!.revision, operationalRevision: input.expectedOperationalRevision,
+      affectedContestIds: live.publication?.affectedContestIds ?? [],
+      contestRevisions: live.contestRevisions,
+      participantNames: participantNamesFromProductionLock(current.workbench!), state: live.state,
+      assignments: live.publication?.operationalAssignments ?? current.compiled!.schedule.contests });
+  }
+
+  public readOrganiserLive(input: { readonly organizationId: string; readonly competitionId: string;
+    readonly expectedOperationalRevision: number; readonly at: string }): OrganiserLiveProjection {
+    const current = this.requireScoped(input.organizationId, input.competitionId);
+    const live = this.requireProjectedLive(current, input.expectedOperationalRevision);
+    if (!Number.isFinite(Date.parse(input.at)) || new Date(Date.parse(input.at)).toISOString() !== input.at)
+      throw new Error("invalid_projection_time");
+    const participantNames = participantNamesFromProductionLock(current.workbench!);
+    const participantIds = [...new Set(live.state.definition.contests.flatMap(({ entrantIds }) => entrantIds))].sort();
+    const assignments = live.publication?.operationalAssignments ?? current.compiled!.schedule.contests;
+    const participants = participantIds.map((participantId) => {
+      const projection = deriveParticipantNext({ competitionId: current.id,
+        competitionName: recognisedCompetitionName(current.workbench!) ?? current.proposal.blueprint.name ?? "Competition",
+        publishedRevision: current.publication!.revision, operationalRevision: input.expectedOperationalRevision,
+        affectedParticipantIds: live.publication?.affectedEntrantIds ?? [], participantRevisions: live.participantRevisions,
+        participantId, participantNames, state: live.state, assignments });
+      return { participantId, displayName: projection.participant.displayName,
+        status: projection.participant.status, revision: projection.revision,
+        projectionHash: projection.projectionHash };
+    });
+    const publicProjection = this.readPublicLive(input);
+    const deliveryEvidence = live.delivery.map((message) => ({ messageId: message.id,
+      recipientParticipantId: String((message.payload as Record<string, unknown>).recipientEntrantId ?? ""),
+      status: message.status, attempts: message.attempts,
+      ...(message.providerId ? { providerId: message.providerId } : {}),
+      ...(message.providerMessageId ? { providerMessageId: message.providerMessageId } : {}),
+      ...(message.deliveredAt ? { deliveredAt: message.deliveredAt } : {}) }));
+    const body = { apiVersion: "1.0" as const, organizationId: input.organizationId,
+      public: publicProjection, liveVersion: live.state.version, stateProofHash: live.state.proofHash,
+      participants, deliveryEvidence };
+    return { ...body, projectionHash: canonicalHash(body) };
+  }
+
+  public participantDeliveryStore(organizationId: string, competitionId: string): OutboxDeliveryStore {
+    const mutate = <T>(at: string, operation: (outbox: InMemoryTransactionalOutbox) => T): T => {
+      const current = this.requireScoped(organizationId, competitionId);
+      if (!current.live?.publication) throw new Error("journey_revision_conflict");
+      const outbox = new InMemoryTransactionalOutbox(organizationId, current.live.delivery);
+      const result = operation(outbox);
+      const revised = sealRecord({ ...withoutSeal(current), updatedAt: at,
+        live: { ...current.live, delivery: outbox.list() } });
+      this.records.set(current.id, revised);
+      this.persist();
+      return result;
+    };
+    return {
+      claim: (options) => mutate(options.now, (outbox) => outbox.claim(options)),
+      acknowledge: (options) => mutate(options.now, (outbox) => outbox.acknowledge(options)),
+      retry: (options) => mutate(options.now, (outbox) => outbox.retry(options)),
+      recoverExpiredLeases: (now) => mutate(now, (outbox) => outbox.recoverExpiredLeases(now)),
+    };
+  }
+
   private require(id: string): StoredJourneyRecord {
     const record = this.records.get(id);
     if (!record) throw new Error("journey_not_found");
     return record;
+  }
+
+  private requireScoped(organizationId: string, id: string): StoredJourneyRecord {
+    const record = this.records.get(id);
+    if (!record || record.organizationId !== organizationId) throw new Error("journey_not_found");
+    return record;
+  }
+
+  private requireProjectedLive(record: StoredJourneyRecord, expectedOperationalRevision: number): JourneyLiveState {
+    if (!record.compiled || !record.publication || !record.live) throw new Error("journey_revision_conflict");
+    const revision = record.live.publication?.revision ?? record.publication.revision;
+    if (revision !== expectedOperationalRevision) throw new Error("journey_revision_conflict");
+    return record.live;
   }
 
   private requireLive(record: StoredJourneyRecord, expectedRevision: number): JourneyLiveState {
@@ -697,6 +922,9 @@ export function parseConnectedLiveCommand(value: unknown, actorId: string, occur
   if (command.kind === "MARK_LATE" && typeof command.entrantId === "string" && typeof command.reason === "string"
     && exact(["kind", "commandId", "expectedVersion", "entrantId", "reason"]))
     return { ...audit, kind: "MARK_LATE", entrantId: command.entrantId, reason: command.reason };
+  if (command.kind === "CALL_CONTEST" && typeof command.contestId === "string"
+    && exact(["kind", "commandId", "expectedVersion", "contestId"]))
+    return { ...audit, kind: "CALL_CONTEST", contestId: command.contestId };
   if (command.kind === "START_CONTEST" && typeof command.contestId === "string" && typeof command.courtId === "string"
     && typeof command.startedAt === "string"
     && exact(["kind", "commandId", "expectedVersion", "contestId", "courtId", "startedAt"]))
@@ -705,6 +933,33 @@ export function parseConnectedLiveCommand(value: unknown, actorId: string, occur
   if (command.kind === "COMPLETE_CONTEST" && typeof command.contestId === "string" && typeof command.endedAt === "string"
     && exact(["kind", "commandId", "expectedVersion", "contestId", "endedAt"]))
     return { ...audit, kind: "COMPLETE_CONTEST", contestId: command.contestId, endedAt: command.endedAt };
+  const validScores = (scores: unknown): scores is Array<{ entrantId: string; value: number }> => Array.isArray(scores)
+    && scores.length === 2 && scores.every((score) => score && typeof score === "object" && !Array.isArray(score)
+      && Object.keys(score as Record<string, unknown>).every((key) => ["entrantId", "value"].includes(key))
+      && typeof (score as Record<string, unknown>).entrantId === "string"
+      && Number.isSafeInteger((score as Record<string, unknown>).value));
+  if (command.kind === "RECORD_SCORE" && typeof command.contestId === "string" && validScores(command.scores)
+    && exact(["kind", "commandId", "expectedVersion", "contestId", "scores"]))
+    return { ...audit, kind: "RECORD_SCORE", contestId: command.contestId, scores: command.scores };
+  if (command.kind === "AWARD_WALKOVER" && typeof command.contestId === "string"
+    && typeof command.winnerEntrantId === "string" && typeof command.absentEntrantId === "string"
+    && typeof command.reason === "string" && exact(["kind", "commandId", "expectedVersion", "contestId",
+      "winnerEntrantId", "absentEntrantId", "reason"]))
+    return { ...audit, kind: "AWARD_WALKOVER", contestId: command.contestId,
+      winnerEntrantId: command.winnerEntrantId, absentEntrantId: command.absentEntrantId,
+      reason: command.reason };
+  if (command.kind === "CORRECT_OPERATION" && typeof command.supersedesEventId === "string"
+    && typeof command.reason === "string" && command.replacement && typeof command.replacement === "object"
+    && !Array.isArray(command.replacement) && exact(["kind", "commandId", "expectedVersion", "supersedesEventId",
+      "replacement", "reason"])) {
+    const replacement = command.replacement as Record<string, unknown>;
+    if (replacement.kind === "SET_CONTEST_SCORE" && typeof replacement.contestId === "string"
+      && typeof replacement.reason === "string" && validScores(replacement.scores)
+      && Object.keys(replacement).every((key) => ["kind", "contestId", "scores", "reason"].includes(key)))
+      return { ...audit, kind: "CORRECT_OPERATION", supersedesEventId: command.supersedesEventId,
+        reason: command.reason, replacement: { kind: "SET_CONTEST_SCORE", contestId: replacement.contestId,
+          scores: replacement.scores, reason: replacement.reason } };
+  }
   throw new Error("invalid_live_command");
 }
 

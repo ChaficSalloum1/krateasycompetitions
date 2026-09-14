@@ -36,27 +36,27 @@ test("studio exposes the core organiser jobs with responsive accessibility affor
 
 test("install-free player view makes the next match the dominant job", () => {
   for (const text of [
-    "When do I play?",
+    "My next match",
     "No app needed",
-    "Your next match",
-    "Share my live page",
-    "Arrive 10 minutes early",
+    "Authoritative next action",
+    "reportingTime",
     "aria-live=\"polite\"",
-    "player",
+    "participant-next",
   ]) assert.ok(playerHtml.includes(text), `missing ${text}`);
-  assert.ok(playerHtml.includes("opaque, expiring participant token"));
-  assert.ok(playerHtml.includes("navigator.share"));
+  assert.ok(playerHtml.includes("opaque, signed and expiring"));
+  assert.ok(!playerHtml.includes("pair-options"));
+  assert.ok(!playerHtml.includes("participant-attention"));
   assert.ok(playerHtml.includes("@media(max-width:560px)"));
 });
 
-test("participant attention surfaces cover push, pull, and ambient recovery without claiming real delivery", () => {
-  for (const text of ["Keep every pair informed", "Needs intervention", "Participant delivery", "Find any pair", "Reset rehearsal", "Call to court", "No external message was sent"]) {
+test("participant and public surfaces consume authoritative revision-scoped projections", () => {
+  for (const text of ["Live control room", "Authoritative organiser projection", "deliveryEvidence", "organiser-live", "stateProofHash"]) {
     assert.ok(participantOperationsHtml.includes(text), `missing ${text}`);
   }
-  for (const text of ["Rehearsal order of play", "Find your pair", "/next", "refreshes automatically", "/next-qr.svg"]) {
+  for (const text of ["Live order of play", "public-live", "operationalRevision", "projectionHash"]) {
     assert.ok(venueDisplayHtml.includes(text), `missing ${text}`);
   }
-  for (const text of ["Find your pair once", "Not my pair", "localStorage", "/next-qr.svg", "No account, download or home-screen installation"]) {
+  for (const text of ["Signed participant view", "participant-next", "private link", "No app needed"]) {
     assert.ok(playerHtml.includes(text), `missing ${text}`);
   }
 });
