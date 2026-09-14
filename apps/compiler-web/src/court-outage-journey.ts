@@ -25,6 +25,18 @@ export interface CourtOutageProposalRequest {
   readonly expectedReopenAt: string;
   readonly proposedBy: string;
   readonly proposedAt: string;
+  readonly incidentKind?: "COURT_OUTAGE" | "DELAY_OVERRUN";
+  readonly sourceContestId?: string;
+  readonly closureStartsAt?: string;
+}
+
+export interface DelayOverrunProposalRequest {
+  readonly proposalId: string;
+  readonly contestId: string;
+  readonly reason: string;
+  readonly expectedEndAt: string;
+  readonly proposedBy: string;
+  readonly proposedAt: string;
 }
 
 export interface CourtOutageArtifacts {
@@ -38,7 +50,10 @@ export interface CourtOutageProposal {
   readonly proposalId: string;
   readonly baseOperationalRevision: number;
   readonly baseLiveStateProofHash: string;
+  readonly incidentKind: "COURT_OUTAGE" | "DELAY_OVERRUN";
+  readonly sourceContestId?: string;
   readonly courtId: string;
+  readonly closureStartsAt: string;
   readonly reason: string;
   readonly expectedReopenAt: string;
   readonly proposedBy: string;
@@ -92,7 +107,7 @@ function liveGuard(base: LiveOperationsState, candidate: LiveOperationsState | n
       });
     }
   }
-  const outageStart = Date.parse(request.proposedAt);
+  const outageStart = Date.parse(request.closureStartsAt ?? request.proposedAt);
   const outageEnd = Date.parse(request.expectedReopenAt);
   for (const assignment of assignments) if (assignment.resourceId === request.courtId
     && overlaps(Date.parse(assignment.start), Date.parse(assignment.end), outageStart, outageEnd)) findings.push({
@@ -142,7 +157,7 @@ function repairProblem(base: LiveOperationsState, artifacts: CourtOutageArtifact
   const origin = Date.parse(artifacts.spec.scheduling.start);
   const finish = artifacts.spec.scheduling.finishBy ? Date.parse(artifacts.spec.scheduling.finishBy)
     : Math.max(...artifacts.spec.resources.flatMap(({ availability }) => availability.map(({ end }) => Date.parse(end))));
-  const outageStart = Date.parse(request.proposedAt);
+  const outageStart = Date.parse(request.closureStartsAt ?? request.proposedAt);
   const outageEnd = Date.parse(request.expectedReopenAt);
   if (![origin, finish, outageStart, outageEnd].every(Number.isFinite) || outageStart < origin || outageEnd <= outageStart || outageEnd > finish)
     throw new Error("invalid_court_outage_request");
@@ -156,7 +171,10 @@ function repairProblem(base: LiveOperationsState, artifacts: CourtOutageArtifact
     throw new Error("court_outage_conflicts_communicated_promise");
   const inProgress = Object.entries(base.contests).filter(([, contest]) => contest.status === "IN_PROGRESS")
     .filter(([contestId, contest]) => (contest.actualCourtId ?? definitionById.get(contestId)?.courtId) === request.courtId);
-  if (inProgress.length) throw new Error("court_outage_requires_in_progress_authority");
+  if (request.incidentKind === "DELAY_OVERRUN") {
+    if (inProgress.length !== 1 || inProgress[0]![0] !== request.sourceContestId)
+      throw new Error("delay_overrun_requires_matching_in_progress_contest");
+  } else if (inProgress.length) throw new Error("court_outage_requires_in_progress_authority");
   if (!affected.length) throw new Error("court_outage_has_no_affected_contest");
   const affectedIds = new Set(affected.map(({ contestId }) => contestId));
   const affectedParticipants = new Set(affected.flatMap(({ contestId }) =>
@@ -205,7 +223,9 @@ export function proposeCourtOutageRepair(baseOperationalRevision: number, base: 
   request: CourtOutageProposalRequest): Readonly<CourtOutageProposal> {
   if (!Number.isSafeInteger(baseOperationalRevision) || baseOperationalRevision < 1 || !request.proposalId.trim()
     || !request.courtId.trim() || !request.reason.trim() || !request.proposedBy.trim()
-    || !canonicalTimestamp(request.proposedAt) || !canonicalTimestamp(request.expectedReopenAt))
+    || !canonicalTimestamp(request.proposedAt) || !canonicalTimestamp(request.expectedReopenAt)
+    || (request.closureStartsAt !== undefined && !canonicalTimestamp(request.closureStartsAt))
+    || (request.incidentKind === "DELAY_OVERRUN" && !request.sourceContestId?.trim()))
     throw new Error("invalid_court_outage_request");
   const derived = repairProblem(base, artifacts, currentAssignments, request);
   const liveChange = proposeLiveChange({ proposalId: request.proposalId, proposedBy: request.proposedBy,
@@ -228,14 +248,18 @@ export function proposeCourtOutageRepair(baseOperationalRevision: number, base: 
     reportHash: canonicalHash({ status: "BLOCKED", proposalId: request.proposalId }), requiredAcknowledgementCodes: [] };
   const proposedLiveState = liveChange.proposedLiveState;
   const checkedLive = liveGuard(base, proposedLiveState, operationalAssignments, request, competitionGuard);
-  const affectedContestIds = [...new Set([...derived.affectedContestIds, ...liveChange.repair.diff.map(({ taskId }) => taskId)])].sort();
+  const affectedContestIds = [...new Set([...derived.affectedContestIds, ...liveChange.repair.diff.map(({ taskId }) => taskId),
+    ...(request.sourceContestId ? [request.sourceContestId] : [])])].sort();
   const definitions = new Map(base.definition.contests.map((contest) => [contest.contestId, contest]));
   const affectedEntrantIds = [...new Set(affectedContestIds.flatMap((contestId) =>
     base.resolvedEntrants[contestId] ?? definitions.get(contestId)?.entrantIds ?? []))].sort();
   const status = liveChange.status === "READY_FOR_APPROVAL" && competitionGuard.status === "PASSED"
     && checkedLive.status === "PASSED" ? "READY_FOR_APPROVAL" as const : "BLOCKED" as const;
+  const incidentKind = request.incidentKind ?? "COURT_OUTAGE";
   const body = { proposalId: request.proposalId, baseOperationalRevision, baseLiveStateProofHash: base.proofHash,
-    courtId: request.courtId, reason: request.reason, expectedReopenAt: request.expectedReopenAt,
+    incidentKind, ...(request.sourceContestId ? { sourceContestId: request.sourceContestId } : {}),
+    courtId: request.courtId, closureStartsAt: request.closureStartsAt ?? request.proposedAt,
+    reason: request.reason, expectedReopenAt: request.expectedReopenAt,
     proposedBy: request.proposedBy, proposedAt: request.proposedAt, status,
     proposedLiveState: status === "READY_FOR_APPROVAL" ? proposedLiveState : null, repair: liveChange.repair,
     affectedContestIds, affectedEntrantIds, operationalAssignments: status === "READY_FOR_APPROVAL" ? operationalAssignments : [],
@@ -244,7 +268,7 @@ export function proposeCourtOutageRepair(baseOperationalRevision: number, base: 
     consequences: status === "READY_FOR_APPROVAL" ? [
       `${affectedContestIds.length} contest(s) require an operational assignment change.`,
       `${affectedEntrantIds.length} participant(s) require a targeted revision update.`,
-      `Court ${request.courtId} is unavailable until ${request.expectedReopenAt}.`,
+      `${incidentKind === "DELAY_OVERRUN" ? "The overrun reserves" : "Court"} ${request.courtId} until ${request.expectedReopenAt}.`,
       "Completed and in-progress results remain immutable.",
     ] : ["No court-outage revision can be published until repair and both Guards pass."],
   };

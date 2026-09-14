@@ -73,6 +73,7 @@ import {
   verifyCourtOutageProposal,
   type CourtOutageProposal,
   type CourtOutageProposalRequest,
+  type DelayOverrunProposalRequest,
 } from "./court-outage-journey.js";
 
 export type CompetitionJourneyStatus = "NEEDS_INPUT" | "DRAFT" | "GUARD_BLOCKED" | "READY_FOR_APPROVAL" | "PUBLISHED";
@@ -118,7 +119,7 @@ interface JourneyPublication {
 }
 
 export interface LiveJourneyPublication {
-  readonly changeKind?: "NO_SHOW" | "COURT_OUTAGE";
+  readonly changeKind?: "NO_SHOW" | "COURT_OUTAGE" | "DELAY_OVERRUN";
   readonly revision: number;
   readonly baseRevision: number;
   readonly proposalHash: string;
@@ -309,7 +310,9 @@ function verifyRecord(record: StoredJourneyRecord): boolean {
         spec: record.compiled.spec, graph: record.compiled.graph, schedule: record.compiled.schedule,
         ...(record.compiled.simulation ? { simulation: record.compiled.simulation } : {}),
       }, assignments, { proposalId: proposal.proposalId, courtId: proposal.courtId, reason: proposal.reason,
-        expectedReopenAt: proposal.expectedReopenAt, proposedBy: proposal.proposedBy, proposedAt: proposal.proposedAt });
+        expectedReopenAt: proposal.expectedReopenAt, proposedBy: proposal.proposedBy, proposedAt: proposal.proposedAt,
+        incidentKind: proposal.incidentKind, closureStartsAt: proposal.closureStartsAt,
+        ...(proposal.sourceContestId ? { sourceContestId: proposal.sourceContestId } : {}) });
       if (regenerated.proposalHash !== proposal.proposalHash) return false;
     } catch { return false; }
   }
@@ -321,9 +324,10 @@ function verifyRecord(record: StoredJourneyRecord): boolean {
       || publicationBody.stateProofHash !== publishedState.state.proofHash
       || publicationBody.revision !== publicationBody.baseRevision + 1
       || publicationBody.approvedBy === publicationBody.publishedBy) return false;
-    if (publicationBody.changeKind === "COURT_OUTAGE") {
+    if (publicationBody.changeKind === "COURT_OUTAGE" || publicationBody.changeKind === "DELAY_OVERRUN") {
       const proposal = record.live.courtOutageProposal;
       if (!proposal || publicationBody.proposalHash !== proposal.proposalHash
+        || publicationBody.changeKind !== proposal.incidentKind
         || publicationBody.optionHash !== proposal.proposalHash || publicationBody.approvedBy === proposal.proposedBy
         || canonicalHash(publicationBody.affectedContestIds) !== canonicalHash(proposal.affectedContestIds)
         || canonicalHash(publicationBody.affectedEntrantIds) !== canonicalHash(proposal.affectedEntrantIds)
@@ -827,12 +831,65 @@ export class CompetitionJourney {
 
   public approveCourtOutage(id: string, expectedOperationalRevision: number, expectedProposalHash: string,
     approvedBy: string, approvedAt: string): CompetitionJourneySnapshot {
+    return this.approveResourceChange(id, expectedOperationalRevision, expectedProposalHash,
+      approvedBy, approvedAt, "COURT_OUTAGE");
+  }
+
+  public proposeDelayOverrun(id: string, expectedOperationalRevision: number, expectedLiveVersion: number,
+    request: DelayOverrunProposalRequest): CompetitionJourneySnapshot {
+    const allowed = ["proposalId", "contestId", "reason", "expectedEndAt", "proposedBy", "proposedAt"];
+    if (!request || typeof request !== "object" || Object.keys(request).some((key) => !allowed.includes(key))
+      || !allowed.every((key) => typeof (request as unknown as Record<string, unknown>)[key] === "string"))
+      throw new Error("invalid_delay_overrun_request");
+    const current = this.require(id);
+    const live = this.requireProjectedLive(current, expectedOperationalRevision);
+    if (live.state.version !== expectedLiveVersion) throw new Error("live_version_conflict");
+    const definition = live.state.definition.contests.find(({ contestId }) => contestId === request.contestId);
+    const contest = live.state.contests[request.contestId];
+    if (!definition || contest?.status !== "IN_PROGRESS" || !contest.actualCourtId)
+      throw new Error("delay_overrun_requires_in_progress_contest");
+    if (Date.parse(request.expectedEndAt) <= Date.parse(definition.scheduledEnd)
+      || Date.parse(request.expectedEndAt) <= Date.parse(request.proposedAt))
+      throw new Error("invalid_delay_overrun_request");
+    if (live.courtOutageProposal?.proposalId === request.proposalId) {
+      const existing = live.courtOutageProposal;
+      const sameRequest = existing.incidentKind === "DELAY_OVERRUN" && existing.sourceContestId === request.contestId
+        && existing.reason === request.reason && existing.expectedReopenAt === request.expectedEndAt
+        && existing.proposedBy === request.proposedBy && existing.proposedAt === request.proposedAt;
+      if (existing.baseLiveStateProofHash === live.state.proofHash && sameRequest) return snapshotOf(current);
+      throw new Error("delay_overrun_proposal_identity_conflict");
+    }
+    const compiled = current.compiled!;
+    const assignments = live.publication?.operationalAssignments ?? authoritativeOperationalAssignments(compiled.schedule);
+    const proposal = proposeCourtOutageRepair(expectedOperationalRevision, live.state, {
+      spec: compiled.spec, graph: compiled.graph, schedule: compiled.schedule,
+      ...(compiled.simulation ? { simulation: compiled.simulation } : {}),
+    }, assignments, { proposalId: request.proposalId, courtId: contest.actualCourtId,
+      reason: request.reason, expectedReopenAt: request.expectedEndAt, proposedBy: request.proposedBy,
+      proposedAt: request.proposedAt, incidentKind: "DELAY_OVERRUN", sourceContestId: request.contestId,
+      closureStartsAt: definition.scheduledEnd });
+    const revisedLive: JourneyLiveState = { ...live, courtOutageProposal: proposal };
+    const revised = sealRecord({ ...withoutSeal(current), updatedAt: request.proposedAt, live: revisedLive });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  public approveDelayOverrun(id: string, expectedOperationalRevision: number, expectedProposalHash: string,
+    approvedBy: string, approvedAt: string): CompetitionJourneySnapshot {
+    return this.approveResourceChange(id, expectedOperationalRevision, expectedProposalHash,
+      approvedBy, approvedAt, "DELAY_OVERRUN");
+  }
+
+  private approveResourceChange(id: string, expectedOperationalRevision: number, expectedProposalHash: string,
+    approvedBy: string, approvedAt: string, expectedKind: "COURT_OUTAGE" | "DELAY_OVERRUN"): CompetitionJourneySnapshot {
     const current = this.require(id);
     const live = this.requireProjectedLive(current, expectedOperationalRevision);
     const proposal = live.courtOutageProposal;
-    if (!proposal || proposal.proposalHash !== expectedProposalHash || !verifyCourtOutageProposal(proposal))
+    if (!proposal || proposal.incidentKind !== expectedKind || proposal.proposalHash !== expectedProposalHash
+      || !verifyCourtOutageProposal(proposal))
       throw new Error("court_outage_proposal_mismatch");
-    if (live.publication?.changeKind === "COURT_OUTAGE" && live.publication.proposalHash === proposal.proposalHash) {
+    if (live.publication?.changeKind === expectedKind && live.publication.proposalHash === proposal.proposalHash) {
       if (live.publication.approvedBy === approvedBy) return snapshotOf(current);
       throw new Error("court_outage_revision_already_published");
     }
@@ -848,13 +905,15 @@ export class CompetitionJourney {
       spec: compiled.spec, graph: compiled.graph, schedule: compiled.schedule,
       ...(compiled.simulation ? { simulation: compiled.simulation } : {}),
     }, assignments, { proposalId: proposal.proposalId, courtId: proposal.courtId, reason: proposal.reason,
-      expectedReopenAt: proposal.expectedReopenAt, proposedBy: proposal.proposedBy, proposedAt: proposal.proposedAt });
+      expectedReopenAt: proposal.expectedReopenAt, proposedBy: proposal.proposedBy, proposedAt: proposal.proposedAt,
+      incidentKind: proposal.incidentKind, closureStartsAt: proposal.closureStartsAt,
+      ...(proposal.sourceContestId ? { sourceContestId: proposal.sourceContestId } : {}) });
     if (regenerated.proposalHash !== proposal.proposalHash) throw new Error("court_outage_guard_blocked_publication");
     const proposedLiveState = approveCourtOutageProposal(regenerated, approvedBy, approvedAt);
     const publishedBy = "competition-journey.live-publisher" as const;
     if (approvedBy === publishedBy) throw new Error("live_publication_requires_independent_actor");
     const publicationBody = {
-      changeKind: "COURT_OUTAGE" as const,
+      changeKind: proposal.incidentKind,
       revision: expectedOperationalRevision + 1, baseRevision: expectedOperationalRevision,
       proposalHash: proposal.proposalHash, optionHash: proposal.proposalHash,
       stateProofHash: proposedLiveState.proofHash, stateVersion: proposedLiveState.version,

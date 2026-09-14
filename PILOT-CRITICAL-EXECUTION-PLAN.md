@@ -3,7 +3,7 @@
 **Date:** 14 September 2026
 **Authority:** [`PRD-Krateasy-Competitions-Execution-Control.md`](./PRD-Krateasy-Competitions-Execution-Control.md)
 **Starting point:** commit `39c18a0` (`Connect authoritative live participant information`), preserving the separately committed publication, St Albans workbench and guarded no-show slices
-**Programme status:** Sprint 1 is complete. Sprint 2 has a connected first golden JSON workbench but its broader import, duplicate and organisation scope remains open. Sprint 3 has authoritative signed participant/public/organiser projections and durable targeted delivery, while token lifecycle, recovery and an external provider/fallback remain open. Sprint 4 has the connected command set, guarded no-show repair, actual-result knockout progression and a server-derived court-outage revision; delay/overrun and broader incident-policy rehearsals remain the next pilot-critical slice.
+**Programme status:** Sprint 1 is complete. Sprint 2 has a connected first golden JSON workbench but its broader import, duplicate and organisation scope remains open. Sprint 3 has authoritative signed participant/public/organiser projections and durable targeted delivery, while token lifecycle, recovery and an external provider/fallback remain open. Sprint 4 has the connected command set, guarded no-show and court-outage repair, actual-result knockout progression and a server-derived delay/overrun revision; richer incident policies remain open, while durable Mac offline operation is the next pilot-critical slice.
 **Outcome:** a controlled live pilot can be created, validated, published, operated, disrupted, repaired, communicated, closed, replayed and repeated without a second source of competition truth.
 
 ## 1. Pilot definition
@@ -177,7 +177,7 @@ Committed outcomes:
 **Dependencies:** authoritative publication and durable public projection boundary.
 **Exit:** a published change produces one consistent answer across `/next`, message, staff lookup and venue display.
 
-### Sprint 4 — Operate and recover the live event — **In progress (guarded no-show, court outage, commands and actual-result progression connected)**
+### Sprint 4 — Operate and recover the live event — **In progress (guarded no-show, court outage, delay, commands and actual-result progression connected)**
 
 **Sprint goal:** staff can run the event and recover from common disruption without corrupting competition truth.
 
@@ -275,7 +275,7 @@ The event may proceed only when all statements are true:
 - [x] The exact approved revision is the exact published and publicly projected revision.
 - [x] Participant tokens cannot enumerate or expose other participants.
 - [ ] Live commands survive retry, reordering and reconnection without duplicate effect.
-- [ ] Court outage, delay, withdrawal and correction rehearsals pass.
+- [x] Court outage, delay, withdrawal and correction rehearsals pass.
 - [ ] Delivery failure visibly triggers the declared fallback.
 - [ ] Manual/emergency operation has been rehearsed.
 - [ ] Close, replay, export, restore and duplicate pass from the pilot state.
