@@ -1,0 +1,8 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/tournament-schema" },
+    { "path": "./packages/competition-engine" },
+    { "path": "./apps/compiler-web" }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "@tournament-os/compiler-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tournament-os/tournament-schema": "0.1.0",
+    "@tournament-os/competition-engine": "0.1.0"
+  }
+}

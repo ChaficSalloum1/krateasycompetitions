@@ -1,0 +1,1661 @@
+{
+  "generatedAt": "2026-09-07T00:00:00.000Z",
+  "sourceSpecification": "/Users/chaficsalloum/Downloads/PLAY_AND_KONNECT_TOURNAMENT_SPECIFICATION.md",
+  "timezone": "Asia/Beirut",
+  "status": {
+    "scenario": "CERTIFIED",
+    "schedule": "FEASIBLE",
+    "quality": "CERTIFIED"
+  },
+  "counts": {
+    "entrants": 47,
+    "contests": 98,
+    "courts": 7,
+    "courtMinutes": 3080
+  },
+  "timing": {
+    "opening": "2026-09-05T12:00:00+03:00",
+    "targetFinish": "2026-09-05T20:00:00+03:00",
+    "actualFinish": "2026-09-05T16:30:00.000Z",
+    "makespanMinutes": 450,
+    "independentlyVerifiedLowerBoundMinutes": 440,
+    "provenGapMinutes": 10
+  },
+  "quality": {
+    "makespanMinutes": 450,
+    "avoidableIdleMinutes": 0,
+    "unavoidableIdleMinutes": 70,
+    "divisionInterleavingTransitions": 45,
+    "longestDivisionClump": 6,
+    "poolRotationTransitions": 47,
+    "repeatedPoolAdjacencies": 3,
+    "criticalPathUnlockDelay": 172.67418032786884,
+    "averagePlayerWaitMinutes": 40.45662100456621,
+    "maximumPlayerWaitMinutes": 270,
+    "backToBackCount": 109,
+    "headlineFinalGapMinutes": 0,
+    "headlineFinalIsClimax": true
+  },
+  "proofs": {
+    "specHash": "4d469a1a39c313e64eede90094a90899fa55c9923865f8fa652f0aeded2a9058",
+    "graphHash": "0907e5aabfdaf8f3c8ee2a0cc338c4e5d78355692918ffdaf87627ca5d4b3d07",
+    "scheduleHash": "bdc3e2221f2ecbf059a4f21023399c81f058ac08827713422ae4df7c80d9d131",
+    "validationHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "certificationHash": "2393a70ad703fea2681e2dd54608017dbe763ee7de490ee6792446aba02f0585",
+    "scheduleQualityHash": "09fdb49626f18b7ad74b494286270c3f5028d3756c11bf8e91a9e70442a0412a",
+    "cpSatAdapterHash": "f3e19c1f2991baacca9a969a30095cc49c5e3ae24ed0593e139262b15d0c246c",
+    "backendProofHash": "e981d15afb04f0b4f91d30e795280909aeaacc2685452be35aaba042853bfd4f"
+  },
+  "solver": {
+    "status": "FEASIBLE",
+    "backend": "9.15.6755",
+    "objective": {
+      "sense": "MINIMIZE_MAKESPAN",
+      "valueMinutes": 450,
+      "bestBoundMinutes": 210,
+      "absoluteGapMinutes": 240,
+      "relativeGap": 0.5333333333333333,
+      "optimal": false
+    },
+    "independentlyValidatedFindings": []
+  },
+  "requirements": [
+    {
+      "requirementId": "R2",
+      "sourceText": "Seven courts from midday",
+      "metricIds": [
+        "resource-availability",
+        "avoidable-idle"
+      ]
+    },
+    {
+      "requirementId": "R10",
+      "sourceText": "Advanced and Intermediate main-cup semis are 45 minutes and finals 60",
+      "metricIds": [
+        "duration-conformance",
+        "makespan"
+      ]
+    },
+    {
+      "requirementId": "R11",
+      "sourceText": "Everything else is 25 minutes plus five minutes turnaround",
+      "metricIds": [
+        "duration-conformance",
+        "makespan"
+      ]
+    },
+    {
+      "requirementId": "R12",
+      "sourceText": "No mandatory rest; avoid unnecessary back-to-back games when equivalent alternatives exist",
+      "metricIds": [
+        "avoidable-idle",
+        "player-wait",
+        "back-to-back",
+        "pool-rotation",
+        "division-interleaving"
+      ]
+    },
+    {
+      "requirementId": "R13",
+      "sourceText": "Finish as early as possible",
+      "metricIds": [
+        "makespan",
+        "critical-path-unlock",
+        "headline-final-climax"
+      ]
+    },
+    {
+      "requirementId": "R14",
+      "sourceText": "Advanced and Intermediate Konnect finals should normally form the event climax",
+      "metricIds": [
+        "avoidable-idle",
+        "player-wait",
+        "back-to-back",
+        "pool-rotation",
+        "division-interleaving"
+      ]
+    }
+  ],
+  "schedule": [
+    {
+      "startLocal": "05/09/2026 12:00",
+      "endLocal": "05/09/2026 12:30",
+      "startUtc": "2026-09-05T09:00:00.000Z",
+      "endUtc": "2026-09-05T09:30:00.000Z",
+      "court": "venue.courts.1",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P3.R1.M1",
+      "possibleEntrantIds": [
+        "advanced.team.5",
+        "advanced.team.6"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 12:00",
+      "endLocal": "05/09/2026 12:30",
+      "startUtc": "2026-09-05T09:00:00.000Z",
+      "endUtc": "2026-09-05T09:30:00.000Z",
+      "court": "venue.courts.2",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P1.R1.M5",
+      "possibleEntrantIds": [
+        "advanced.team.11",
+        "advanced.team.2"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 12:00",
+      "endLocal": "05/09/2026 12:30",
+      "startUtc": "2026-09-05T09:00:00.000Z",
+      "endUtc": "2026-09-05T09:30:00.000Z",
+      "court": "venue.courts.3",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P2.R1.M3",
+      "possibleEntrantIds": [
+        "advanced.team.3",
+        "advanced.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 12:00",
+      "endLocal": "05/09/2026 12:30",
+      "startUtc": "2026-09-05T09:00:00.000Z",
+      "endUtc": "2026-09-05T09:30:00.000Z",
+      "court": "venue.courts.4",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P5.R1.M3",
+      "possibleEntrantIds": [
+        "beginner.team.17",
+        "beginner.team.8"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 12:00",
+      "endLocal": "05/09/2026 12:30",
+      "startUtc": "2026-09-05T09:00:00.000Z",
+      "endUtc": "2026-09-05T09:30:00.000Z",
+      "court": "venue.courts.5",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P3.R1.M1",
+      "possibleEntrantIds": [
+        "beginner.team.10",
+        "beginner.team.3"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 12:00",
+      "endLocal": "05/09/2026 12:30",
+      "startUtc": "2026-09-05T09:00:00.000Z",
+      "endUtc": "2026-09-05T09:30:00.000Z",
+      "court": "venue.courts.6",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P1.R1.M2",
+      "possibleEntrantIds": [
+        "advanced.team.1",
+        "advanced.team.10"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 12:00",
+      "endLocal": "05/09/2026 12:30",
+      "startUtc": "2026-09-05T09:00:00.000Z",
+      "endUtc": "2026-09-05T09:30:00.000Z",
+      "court": "venue.courts.7",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P2.R1.M4",
+      "possibleEntrantIds": [
+        "advanced.team.4",
+        "advanced.team.8"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 12:30",
+      "endLocal": "05/09/2026 13:00",
+      "startUtc": "2026-09-05T09:30:00.000Z",
+      "endUtc": "2026-09-05T10:00:00.000Z",
+      "court": "venue.courts.1",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P3.R1.M3",
+      "possibleEntrantIds": [
+        "intermediate.team.13",
+        "intermediate.team.8"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 12:30",
+      "endLocal": "05/09/2026 13:00",
+      "startUtc": "2026-09-05T09:30:00.000Z",
+      "endUtc": "2026-09-05T10:00:00.000Z",
+      "court": "venue.courts.2",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P1.R1.M6",
+      "possibleEntrantIds": [
+        "advanced.team.10",
+        "advanced.team.11"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 12:30",
+      "endLocal": "05/09/2026 13:00",
+      "startUtc": "2026-09-05T09:30:00.000Z",
+      "endUtc": "2026-09-05T10:00:00.000Z",
+      "court": "venue.courts.3",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P1.R1.M5",
+      "possibleEntrantIds": [
+        "intermediate.team.10",
+        "intermediate.team.17"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 12:30",
+      "endLocal": "05/09/2026 13:00",
+      "startUtc": "2026-09-05T09:30:00.000Z",
+      "endUtc": "2026-09-05T10:00:00.000Z",
+      "court": "venue.courts.4",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P3.R1.M3",
+      "possibleEntrantIds": [
+        "advanced.team.6",
+        "advanced.team.7"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 12:30",
+      "endLocal": "05/09/2026 13:00",
+      "startUtc": "2026-09-05T09:30:00.000Z",
+      "endUtc": "2026-09-05T10:00:00.000Z",
+      "court": "venue.courts.5",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P2.R1.M1",
+      "possibleEntrantIds": [
+        "advanced.team.3",
+        "advanced.team.4"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 12:30",
+      "endLocal": "05/09/2026 13:00",
+      "startUtc": "2026-09-05T09:30:00.000Z",
+      "endUtc": "2026-09-05T10:00:00.000Z",
+      "court": "venue.courts.6",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P1.R1.M1",
+      "possibleEntrantIds": [
+        "advanced.team.1",
+        "advanced.team.2"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 12:30",
+      "endLocal": "05/09/2026 13:00",
+      "startUtc": "2026-09-05T09:30:00.000Z",
+      "endUtc": "2026-09-05T10:00:00.000Z",
+      "court": "venue.courts.7",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P2.R1.M6",
+      "possibleEntrantIds": [
+        "advanced.team.8",
+        "advanced.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 13:00",
+      "endLocal": "05/09/2026 13:30",
+      "startUtc": "2026-09-05T10:00:00.000Z",
+      "endUtc": "2026-09-05T10:30:00.000Z",
+      "court": "venue.courts.1",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P3.R1.M2",
+      "possibleEntrantIds": [
+        "intermediate.team.13",
+        "intermediate.team.3"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 13:00",
+      "endLocal": "05/09/2026 13:30",
+      "startUtc": "2026-09-05T10:00:00.000Z",
+      "endUtc": "2026-09-05T10:30:00.000Z",
+      "court": "venue.courts.2",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P1.R1.M4",
+      "possibleEntrantIds": [
+        "intermediate.team.10",
+        "intermediate.team.11"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 13:00",
+      "endLocal": "05/09/2026 13:30",
+      "startUtc": "2026-09-05T10:00:00.000Z",
+      "endUtc": "2026-09-05T10:30:00.000Z",
+      "court": "venue.courts.3",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P2.R1.M5",
+      "possibleEntrantIds": [
+        "advanced.team.4",
+        "advanced.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 13:00",
+      "endLocal": "05/09/2026 13:30",
+      "startUtc": "2026-09-05T10:00:00.000Z",
+      "endUtc": "2026-09-05T10:30:00.000Z",
+      "court": "venue.courts.4",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P2.R1.M2",
+      "possibleEntrantIds": [
+        "advanced.team.3",
+        "advanced.team.8"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 13:00",
+      "endLocal": "05/09/2026 13:30",
+      "startUtc": "2026-09-05T10:00:00.000Z",
+      "endUtc": "2026-09-05T10:30:00.000Z",
+      "court": "venue.courts.5",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P3.R1.M2",
+      "possibleEntrantIds": [
+        "advanced.team.5",
+        "advanced.team.7"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 13:00",
+      "endLocal": "05/09/2026 13:30",
+      "startUtc": "2026-09-05T10:00:00.000Z",
+      "endUtc": "2026-09-05T10:30:00.000Z",
+      "court": "venue.courts.6",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P1.R1.M3",
+      "possibleEntrantIds": [
+        "advanced.team.1",
+        "advanced.team.11"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 13:00",
+      "endLocal": "05/09/2026 13:30",
+      "startUtc": "2026-09-05T10:00:00.000Z",
+      "endUtc": "2026-09-05T10:30:00.000Z",
+      "court": "venue.courts.7",
+      "division": "advanced",
+      "stage": "advanced.pools",
+      "round": "pool-round-1",
+      "contestId": "advanced.pools.P1.R1.M4",
+      "possibleEntrantIds": [
+        "advanced.team.10",
+        "advanced.team.2"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 13:30",
+      "endLocal": "05/09/2026 14:00",
+      "startUtc": "2026-09-05T10:30:00.000Z",
+      "endUtc": "2026-09-05T11:00:00.000Z",
+      "court": "venue.courts.1",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P3.R1.M1",
+      "possibleEntrantIds": [
+        "intermediate.team.3",
+        "intermediate.team.8"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 13:30",
+      "endLocal": "05/09/2026 14:00",
+      "startUtc": "2026-09-05T10:30:00.000Z",
+      "endUtc": "2026-09-05T11:00:00.000Z",
+      "court": "venue.courts.2",
+      "division": "advanced",
+      "stage": "advanced.consolation",
+      "round": "round-1",
+      "contestId": "advanced.consolation.R1.M2",
+      "possibleEntrantIds": [
+        "advanced.team.10",
+        "advanced.team.3"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 13:30",
+      "endLocal": "05/09/2026 14:00",
+      "startUtc": "2026-09-05T10:30:00.000Z",
+      "endUtc": "2026-09-05T11:00:00.000Z",
+      "court": "venue.courts.3",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P4.R1.M2",
+      "possibleEntrantIds": [
+        "beginner.team.16",
+        "beginner.team.4"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 13:30",
+      "endLocal": "05/09/2026 14:00",
+      "startUtc": "2026-09-05T10:30:00.000Z",
+      "endUtc": "2026-09-05T11:00:00.000Z",
+      "court": "venue.courts.4",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P1.R1.M6",
+      "possibleEntrantIds": [
+        "beginner.team.13",
+        "beginner.team.19"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 13:30",
+      "endLocal": "05/09/2026 14:00",
+      "startUtc": "2026-09-05T10:30:00.000Z",
+      "endUtc": "2026-09-05T11:00:00.000Z",
+      "court": "venue.courts.5",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P2.R1.M2",
+      "possibleEntrantIds": [
+        "beginner.team.14",
+        "beginner.team.2"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 13:30",
+      "endLocal": "05/09/2026 14:00",
+      "startUtc": "2026-09-05T10:30:00.000Z",
+      "endUtc": "2026-09-05T11:00:00.000Z",
+      "court": "venue.courts.6",
+      "division": "advanced",
+      "stage": "advanced.consolation",
+      "round": "round-1",
+      "contestId": "advanced.consolation.R1.M3",
+      "possibleEntrantIds": [
+        "advanced.team.11",
+        "advanced.team.6"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 13:30",
+      "endLocal": "05/09/2026 14:00",
+      "startUtc": "2026-09-05T10:30:00.000Z",
+      "endUtc": "2026-09-05T11:00:00.000Z",
+      "court": "venue.courts.7",
+      "division": "advanced",
+      "stage": "advanced.consolation",
+      "round": "round-1",
+      "contestId": "advanced.consolation.R1.M4",
+      "possibleEntrantIds": [
+        "advanced.team.4",
+        "advanced.team.7"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 14:00",
+      "endLocal": "05/09/2026 14:30",
+      "startUtc": "2026-09-05T11:00:00.000Z",
+      "endUtc": "2026-09-05T11:30:00.000Z",
+      "court": "venue.courts.1",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P4.R1.M1",
+      "possibleEntrantIds": [
+        "intermediate.team.4",
+        "intermediate.team.7"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 14:00",
+      "endLocal": "05/09/2026 14:30",
+      "startUtc": "2026-09-05T11:00:00.000Z",
+      "endUtc": "2026-09-05T11:30:00.000Z",
+      "court": "venue.courts.2",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P2.R1.M3",
+      "possibleEntrantIds": [
+        "intermediate.team.16",
+        "intermediate.team.2"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 14:00",
+      "endLocal": "05/09/2026 14:30",
+      "startUtc": "2026-09-05T11:00:00.000Z",
+      "endUtc": "2026-09-05T11:30:00.000Z",
+      "court": "venue.courts.3",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P3.R1.M3",
+      "possibleEntrantIds": [
+        "beginner.team.10",
+        "beginner.team.15"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 14:00",
+      "endLocal": "05/09/2026 14:30",
+      "startUtc": "2026-09-05T11:00:00.000Z",
+      "endUtc": "2026-09-05T11:30:00.000Z",
+      "court": "venue.courts.4",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P5.R1.M2",
+      "possibleEntrantIds": [
+        "beginner.team.17",
+        "beginner.team.5"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 14:00",
+      "endLocal": "05/09/2026 14:30",
+      "startUtc": "2026-09-05T11:00:00.000Z",
+      "endUtc": "2026-09-05T11:30:00.000Z",
+      "court": "venue.courts.5",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P4.R1.M3",
+      "possibleEntrantIds": [
+        "beginner.team.16",
+        "beginner.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 14:00",
+      "endLocal": "05/09/2026 14:30",
+      "startUtc": "2026-09-05T11:00:00.000Z",
+      "endUtc": "2026-09-05T11:30:00.000Z",
+      "court": "venue.courts.6",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P2.R1.M1",
+      "possibleEntrantIds": [
+        "beginner.team.11",
+        "beginner.team.2"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 14:00",
+      "endLocal": "05/09/2026 14:30",
+      "startUtc": "2026-09-05T11:00:00.000Z",
+      "endUtc": "2026-09-05T11:30:00.000Z",
+      "court": "venue.courts.7",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P1.R1.M5",
+      "possibleEntrantIds": [
+        "beginner.team.12",
+        "beginner.team.19"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 14:30",
+      "endLocal": "05/09/2026 15:00",
+      "startUtc": "2026-09-05T11:30:00.000Z",
+      "endUtc": "2026-09-05T12:00:00.000Z",
+      "court": "venue.courts.1",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P2.R1.M6",
+      "possibleEntrantIds": [
+        "intermediate.team.12",
+        "intermediate.team.16"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 14:30",
+      "endLocal": "05/09/2026 15:00",
+      "startUtc": "2026-09-05T11:30:00.000Z",
+      "endUtc": "2026-09-05T12:00:00.000Z",
+      "court": "venue.courts.2",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P1.R1.M1",
+      "possibleEntrantIds": [
+        "intermediate.team.1",
+        "intermediate.team.10"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 14:30",
+      "endLocal": "05/09/2026 15:00",
+      "startUtc": "2026-09-05T11:30:00.000Z",
+      "endUtc": "2026-09-05T12:00:00.000Z",
+      "court": "venue.courts.3",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P3.R1.M2",
+      "possibleEntrantIds": [
+        "beginner.team.15",
+        "beginner.team.3"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 14:30",
+      "endLocal": "05/09/2026 15:00",
+      "startUtc": "2026-09-05T11:30:00.000Z",
+      "endUtc": "2026-09-05T12:00:00.000Z",
+      "court": "venue.courts.4",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P1.R1.M4",
+      "possibleEntrantIds": [
+        "beginner.team.12",
+        "beginner.team.13"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 14:30",
+      "endLocal": "05/09/2026 15:00",
+      "startUtc": "2026-09-05T11:30:00.000Z",
+      "endUtc": "2026-09-05T12:00:00.000Z",
+      "court": "venue.courts.5",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P1.R1.M3",
+      "possibleEntrantIds": [
+        "beginner.team.1",
+        "beginner.team.19"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 14:30",
+      "endLocal": "05/09/2026 15:00",
+      "startUtc": "2026-09-05T11:30:00.000Z",
+      "endUtc": "2026-09-05T12:00:00.000Z",
+      "court": "venue.courts.6",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P6.R1.M3",
+      "possibleEntrantIds": [
+        "beginner.team.18",
+        "beginner.team.7"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 14:30",
+      "endLocal": "05/09/2026 15:20",
+      "startUtc": "2026-09-05T11:30:00.000Z",
+      "endUtc": "2026-09-05T12:20:00.000Z",
+      "court": "venue.courts.7",
+      "division": "advanced",
+      "stage": "advanced.main",
+      "round": "round-1",
+      "contestId": "advanced.main.R1.M2",
+      "possibleEntrantIds": [
+        "advanced.team.1",
+        "advanced.team.5"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 15:00",
+      "endLocal": "05/09/2026 15:30",
+      "startUtc": "2026-09-05T12:00:00.000Z",
+      "endUtc": "2026-09-05T12:30:00.000Z",
+      "court": "venue.courts.1",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P2.R1.M5",
+      "possibleEntrantIds": [
+        "intermediate.team.16",
+        "intermediate.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 15:00",
+      "endLocal": "05/09/2026 15:30",
+      "startUtc": "2026-09-05T12:00:00.000Z",
+      "endUtc": "2026-09-05T12:30:00.000Z",
+      "court": "venue.courts.2",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P1.R1.M2",
+      "possibleEntrantIds": [
+        "intermediate.team.1",
+        "intermediate.team.11"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 15:00",
+      "endLocal": "05/09/2026 15:30",
+      "startUtc": "2026-09-05T12:00:00.000Z",
+      "endUtc": "2026-09-05T12:30:00.000Z",
+      "court": "venue.courts.3",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P4.R1.M1",
+      "possibleEntrantIds": [
+        "beginner.team.4",
+        "beginner.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 15:00",
+      "endLocal": "05/09/2026 15:30",
+      "startUtc": "2026-09-05T12:00:00.000Z",
+      "endUtc": "2026-09-05T12:30:00.000Z",
+      "court": "venue.courts.4",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P6.R1.M1",
+      "possibleEntrantIds": [
+        "beginner.team.6",
+        "beginner.team.7"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 15:00",
+      "endLocal": "05/09/2026 15:30",
+      "startUtc": "2026-09-05T12:00:00.000Z",
+      "endUtc": "2026-09-05T12:30:00.000Z",
+      "court": "venue.courts.5",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P1.R1.M2",
+      "possibleEntrantIds": [
+        "beginner.team.1",
+        "beginner.team.13"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 15:00",
+      "endLocal": "05/09/2026 15:30",
+      "startUtc": "2026-09-05T12:00:00.000Z",
+      "endUtc": "2026-09-05T12:30:00.000Z",
+      "court": "venue.courts.6",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P5.R1.M1",
+      "possibleEntrantIds": [
+        "beginner.team.5",
+        "beginner.team.8"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 15:30",
+      "endLocal": "05/09/2026 16:00",
+      "startUtc": "2026-09-05T12:30:00.000Z",
+      "endUtc": "2026-09-05T13:00:00.000Z",
+      "court": "venue.courts.1",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P4.R1.M3",
+      "possibleEntrantIds": [
+        "intermediate.team.14",
+        "intermediate.team.7"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 15:30",
+      "endLocal": "05/09/2026 16:00",
+      "startUtc": "2026-09-05T12:30:00.000Z",
+      "endUtc": "2026-09-05T13:00:00.000Z",
+      "court": "venue.courts.2",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P1.R1.M3",
+      "possibleEntrantIds": [
+        "intermediate.team.1",
+        "intermediate.team.17"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 15:30",
+      "endLocal": "05/09/2026 16:00",
+      "startUtc": "2026-09-05T12:30:00.000Z",
+      "endUtc": "2026-09-05T13:00:00.000Z",
+      "court": "venue.courts.3",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P2.R1.M3",
+      "possibleEntrantIds": [
+        "beginner.team.11",
+        "beginner.team.14"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 15:30",
+      "endLocal": "05/09/2026 16:00",
+      "startUtc": "2026-09-05T12:30:00.000Z",
+      "endUtc": "2026-09-05T13:00:00.000Z",
+      "court": "venue.courts.4",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P2.R1.M4",
+      "possibleEntrantIds": [
+        "intermediate.team.12",
+        "intermediate.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 15:30",
+      "endLocal": "05/09/2026 16:00",
+      "startUtc": "2026-09-05T12:30:00.000Z",
+      "endUtc": "2026-09-05T13:00:00.000Z",
+      "court": "venue.courts.5",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P5.R1.M2",
+      "possibleEntrantIds": [
+        "intermediate.team.15",
+        "intermediate.team.5"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 15:30",
+      "endLocal": "05/09/2026 16:00",
+      "startUtc": "2026-09-05T12:30:00.000Z",
+      "endUtc": "2026-09-05T13:00:00.000Z",
+      "court": "venue.courts.6",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P1.R1.M1",
+      "possibleEntrantIds": [
+        "beginner.team.1",
+        "beginner.team.12"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 15:30",
+      "endLocal": "05/09/2026 16:00",
+      "startUtc": "2026-09-05T12:30:00.000Z",
+      "endUtc": "2026-09-05T13:00:00.000Z",
+      "court": "venue.courts.7",
+      "division": "beginner",
+      "stage": "beginner.pools",
+      "round": "pool-round-1",
+      "contestId": "beginner.pools.P6.R1.M2",
+      "possibleEntrantIds": [
+        "beginner.team.18",
+        "beginner.team.6"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 16:00",
+      "endLocal": "05/09/2026 16:30",
+      "startUtc": "2026-09-05T13:00:00.000Z",
+      "endUtc": "2026-09-05T13:30:00.000Z",
+      "court": "venue.courts.1",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P5.R1.M1",
+      "possibleEntrantIds": [
+        "intermediate.team.5",
+        "intermediate.team.6"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 16:00",
+      "endLocal": "05/09/2026 16:30",
+      "startUtc": "2026-09-05T13:00:00.000Z",
+      "endUtc": "2026-09-05T13:30:00.000Z",
+      "court": "venue.courts.2",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P2.R1.M1",
+      "possibleEntrantIds": [
+        "intermediate.team.2",
+        "intermediate.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 16:00",
+      "endLocal": "05/09/2026 16:30",
+      "startUtc": "2026-09-05T13:00:00.000Z",
+      "endUtc": "2026-09-05T13:30:00.000Z",
+      "court": "venue.courts.3",
+      "division": "beginner",
+      "stage": "beginner.consolation",
+      "round": "round-1",
+      "contestId": "beginner.consolation.R1.M5",
+      "possibleEntrantIds": [
+        "beginner.team.12",
+        "beginner.team.8"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 16:00",
+      "endLocal": "05/09/2026 16:30",
+      "startUtc": "2026-09-05T13:00:00.000Z",
+      "endUtc": "2026-09-05T13:30:00.000Z",
+      "court": "venue.courts.4",
+      "division": "beginner",
+      "stage": "beginner.main",
+      "round": "round-1",
+      "contestId": "beginner.main.R1.M1",
+      "possibleEntrantIds": [
+        "beginner.team.2",
+        "beginner.team.4"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 16:00",
+      "endLocal": "05/09/2026 16:30",
+      "startUtc": "2026-09-05T13:00:00.000Z",
+      "endUtc": "2026-09-05T13:30:00.000Z",
+      "court": "venue.courts.5",
+      "division": "beginner",
+      "stage": "beginner.consolation",
+      "round": "round-1",
+      "contestId": "beginner.consolation.R1.M6",
+      "possibleEntrantIds": [
+        "beginner.team.15",
+        "beginner.team.16"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 16:00",
+      "endLocal": "05/09/2026 16:30",
+      "startUtc": "2026-09-05T13:00:00.000Z",
+      "endUtc": "2026-09-05T13:30:00.000Z",
+      "court": "venue.courts.6",
+      "division": "beginner",
+      "stage": "beginner.consolation",
+      "round": "round-1",
+      "contestId": "beginner.consolation.R1.M8",
+      "possibleEntrantIds": [
+        "beginner.team.10",
+        "beginner.team.14"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 16:00",
+      "endLocal": "05/09/2026 16:30",
+      "startUtc": "2026-09-05T13:00:00.000Z",
+      "endUtc": "2026-09-05T13:30:00.000Z",
+      "court": "venue.courts.7",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P1.R1.M6",
+      "possibleEntrantIds": [
+        "intermediate.team.11",
+        "intermediate.team.17"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 16:30",
+      "endLocal": "05/09/2026 17:00",
+      "startUtc": "2026-09-05T13:30:00.000Z",
+      "endUtc": "2026-09-05T14:00:00.000Z",
+      "court": "venue.courts.1",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P4.R1.M2",
+      "possibleEntrantIds": [
+        "intermediate.team.14",
+        "intermediate.team.4"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 16:30",
+      "endLocal": "05/09/2026 17:00",
+      "startUtc": "2026-09-05T13:30:00.000Z",
+      "endUtc": "2026-09-05T14:00:00.000Z",
+      "court": "venue.courts.2",
+      "division": "beginner",
+      "stage": "beginner.consolation",
+      "round": "round-1",
+      "contestId": "beginner.consolation.R1.M3",
+      "possibleEntrantIds": [
+        "beginner.team.6",
+        "beginner.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 16:30",
+      "endLocal": "05/09/2026 17:00",
+      "startUtc": "2026-09-05T13:30:00.000Z",
+      "endUtc": "2026-09-05T14:00:00.000Z",
+      "court": "venue.courts.3",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P5.R1.M3",
+      "possibleEntrantIds": [
+        "intermediate.team.15",
+        "intermediate.team.6"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 16:30",
+      "endLocal": "05/09/2026 17:00",
+      "startUtc": "2026-09-05T13:30:00.000Z",
+      "endUtc": "2026-09-05T14:00:00.000Z",
+      "court": "venue.courts.4",
+      "division": "beginner",
+      "stage": "beginner.consolation",
+      "round": "round-1",
+      "contestId": "beginner.consolation.R1.M2",
+      "possibleEntrantIds": [
+        "beginner.team.11",
+        "beginner.team.17"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 16:30",
+      "endLocal": "05/09/2026 17:00",
+      "startUtc": "2026-09-05T13:30:00.000Z",
+      "endUtc": "2026-09-05T14:00:00.000Z",
+      "court": "venue.courts.5",
+      "division": "beginner",
+      "stage": "beginner.consolation",
+      "round": "round-1",
+      "contestId": "beginner.consolation.R1.M4",
+      "possibleEntrantIds": [
+        "beginner.team.13",
+        "beginner.team.5"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 16:30",
+      "endLocal": "05/09/2026 17:00",
+      "startUtc": "2026-09-05T13:30:00.000Z",
+      "endUtc": "2026-09-05T14:00:00.000Z",
+      "court": "venue.courts.6",
+      "division": "intermediate",
+      "stage": "intermediate.pools",
+      "round": "pool-round-1",
+      "contestId": "intermediate.pools.P2.R1.M2",
+      "possibleEntrantIds": [
+        "intermediate.team.12",
+        "intermediate.team.2"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 16:30",
+      "endLocal": "05/09/2026 17:20",
+      "startUtc": "2026-09-05T13:30:00.000Z",
+      "endUtc": "2026-09-05T14:20:00.000Z",
+      "court": "venue.courts.7",
+      "division": "advanced",
+      "stage": "advanced.main",
+      "round": "round-1",
+      "contestId": "advanced.main.R1.M1",
+      "possibleEntrantIds": [
+        "advanced.team.2",
+        "advanced.team.8"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 17:00",
+      "endLocal": "05/09/2026 17:50",
+      "startUtc": "2026-09-05T14:00:00.000Z",
+      "endUtc": "2026-09-05T14:50:00.000Z",
+      "court": "venue.courts.1",
+      "division": "intermediate",
+      "stage": "intermediate.main",
+      "round": "round-1",
+      "contestId": "intermediate.main.R1.M2",
+      "possibleEntrantIds": [
+        "intermediate.team.1",
+        "intermediate.team.4"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 17:00",
+      "endLocal": "05/09/2026 17:30",
+      "startUtc": "2026-09-05T14:00:00.000Z",
+      "endUtc": "2026-09-05T14:30:00.000Z",
+      "court": "venue.courts.2",
+      "division": "intermediate",
+      "stage": "intermediate.consolation",
+      "round": "round-1",
+      "contestId": "intermediate.consolation.R1.M8",
+      "possibleEntrantIds": [
+        "intermediate.team.3",
+        "intermediate.team.8"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 17:00",
+      "endLocal": "05/09/2026 17:30",
+      "startUtc": "2026-09-05T14:00:00.000Z",
+      "endUtc": "2026-09-05T14:30:00.000Z",
+      "court": "venue.courts.3",
+      "division": "beginner",
+      "stage": "beginner.main",
+      "round": "round-1",
+      "contestId": "beginner.main.R1.M2",
+      "possibleEntrantIds": [
+        "beginner.team.1",
+        "beginner.team.18"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 17:00",
+      "endLocal": "05/09/2026 17:30",
+      "startUtc": "2026-09-05T14:00:00.000Z",
+      "endUtc": "2026-09-05T14:30:00.000Z",
+      "court": "venue.courts.4",
+      "division": "beginner",
+      "stage": "beginner.consolation",
+      "round": "round-2",
+      "contestId": "beginner.consolation.R2.M1",
+      "possibleEntrantIds": [
+        "beginner.team.11",
+        "beginner.team.17",
+        "beginner.team.3"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 17:00",
+      "endLocal": "05/09/2026 17:30",
+      "startUtc": "2026-09-05T14:00:00.000Z",
+      "endUtc": "2026-09-05T14:30:00.000Z",
+      "court": "venue.courts.5",
+      "division": "intermediate",
+      "stage": "intermediate.consolation",
+      "round": "round-1",
+      "contestId": "intermediate.consolation.R1.M4",
+      "possibleEntrantIds": [
+        "intermediate.team.10",
+        "intermediate.team.7"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 17:00",
+      "endLocal": "05/09/2026 17:30",
+      "startUtc": "2026-09-05T14:00:00.000Z",
+      "endUtc": "2026-09-05T14:30:00.000Z",
+      "court": "venue.courts.6",
+      "division": "intermediate",
+      "stage": "intermediate.consolation",
+      "round": "round-1",
+      "contestId": "intermediate.consolation.R1.M3",
+      "possibleEntrantIds": [
+        "intermediate.team.2",
+        "intermediate.team.5"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 17:20",
+      "endLocal": "05/09/2026 18:10",
+      "startUtc": "2026-09-05T14:20:00.000Z",
+      "endUtc": "2026-09-05T15:10:00.000Z",
+      "court": "venue.courts.7",
+      "division": "intermediate",
+      "stage": "intermediate.main",
+      "round": "round-1",
+      "contestId": "intermediate.main.R1.M1",
+      "possibleEntrantIds": [
+        "intermediate.team.12",
+        "intermediate.team.13"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 17:30",
+      "endLocal": "05/09/2026 18:00",
+      "startUtc": "2026-09-05T14:30:00.000Z",
+      "endUtc": "2026-09-05T15:00:00.000Z",
+      "court": "venue.courts.2",
+      "division": "intermediate",
+      "stage": "intermediate.consolation",
+      "round": "round-2",
+      "contestId": "intermediate.consolation.R2.M2",
+      "possibleEntrantIds": [
+        "intermediate.team.10",
+        "intermediate.team.2",
+        "intermediate.team.5",
+        "intermediate.team.7"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 17:30",
+      "endLocal": "05/09/2026 18:00",
+      "startUtc": "2026-09-05T14:30:00.000Z",
+      "endUtc": "2026-09-05T15:00:00.000Z",
+      "court": "venue.courts.3",
+      "division": "intermediate",
+      "stage": "intermediate.consolation",
+      "round": "round-1",
+      "contestId": "intermediate.consolation.R1.M2",
+      "possibleEntrantIds": [
+        "intermediate.team.11",
+        "intermediate.team.15"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 17:30",
+      "endLocal": "05/09/2026 18:00",
+      "startUtc": "2026-09-05T14:30:00.000Z",
+      "endUtc": "2026-09-05T15:00:00.000Z",
+      "court": "venue.courts.4",
+      "division": "intermediate",
+      "stage": "intermediate.consolation",
+      "round": "round-1",
+      "contestId": "intermediate.consolation.R1.M6",
+      "possibleEntrantIds": [
+        "intermediate.team.14",
+        "intermediate.team.16"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 17:30",
+      "endLocal": "05/09/2026 18:00",
+      "startUtc": "2026-09-05T14:30:00.000Z",
+      "endUtc": "2026-09-05T15:00:00.000Z",
+      "court": "venue.courts.5",
+      "division": "beginner",
+      "stage": "beginner.consolation",
+      "round": "round-1",
+      "contestId": "beginner.consolation.R1.M7",
+      "possibleEntrantIds": [
+        "beginner.team.19",
+        "beginner.team.7"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 17:30",
+      "endLocal": "05/09/2026 18:00",
+      "startUtc": "2026-09-05T14:30:00.000Z",
+      "endUtc": "2026-09-05T15:00:00.000Z",
+      "court": "venue.courts.6",
+      "division": "beginner",
+      "stage": "beginner.consolation",
+      "round": "round-2",
+      "contestId": "beginner.consolation.R2.M2",
+      "possibleEntrantIds": [
+        "beginner.team.13",
+        "beginner.team.5",
+        "beginner.team.6",
+        "beginner.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 17:50",
+      "endLocal": "05/09/2026 18:20",
+      "startUtc": "2026-09-05T14:50:00.000Z",
+      "endUtc": "2026-09-05T15:20:00.000Z",
+      "court": "venue.courts.1",
+      "division": "intermediate",
+      "stage": "intermediate.consolation",
+      "round": "round-2",
+      "contestId": "intermediate.consolation.R2.M4",
+      "possibleEntrantIds": [
+        "intermediate.team.17",
+        "intermediate.team.3",
+        "intermediate.team.8"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 18:00",
+      "endLocal": "05/09/2026 18:30",
+      "startUtc": "2026-09-05T15:00:00.000Z",
+      "endUtc": "2026-09-05T15:30:00.000Z",
+      "court": "venue.courts.2",
+      "division": "beginner",
+      "stage": "beginner.consolation",
+      "round": "round-2",
+      "contestId": "beginner.consolation.R2.M4",
+      "possibleEntrantIds": [
+        "beginner.team.10",
+        "beginner.team.14",
+        "beginner.team.19",
+        "beginner.team.7"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 18:00",
+      "endLocal": "05/09/2026 18:30",
+      "startUtc": "2026-09-05T15:00:00.000Z",
+      "endUtc": "2026-09-05T15:30:00.000Z",
+      "court": "venue.courts.3",
+      "division": "beginner",
+      "stage": "beginner.consolation",
+      "round": "round-2",
+      "contestId": "beginner.consolation.R2.M3",
+      "possibleEntrantIds": [
+        "beginner.team.12",
+        "beginner.team.15",
+        "beginner.team.16",
+        "beginner.team.8"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 18:00",
+      "endLocal": "05/09/2026 18:30",
+      "startUtc": "2026-09-05T15:00:00.000Z",
+      "endUtc": "2026-09-05T15:30:00.000Z",
+      "court": "venue.courts.4",
+      "division": "advanced",
+      "stage": "advanced.consolation",
+      "round": "semifinal",
+      "contestId": "advanced.consolation.R2.M1",
+      "possibleEntrantIds": [
+        "advanced.team.10",
+        "advanced.team.3",
+        "advanced.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 18:00",
+      "endLocal": "05/09/2026 18:30",
+      "startUtc": "2026-09-05T15:00:00.000Z",
+      "endUtc": "2026-09-05T15:30:00.000Z",
+      "court": "venue.courts.5",
+      "division": "intermediate",
+      "stage": "intermediate.consolation",
+      "round": "round-2",
+      "contestId": "intermediate.consolation.R2.M3",
+      "possibleEntrantIds": [
+        "intermediate.team.14",
+        "intermediate.team.16",
+        "intermediate.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 18:00",
+      "endLocal": "05/09/2026 18:30",
+      "startUtc": "2026-09-05T15:00:00.000Z",
+      "endUtc": "2026-09-05T15:30:00.000Z",
+      "court": "venue.courts.6",
+      "division": "intermediate",
+      "stage": "intermediate.consolation",
+      "round": "round-2",
+      "contestId": "intermediate.consolation.R2.M1",
+      "possibleEntrantIds": [
+        "intermediate.team.11",
+        "intermediate.team.15",
+        "intermediate.team.6"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 18:20",
+      "endLocal": "05/09/2026 19:20",
+      "startUtc": "2026-09-05T15:20:00.000Z",
+      "endUtc": "2026-09-05T16:20:00.000Z",
+      "court": "venue.courts.1",
+      "division": "intermediate",
+      "stage": "intermediate.main",
+      "round": "final",
+      "contestId": "intermediate.main.R2.M1",
+      "possibleEntrantIds": [
+        "intermediate.team.1",
+        "intermediate.team.12",
+        "intermediate.team.13",
+        "intermediate.team.4"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 18:30",
+      "endLocal": "05/09/2026 19:00",
+      "startUtc": "2026-09-05T15:30:00.000Z",
+      "endUtc": "2026-09-05T16:00:00.000Z",
+      "court": "venue.courts.2",
+      "division": "intermediate",
+      "stage": "intermediate.consolation",
+      "round": "semifinal",
+      "contestId": "intermediate.consolation.R3.M2",
+      "possibleEntrantIds": [
+        "intermediate.team.14",
+        "intermediate.team.16",
+        "intermediate.team.17",
+        "intermediate.team.3",
+        "intermediate.team.8",
+        "intermediate.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 18:30",
+      "endLocal": "05/09/2026 19:30",
+      "startUtc": "2026-09-05T15:30:00.000Z",
+      "endUtc": "2026-09-05T16:30:00.000Z",
+      "court": "venue.courts.3",
+      "division": "advanced",
+      "stage": "advanced.main",
+      "round": "final",
+      "contestId": "advanced.main.R2.M1",
+      "possibleEntrantIds": [
+        "advanced.team.1",
+        "advanced.team.2",
+        "advanced.team.5",
+        "advanced.team.8"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 18:30",
+      "endLocal": "05/09/2026 19:00",
+      "startUtc": "2026-09-05T15:30:00.000Z",
+      "endUtc": "2026-09-05T16:00:00.000Z",
+      "court": "venue.courts.4",
+      "division": "beginner",
+      "stage": "beginner.consolation",
+      "round": "semifinal",
+      "contestId": "beginner.consolation.R3.M2",
+      "possibleEntrantIds": [
+        "beginner.team.10",
+        "beginner.team.12",
+        "beginner.team.14",
+        "beginner.team.15",
+        "beginner.team.16",
+        "beginner.team.19",
+        "beginner.team.7",
+        "beginner.team.8"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 18:30",
+      "endLocal": "05/09/2026 19:00",
+      "startUtc": "2026-09-05T15:30:00.000Z",
+      "endUtc": "2026-09-05T16:00:00.000Z",
+      "court": "venue.courts.5",
+      "division": "beginner",
+      "stage": "beginner.consolation",
+      "round": "semifinal",
+      "contestId": "beginner.consolation.R3.M1",
+      "possibleEntrantIds": [
+        "beginner.team.11",
+        "beginner.team.13",
+        "beginner.team.17",
+        "beginner.team.3",
+        "beginner.team.5",
+        "beginner.team.6",
+        "beginner.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 18:30",
+      "endLocal": "05/09/2026 19:00",
+      "startUtc": "2026-09-05T15:30:00.000Z",
+      "endUtc": "2026-09-05T16:00:00.000Z",
+      "court": "venue.courts.6",
+      "division": "advanced",
+      "stage": "advanced.consolation",
+      "round": "semifinal",
+      "contestId": "advanced.consolation.R2.M2",
+      "possibleEntrantIds": [
+        "advanced.team.11",
+        "advanced.team.4",
+        "advanced.team.6",
+        "advanced.team.7"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 18:30",
+      "endLocal": "05/09/2026 19:00",
+      "startUtc": "2026-09-05T15:30:00.000Z",
+      "endUtc": "2026-09-05T16:00:00.000Z",
+      "court": "venue.courts.7",
+      "division": "intermediate",
+      "stage": "intermediate.consolation",
+      "round": "semifinal",
+      "contestId": "intermediate.consolation.R3.M1",
+      "possibleEntrantIds": [
+        "intermediate.team.10",
+        "intermediate.team.11",
+        "intermediate.team.15",
+        "intermediate.team.2",
+        "intermediate.team.5",
+        "intermediate.team.6",
+        "intermediate.team.7"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 19:00",
+      "endLocal": "05/09/2026 19:30",
+      "startUtc": "2026-09-05T16:00:00.000Z",
+      "endUtc": "2026-09-05T16:30:00.000Z",
+      "court": "venue.courts.2",
+      "division": "intermediate",
+      "stage": "intermediate.consolation",
+      "round": "final",
+      "contestId": "intermediate.consolation.R4.M1",
+      "possibleEntrantIds": [
+        "intermediate.team.10",
+        "intermediate.team.11",
+        "intermediate.team.14",
+        "intermediate.team.15",
+        "intermediate.team.16",
+        "intermediate.team.17",
+        "intermediate.team.2",
+        "intermediate.team.3",
+        "intermediate.team.5",
+        "intermediate.team.6",
+        "intermediate.team.7",
+        "intermediate.team.8",
+        "intermediate.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 19:00",
+      "endLocal": "05/09/2026 19:30",
+      "startUtc": "2026-09-05T16:00:00.000Z",
+      "endUtc": "2026-09-05T16:30:00.000Z",
+      "court": "venue.courts.4",
+      "division": "beginner",
+      "stage": "beginner.consolation",
+      "round": "final",
+      "contestId": "beginner.consolation.R4.M1",
+      "possibleEntrantIds": [
+        "beginner.team.10",
+        "beginner.team.11",
+        "beginner.team.12",
+        "beginner.team.13",
+        "beginner.team.14",
+        "beginner.team.15",
+        "beginner.team.16",
+        "beginner.team.17",
+        "beginner.team.19",
+        "beginner.team.3",
+        "beginner.team.5",
+        "beginner.team.6",
+        "beginner.team.7",
+        "beginner.team.8",
+        "beginner.team.9"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 19:00",
+      "endLocal": "05/09/2026 19:30",
+      "startUtc": "2026-09-05T16:00:00.000Z",
+      "endUtc": "2026-09-05T16:30:00.000Z",
+      "court": "venue.courts.5",
+      "division": "beginner",
+      "stage": "beginner.main",
+      "round": "final",
+      "contestId": "beginner.main.R2.M1",
+      "possibleEntrantIds": [
+        "beginner.team.1",
+        "beginner.team.18",
+        "beginner.team.2",
+        "beginner.team.4"
+      ]
+    },
+    {
+      "startLocal": "05/09/2026 19:00",
+      "endLocal": "05/09/2026 19:30",
+      "startUtc": "2026-09-05T16:00:00.000Z",
+      "endUtc": "2026-09-05T16:30:00.000Z",
+      "court": "venue.courts.6",
+      "division": "advanced",
+      "stage": "advanced.consolation",
+      "round": "final",
+      "contestId": "advanced.consolation.R3.M1",
+      "possibleEntrantIds": [
+        "advanced.team.10",
+        "advanced.team.11",
+        "advanced.team.3",
+        "advanced.team.4",
+        "advanced.team.6",
+        "advanced.team.7",
+        "advanced.team.9"
+      ]
+    }
+  ]
+}

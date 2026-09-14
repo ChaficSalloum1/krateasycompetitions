@@ -1,0 +1,2 @@
+# Runtime version is verified again across the JSON protocol boundary.
+ortools==9.15.6755

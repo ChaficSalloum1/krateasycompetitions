@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+.build/
+DerivedData/
+work/
+output/
+.playwright-cli/
+.env
+.env.*
+!.env.example
+*.xcuserstate
+xcuserdata/

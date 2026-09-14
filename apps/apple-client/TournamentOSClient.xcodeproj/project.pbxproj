@@ -1,0 +1,113 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* TournamentOSClientApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* TournamentOSClientApp.swift */; };
+		A10000000000000000000002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* PrivacyInfo.xcprivacy */; };
+		A10000000000000000000003 /* TournamentOSClientCore in Frameworks */ = {isa = PBXBuildFile; productRef = A90000000000000000000001 /* TournamentOSClientCore */; };
+		A10000000000000000000004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* TournamentOSClientApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TournamentOSClientApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A20000000000000000000003 /* TournamentOSClient.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TournamentOSClient.entitlements; sourceTree = "<group>"; };
+		A20000000000000000000004 /* Krateasy Competitions.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Krateasy Competitions.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000005 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000003 /* TournamentOSClientCore in Frameworks */,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A40000000000000000000001 = {isa = PBXGroup; children = (A40000000000000000000002 /* App */, A40000000000000000000003 /* Products */); sourceTree = "<group>"; };
+		A40000000000000000000002 /* App */ = {isa = PBXGroup; children = (A20000000000000000000001, A20000000000000000000002, A20000000000000000000003, A20000000000000000000005); path = App/TournamentOSClient; sourceTree = "<group>"; };
+		A40000000000000000000003 /* Products */ = {isa = PBXGroup; children = (A20000000000000000000004); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A50000000000000000000001 /* TournamentOSClient */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A80000000000000000000002;
+			buildPhases = (A70000000000000000000001 /* Sources */, A30000000000000000000001 /* Frameworks */, A70000000000000000000002 /* Resources */);
+			buildRules = ();
+			dependencies = ();
+			name = TournamentOSClient;
+			packageProductDependencies = (A90000000000000000000001 /* TournamentOSClientCore */);
+			productName = TournamentOSClient;
+			productReference = A20000000000000000000004 /* Krateasy Competitions.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A60000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 2660; LastUpgradeCheck = 2660; TargetAttributes = {A50000000000000000000001 = {CreatedOnToolsVersion = 26.6; };};};
+			buildConfigurationList = A80000000000000000000001;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = A40000000000000000000001;
+			packageReferences = (A90000000000000000000002 /* XCLocalSwiftPackageReference */);
+			productRefGroup = A40000000000000000000003;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (A50000000000000000000001);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000002 /* PrivacyInfo.xcprivacy in Resources */, A10000000000000000000004 /* Assets.xcassets in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A70000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001 /* TournamentOSClientApp.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		B10000000000000000000001 /* Debug project */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; ENABLE_TESTABILITY = YES; GCC_C_LANGUAGE_STANDARD = gnu17; ONLY_ACTIVE_ARCH = YES; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; SWIFT_VERSION = 6.0;}; name = Debug; };
+		B10000000000000000000002 /* Release project */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; GCC_C_LANGUAGE_STANDARD = gnu17; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_VERSION = 6.0;}; name = Release; };
+		B20000000000000000000001 /* Debug target */ = {isa = XCBuildConfiguration; buildSettings = {
+			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+			"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = App/TournamentOSClient/TournamentOSClient.entitlements;
+			CURRENT_PROJECT_VERSION = 1; ENABLE_APP_SANDBOX = YES; GENERATE_INFOPLIST_FILE = YES; ONLY_ACTIVE_ARCH = YES;
+			INFOPLIST_KEY_CFBundleDisplayName = "Krateasy Competitions"; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+			INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+			IPHONEOS_DEPLOYMENT_TARGET = 17.0; MACOSX_DEPLOYMENT_TARGET = 14.0; MARKETING_VERSION = 0.1.0;
+			PRODUCT_BUNDLE_IDENTIFIER = com.krateasy.competitions; PRODUCT_NAME = "Krateasy Competitions";
+			SDKROOT = auto; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx"; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2";
+		}; name = Debug; };
+		B20000000000000000000002 /* Release target */ = {isa = XCBuildConfiguration; buildSettings = {
+			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+			"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = App/TournamentOSClient/TournamentOSClient.entitlements;
+			CURRENT_PROJECT_VERSION = 1; ENABLE_APP_SANDBOX = YES; GENERATE_INFOPLIST_FILE = YES;
+			INFOPLIST_KEY_CFBundleDisplayName = "Krateasy Competitions"; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+			INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+			IPHONEOS_DEPLOYMENT_TARGET = 17.0; MACOSX_DEPLOYMENT_TARGET = 14.0; MARKETING_VERSION = 0.1.0;
+			PRODUCT_BUNDLE_IDENTIFIER = com.krateasy.competitions; PRODUCT_NAME = "Krateasy Competitions";
+			SDKROOT = auto; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx"; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2";
+		}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A80000000000000000000001 /* Project configs */ = {isa = XCConfigurationList; buildConfigurations = (B10000000000000000000001, B10000000000000000000002); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A80000000000000000000002 /* Target configs */ = {isa = XCConfigurationList; buildConfigurations = (B20000000000000000000001, B20000000000000000000002); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A90000000000000000000002 /* XCLocalSwiftPackageReference */ = {isa = XCLocalSwiftPackageReference; relativePath = .; };
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A90000000000000000000001 /* TournamentOSClientCore */ = {isa = XCSwiftPackageProductDependency; package = A90000000000000000000002; productName = TournamentOSClientCore; };
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = A60000000000000000000001 /* Project object */;
+}

@@ -1,0 +1,429 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tournamentos.dev/schema/tournament-spec/v1.0.0",
+  "title": "TournamentOS Canonical Tournament Specification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sport", "participants", "divisions", "stages", "scoringSystems",
+    "standingsPolicies", "qualificationPolicies", "competitionStructures",
+    "drawPolicies", "progressionPolicies", "scheduling", "resources",
+    "operationalPolicies", "randomisation", "assumptions", "requirements", "metadata"
+  ],
+  "properties": {
+    "sport": { "$ref": "#/$defs/sport" },
+    "participants": { "$ref": "#/$defs/participants" },
+    "divisions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/division" } },
+    "stages": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/stage" } },
+    "scoringSystems": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scoring" } },
+    "standingsPolicies": { "type": "array", "items": { "$ref": "#/$defs/standings" } },
+    "qualificationPolicies": { "type": "array", "items": { "$ref": "#/$defs/qualification" } },
+    "competitionStructures": { "type": "array", "items": { "$ref": "#/$defs/structure" } },
+    "drawPolicies": { "type": "array", "items": { "$ref": "#/$defs/draw" } },
+    "progressionPolicies": { "type": "array", "items": { "$ref": "#/$defs/progression" } },
+    "scheduling": { "$ref": "#/$defs/scheduling" },
+    "resources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/resource" } },
+    "operationalPolicies": { "type": "array", "items": { "$ref": "#/$defs/operational" } },
+    "randomisation": { "$ref": "#/$defs/randomisation" },
+    "assumptions": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+    "requirements": { "type": "array", "items": { "$ref": "#/$defs/requirement" } },
+    "metadata": { "$ref": "#/$defs/metadata" }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$" },
+    "semver": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$" },
+    "instant": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$" },
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "participantShape": { "enum": ["individual", "fixed_team", "dynamic_team", "pair", "squad", "relay_team"] },
+    "strength": { "enum": ["HARD", "SOFT"] },
+    "sport": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "adapterVersion", "participantUnit", "contest", "scoringCapabilities", "defaultResourceType"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "adapterVersion": { "$ref": "#/$defs/semver" },
+        "participantUnit": { "$ref": "#/$defs/participantShape" }, "teamSize": { "type": "integer", "minimum": 1 },
+        "contest": {
+          "type": "object", "additionalProperties": false, "required": ["kind"],
+          "properties": { "kind": { "enum": ["head_to_head", "ranked_performance"] }, "sides": { "type": "integer", "minimum": 1 } }
+        },
+        "scoringCapabilities": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "defaultResourceType": { "type": "string", "minLength": 1 }
+      }
+    },
+    "participants": {
+      "type": "object", "additionalProperties": false, "required": ["count", "shape"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 1 }, "shape": { "$ref": "#/$defs/participantShape" },
+        "rosterSize": { "type": "integer", "minimum": 1 }, "identityProvider": { "type": "string", "minLength": 1 }
+      }
+    },
+    "division": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "label", "participantCount", "participantShape", "stageIds"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "label": { "type": "string", "minLength": 1 },
+        "participantCount": { "type": "integer", "minimum": 1 }, "participantShape": { "$ref": "#/$defs/participantShape" },
+        "stageIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "pool": {
+      "type": "object", "additionalProperties": false, "required": ["poolCount", "sizes", "rounds", "allocation"],
+      "properties": {
+        "poolCount": { "type": "integer", "minimum": 1 },
+        "sizes": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 2 } },
+        "rounds": { "enum": [1, 2] }, "allocation": { "enum": ["snake", "random", "manual", "optimised"] }
+      }
+    },
+    "bracket": {
+      "type": "object", "additionalProperties": false, "required": ["entrantCount", "topology", "thirdPlaceMatch"],
+      "properties": {
+        "entrantCount": { "type": "integer", "minimum": 2 },
+        "topology": { "enum": ["power_of_two", "play_ins", "byes", "arbitrary"] },
+        "thirdPlaceMatch": { "type": "boolean" }
+      }
+    },
+    "doubleElimination": {
+      "type": "object", "additionalProperties": false, "required": ["resetFinalPolicy"],
+      "properties": { "resetFinalPolicy": { "enum": ["NEVER", "IF_NECESSARY"] } }
+    },
+    "repechage": {
+      "type": "object", "additionalProperties": false, "required": ["model"],
+      "properties": { "model": { "enum": ["QUARTERFINAL_LOSERS_TO_SEMIFINAL_LOSERS"] } }
+    },
+    "playIn": {
+      "type": "object", "additionalProperties": false, "required": ["mainDrawSize"],
+      "properties": { "mainDrawSize": { "type": "integer", "minimum": 2 } }
+    },
+    "dynamicEntrant": {
+      "type": "object", "additionalProperties": false, "required": ["id", "seedMark"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "seedMark": { "type": "number" }, "withdrawn": { "type": "boolean" } }
+    },
+    "swiss": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "entrantIds", "totalRounds", "pairingPolicy", "points", "finalRankingPolicy"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "entrantIds": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "totalRounds": { "type": "integer", "minimum": 1 },
+        "pairingPolicy": { "type": "object", "additionalProperties": false, "required": ["rematches"], "properties": {
+          "rematches": { "enum": ["FORBIDDEN", "MINIMIZE"] }, "bye": { "enum": ["LOWEST_RANKED_WITHOUT_BYE", "LOWEST_RANKED"] },
+          "searchNodeLimit": { "type": "integer", "minimum": 1 }
+        } },
+        "points": { "type": "object", "additionalProperties": false, "required": ["win", "draw", "bye"], "properties": {
+          "win": { "type": "number", "minimum": 0 }, "draw": { "type": "number", "minimum": 0 }, "bye": { "type": "number", "minimum": 0 }
+        } },
+        "finalRankingPolicy": { "type": "object", "additionalProperties": false, "required": ["id", "version", "criteria"], "properties": {
+          "id": { "$ref": "#/$defs/id" }, "version": { "const": "1" }, "criteria": { "type": "array", "minItems": 2, "uniqueItems": true,
+            "items": { "enum": ["POINTS", "HEAD_TO_HEAD", "COMPETITOR_ID", "SHARED_RANK"] } }
+        } }
+      }
+    },
+    "ladder": {
+      "type": "object", "additionalProperties": false, "required": ["schemaVersion", "initialOrder", "maxChallengeDistance"],
+      "properties": { "schemaVersion": { "const": "1.0.0" }, "initialOrder": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "maxChallengeDistance": { "type": "integer", "minimum": 1 } }
+    },
+    "qualifyingHeat": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "entrants", "heatCount", "lanesPerHeat", "lanePriority", "betterSeedMark", "qualificationPlaces", "timeTiePolicy", "cutoffTiePolicy"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" }, "entrants": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/dynamicEntrant" } },
+        "heatCount": { "type": "integer", "minimum": 1 }, "lanesPerHeat": { "type": "integer", "minimum": 1 },
+        "lanePriority": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "minimum": 1 } },
+        "betterSeedMark": { "enum": ["LOWER", "HIGHER"] }, "seedTiePolicy": { "enum": ["UNRESOLVED", "COMPETITOR_ID"] },
+        "qualificationPlaces": { "type": "integer", "minimum": 1 }, "timeTiePolicy": { "enum": ["UNRESOLVED", "SHARED_RANK", "SEED_ORDER"] },
+        "cutoffTiePolicy": { "enum": ["UNRESOLVED", "SEED_ORDER", "ADVANCE_ALL"] },
+        "seedOrder": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "timeTrial": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "entrants", "qualificationPlaces", "timeTiePolicy", "cutoffTiePolicy"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" }, "entrants": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/dynamicEntrant" } },
+        "qualificationPlaces": { "type": "integer", "minimum": 1 }, "timeTiePolicy": { "enum": ["UNRESOLVED", "SHARED_RANK", "SEED_ORDER"] },
+        "cutoffTiePolicy": { "enum": ["UNRESOLVED", "SEED_ORDER", "ADVANCE_ALL"] },
+        "seedOrder": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "rankingStage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "entrantIds", "qualificationPlaces", "betterScore", "cutoffTiePolicy"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" }, "entrantIds": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "qualificationPlaces": { "type": "integer", "minimum": 1 }, "betterScore": { "enum": ["LOWER", "HIGHER"] },
+        "cutoffTiePolicy": { "enum": ["UNRESOLVED", "SEED_ORDER", "ADVANCE_ALL"] },
+        "seedOrder": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "classificationPort": {
+      "type": "object", "additionalProperties": false, "required": ["nodeId", "port"],
+      "properties": { "nodeId": { "$ref": "#/$defs/id" }, "port": { "enum": ["WINNER", "LOSER"] } }
+    },
+    "classification": {
+      "type": "object", "additionalProperties": false, "required": ["schemaVersion", "sourceNodes", "contests"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "sourceNodes": { "type": "array", "minItems": 2, "items": {
+          "type": "object", "additionalProperties": false, "required": ["id", "kind"],
+          "properties": { "id": { "$ref": "#/$defs/id" }, "kind": { "enum": ["MATCH", "BYE"] } }
+        } },
+        "contests": { "type": "array", "minItems": 1, "items": {
+          "type": "object", "additionalProperties": false, "required": ["id", "label", "places", "sources"],
+          "properties": {
+            "id": { "$ref": "#/$defs/id" }, "label": { "type": "string", "minLength": 1 },
+            "places": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer", "minimum": 1 } },
+            "sources": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/classificationPort" } }
+          }
+        } }
+      }
+    },
+    "customGraphInput": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["type", "seed"], "properties": {
+          "type": { "const": "ENTRANT" }, "seed": { "type": "integer", "minimum": 1 }
+        } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "nodeId", "port"], "properties": {
+          "type": { "const": "PORT" }, "nodeId": { "$ref": "#/$defs/id" }, "port": { "enum": ["WINNER", "LOSER"] }
+        } }
+      ]
+    },
+    "customGraphNode": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["id", "kind", "inputs", "outputs"], "properties": {
+          "id": { "$ref": "#/$defs/id" }, "kind": { "const": "MATCH" },
+          "inputs": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/customGraphInput" } },
+          "outputs": { "type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": { "enum": ["WINNER", "LOSER"] } }
+        } },
+        { "type": "object", "additionalProperties": false, "required": ["id", "kind", "inputs", "outputs"], "properties": {
+          "id": { "$ref": "#/$defs/id" }, "kind": { "const": "BYE" },
+          "inputs": { "type": "array", "minItems": 1, "maxItems": 1, "items": {
+            "type": "object", "additionalProperties": false, "required": ["type", "seed"], "properties": {
+              "type": { "const": "ENTRANT" }, "seed": { "type": "integer", "minimum": 1 }
+            }
+          } },
+          "outputs": { "type": "array", "minItems": 1, "maxItems": 1, "items": { "const": "WINNER" } }
+        } }
+      ]
+    },
+    "customGraph": {
+      "type": "object", "additionalProperties": false, "required": ["schemaVersion", "entrantCount", "nodes"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" }, "entrantCount": { "type": "integer", "minimum": 2, "maximum": 4096 },
+        "nodes": { "type": "array", "minItems": 1, "maxItems": 4096, "items": { "$ref": "#/$defs/customGraphNode" } }
+      }
+    },
+    "stage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "label", "divisionId", "primitive", "inputShape", "outputShape"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "label": { "type": "string", "minLength": 1 }, "divisionId": { "$ref": "#/$defs/id" },
+        "primitive": { "enum": ["single_round_robin", "double_round_robin", "groups", "single_elimination", "double_elimination", "consolation", "placement", "swiss", "ladder", "league_table", "qualifying_heat", "time_trial", "ranking_stage", "play_in", "repechage", "custom_graph"] },
+        "inputShape": { "$ref": "#/$defs/participantShape" }, "outputShape": { "$ref": "#/$defs/participantShape" },
+        "expectedEntrants": { "type": "integer", "minimum": 1 }, "pool": { "$ref": "#/$defs/pool" }, "bracket": { "$ref": "#/$defs/bracket" },
+        "doubleElimination": { "$ref": "#/$defs/doubleElimination" }, "repechage": { "$ref": "#/$defs/repechage" },
+        "playIn": { "$ref": "#/$defs/playIn" }, "swiss": { "$ref": "#/$defs/swiss" }, "ladder": { "$ref": "#/$defs/ladder" },
+        "qualifyingHeat": { "$ref": "#/$defs/qualifyingHeat" }, "timeTrial": { "$ref": "#/$defs/timeTrial" },
+        "rankingStage": { "$ref": "#/$defs/rankingStage" }, "classification": { "$ref": "#/$defs/classification" },
+        "customGraph": { "$ref": "#/$defs/customGraph" }
+      }
+    },
+    "scoring": {
+      "type": "object", "additionalProperties": false, "required": ["id", "adapterRule", "version", "stageIds"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "adapterRule": { "type": "string", "minLength": 1 }, "version": { "$ref": "#/$defs/semver" },
+        "stageIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "standings": {
+      "type": "object", "additionalProperties": false, "required": ["id", "stageIds", "metricOrder", "tieFallback"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "stageIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "metricOrder": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["metric", "direction"],
+            "properties": { "metric": { "type": "string", "minLength": 1 }, "direction": { "enum": ["ASC", "DESC"] } }
+          }
+        },
+        "tieFallback": { "enum": ["manual_decision", "deterministic_draw", "shared_rank"] }
+      }
+    },
+    "qualificationMetric": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["type", "key"], "properties": {
+          "type": { "const": "value" }, "key": { "type": "string", "minLength": 1 }
+        } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "numeratorKey", "denominatorKey"], "properties": {
+          "type": { "const": "ratio_percent" }, "numeratorKey": { "type": "string", "minLength": 1 }, "denominatorKey": { "type": "string", "minLength": 1 }
+        } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reducer", "terms"], "properties": {
+          "type": { "const": "aggregate" }, "reducer": { "enum": ["sum", "average"] },
+          "terms": { "type": "array", "minItems": 1, "maxItems": 32, "items": {
+            "type": "object", "additionalProperties": false, "required": ["key", "weight"], "properties": {
+              "key": { "type": "string", "minLength": 1 }, "weight": { "type": "number", "exclusiveMinimum": 0 }
+            }
+          } }
+        } }
+      ]
+    },
+    "selector": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["type", "count"], "properties": { "type": { "const": "top_n" }, "count": { "type": "integer", "minimum": 1 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "count"], "properties": { "type": { "const": "bottom_n" }, "count": { "type": "integer", "minimum": 1 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "position"], "properties": { "type": { "const": "pool_position" }, "position": { "type": "integer", "minimum": 1 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type"], "properties": { "type": { "const": "pool_winners" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "count"], "properties": { "type": { "const": "best_n_across_pools" }, "count": { "type": "integer", "minimum": 1 }, "poolPosition": { "type": "integer", "minimum": 1 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type"], "properties": { "type": { "const": "remainder" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "count"], "properties": { "type": { "const": "manual_decision" }, "count": { "type": "integer", "minimum": 1 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "metricKey", "count", "cutoffTiePolicy"], "properties": {
+          "type": { "const": "ranking_points" }, "metricKey": { "type": "string", "minLength": 1 },
+          "count": { "type": "integer", "minimum": 1 }, "cutoffTiePolicy": { "enum": ["reject", "candidate_id", "include_all"] }
+        } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "metric", "comparison", "value"], "properties": {
+          "type": { "const": "threshold" }, "metric": { "$ref": "#/$defs/qualificationMetric" },
+          "comparison": { "enum": ["at_least", "at_most", "greater_than", "less_than"] }, "value": { "type": "number" }
+        } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "metricKey", "minimum"], "properties": {
+          "type": { "const": "score_threshold" }, "metricKey": { "type": "string", "minLength": 1 }, "minimum": { "type": "number" }
+        } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "numeratorMetricKey", "denominatorMetricKey", "minimumPercent"], "properties": {
+          "type": { "const": "percentage_threshold" }, "numeratorMetricKey": { "type": "string", "minLength": 1 },
+          "denominatorMetricKey": { "type": "string", "minLength": 1 }, "minimumPercent": { "type": "number" }
+        } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "metricKey", "count", "cutoffTiePolicy"], "properties": {
+          "type": { "const": "elapsed_time" }, "metricKey": { "type": "string", "minLength": 1 },
+          "count": { "type": "integer", "minimum": 1 }, "cutoffTiePolicy": { "enum": ["reject", "candidate_id", "include_all"] }
+        } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "metric", "count", "direction", "cutoffTiePolicy"], "properties": {
+          "type": { "const": "aggregate_metric" },
+          "metric": { "type": "object", "additionalProperties": false, "required": ["type", "reducer", "terms"], "properties": {
+            "type": { "const": "aggregate" }, "reducer": { "enum": ["sum", "average"] },
+            "terms": { "type": "array", "minItems": 1, "maxItems": 32, "items": {
+              "type": "object", "additionalProperties": false, "required": ["key", "weight"], "properties": {
+                "key": { "type": "string", "minLength": 1 }, "weight": { "type": "number", "exclusiveMinimum": 0 }
+              }
+            } }
+          } },
+          "count": { "type": "integer", "minimum": 1 }, "direction": { "enum": ["higher", "lower"] },
+          "cutoffTiePolicy": { "enum": ["reject", "candidate_id", "include_all"] }
+        } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "metric", "count", "direction", "cutoffTiePolicy"], "properties": {
+          "type": { "const": "best_n" }, "metric": { "$ref": "#/$defs/qualificationMetric" },
+          "count": { "type": "integer", "minimum": 1 }, "direction": { "enum": ["higher", "lower"] },
+          "eligibleRank": { "type": "integer", "minimum": 1 }, "cutoffTiePolicy": { "enum": ["reject", "candidate_id", "include_all"] }
+        } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "selectionType", "candidateIds", "approval"], "properties": {
+          "type": { "const": "authority_selection" }, "selectionType": { "enum": ["wildcard", "host"] },
+          "candidateIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+          "approval": { "type": "object", "additionalProperties": false, "required": ["status", "authorityId", "approvalHash"], "properties": {
+            "status": { "const": "approved" }, "authorityId": { "$ref": "#/$defs/id" }, "approvalHash": { "$ref": "#/$defs/hash" }
+          } }
+        } }
+      ]
+    },
+    "qualification": {
+      "type": "object", "additionalProperties": false, "required": ["id", "sourceStageId", "destinationStructureId", "outputCount", "selectors"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "sourceStageId": { "$ref": "#/$defs/id" }, "destinationStructureId": { "$ref": "#/$defs/id" },
+        "outputCount": { "type": "integer", "minimum": 1 }, "selectors": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/selector" } },
+        "normalization": { "enum": ["per_match", "percentage", "remove_lowest_finisher", "best_n_results", "strength_adjusted"] }
+      }
+    },
+    "structure": {
+      "type": "object", "additionalProperties": false, "required": ["id", "label", "divisionId", "targetEntrants", "stageIds"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "label": { "type": "string", "minLength": 1 }, "divisionId": { "$ref": "#/$defs/id" },
+        "targetEntrants": { "type": "integer", "minimum": 1 }, "stageIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "draw": {
+      "type": "object", "additionalProperties": false, "required": ["id", "structureId", "placement", "priorities"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "structureId": { "$ref": "#/$defs/id" }, "placement": { "enum": ["seeded", "random", "manual", "optimised"] },
+        "priorities": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["rule", "strength", "priority"],
+            "properties": { "rule": { "type": "string", "minLength": 1 }, "strength": { "$ref": "#/$defs/strength" }, "priority": { "type": "integer", "minimum": 1 }, "weight": { "type": "number", "minimum": 0 } }
+          }
+        }
+      }
+    },
+    "progression": {
+      "type": "object", "additionalProperties": false, "required": ["id", "fromStageId", "outcome", "toStageId", "destinationSlots", "sourceCanBeBye"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "fromStageId": { "$ref": "#/$defs/id" }, "outcome": { "enum": ["winner", "loser", "rank", "pool_position"] },
+        "outcomeValue": { "type": "integer", "minimum": 1 }, "toStageId": { "$ref": "#/$defs/id" }, "destinationSlots": { "type": "integer", "minimum": 1 }, "sourceCanBeBye": { "type": "boolean" }
+      }
+    },
+    "scheduling": {
+      "type": "object", "additionalProperties": false, "required": ["timezone", "start", "constraints", "durations", "objective"],
+      "properties": {
+        "timezone": { "type": "string", "minLength": 1 }, "start": { "$ref": "#/$defs/instant" }, "finishBy": { "$ref": "#/$defs/instant" },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["id", "rule", "strength"],
+            "properties": { "id": { "$ref": "#/$defs/id" }, "rule": { "type": "string", "minLength": 1 }, "strength": { "$ref": "#/$defs/strength" }, "value": { "type": ["number", "string", "boolean"] }, "unit": { "enum": ["minutes", "count", "boolean"] }, "weight": { "type": "number", "minimum": 0 } }
+          }
+        },
+        "durations": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["stageId", "contestMinutes", "turnaroundMinutes"],
+            "properties": { "stageId": { "$ref": "#/$defs/id" }, "round": { "type": "string", "minLength": 1 }, "contestMinutes": { "type": "integer", "minimum": 1 }, "turnaroundMinutes": { "type": "integer", "minimum": 0 } }
+          }
+        },
+        "objective": { "enum": ["earliest_finish", "minimum_idle", "balanced_quality"] }
+      }
+    },
+    "resource": {
+      "type": "object", "additionalProperties": false, "required": ["id", "type", "quantity", "availability"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "type": { "type": "string", "minLength": 1 }, "quantity": { "type": "integer", "minimum": 1 },
+        "availability": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["start", "end"],
+            "properties": { "start": { "$ref": "#/$defs/instant" }, "end": { "$ref": "#/$defs/instant" } }
+          }
+        }
+      }
+    },
+    "operational": {
+      "type": "object", "additionalProperties": false, "required": ["id", "rule", "strength"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "rule": { "type": "string", "minLength": 1 }, "strength": { "$ref": "#/$defs/strength" }, "value": { "type": ["string", "number", "boolean"] } }
+    },
+    "randomisation": {
+      "type": "object", "additionalProperties": false, "required": ["mode"],
+      "properties": { "mode": { "enum": ["none", "deterministic"] }, "algorithm": { "enum": ["xoshiro128ss", "pcg32"] }, "seed": { "type": "string", "minLength": 1 } }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false, "required": ["id", "rulePath", "origin", "knowledge", "sourceReference", "approved", "critical"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "rulePath": { "type": "string", "pattern": "^/" },
+        "origin": { "enum": ["explicit_prompt", "conversation_clarification", "selected_template", "organisation_default", "sport_default", "compiler_optimisation", "manual_override"] },
+        "knowledge": { "enum": ["KNOWN", "DERIVED", "DEFAULTED", "OPTIMISED", "RANDOMISED", "UNRESOLVED"] },
+        "sourceReference": { "type": "string", "minLength": 1 }, "approved": { "type": "boolean" }, "critical": { "type": "boolean" }
+      }
+    },
+    "requirement": {
+      "type": "object", "additionalProperties": false, "required": ["id", "sourceText", "type", "strength", "status", "mappedRuleIds"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "sourceText": { "type": "string", "minLength": 1 }, "type": { "type": "string", "minLength": 1 },
+        "strength": { "$ref": "#/$defs/strength" }, "status": { "enum": ["SATISFIED", "DELIBERATELY_RELAXED", "UNRESOLVED"] },
+        "mappedRuleIds": { "type": "array", "items": { "$ref": "#/$defs/id" } }, "resolutionNote": { "type": "string", "minLength": 1 }
+      }
+    },
+    "metadata": {
+      "type": "object", "additionalProperties": false,
+      "required": ["specId", "revision", "schemaVersion", "compilerVersion", "rulesetVersions", "sourcePromptHash", "compiledSpecHash", "createdAt"],
+      "properties": {
+        "specId": { "$ref": "#/$defs/id" }, "revision": { "type": "integer", "minimum": 1 }, "schemaVersion": { "$ref": "#/$defs/semver" },
+        "compilerVersion": { "$ref": "#/$defs/semver" }, "rulesetVersions": { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/semver" } },
+        "sourcePromptHash": { "$ref": "#/$defs/hash" }, "compiledSpecHash": { "$ref": "#/$defs/hash" }, "createdAt": { "$ref": "#/$defs/instant" }, "previousSpecHash": { "$ref": "#/$defs/hash" }
+      }
+    }
+  }
+}
