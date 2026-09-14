@@ -1251,6 +1251,7 @@ private struct LiveOperationsContent: View {
     var body: some View {
         LoadStateView(state: model.operationsState, retry: retry) { operations in
             VStack(alignment: .leading, spacing: 22) {
+                OfflineCommandJournalView(model: model)
                 OperationPulse(summary: operations.summary)
                 ForEach(LiveOperationStatusDTO.allCases, id: \.self) { status in
                     let matches = operations.items.filter { $0.status == status }
@@ -1261,7 +1262,19 @@ private struct LiveOperationsContent: View {
                                 Text(status.sectionTitle).font(.headline)
                                 Text(matches.count.formatted()).font(.caption.weight(.bold)).foregroundStyle(.secondary)
                             }
-                            ForEach(matches) { LiveOperationRow(item: $0) }
+                            ForEach(matches) { item in
+                                VStack(alignment: .trailing, spacing: 8) {
+                                    LiveOperationRow(item: item)
+                                    if status == .next || status == .late {
+                                        Button("Queue call") {
+                                            Task { await model.queueLiveAction(.call(contestID: item.contestID)) }
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .disabled(model.isSynchronizingOfflineCommands)
+                                        .accessibilityHint("Saves an idempotent call command locally before server delivery")
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1271,6 +1284,45 @@ private struct LiveOperationsContent: View {
         }
     }
     private func retry() { Task { await model.loadSelectedTournament() } }
+}
+
+private struct OfflineCommandJournalView: View {
+    let model: TournamentOSAppModel
+
+    var body: some View {
+        let pending = model.offlineCommands.filter { $0.state == .pending || $0.state == .sending }.count
+        let accepted = model.offlineCommands.filter { $0.state == .acknowledged }.count
+        let conflicts = model.offlineCommands.filter { $0.state == .conflicted }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Offline command journal").font(.headline)
+                    Text("\(pending) pending · \(accepted) accepted · \(conflicts.count) conflicted")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Sync now") { Task { await model.synchronizeOfflineCommands() } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.isSynchronizingOfflineCommands || pending == 0)
+            }
+            if let message = model.offlineJournalMessage {
+                Text(message).font(.caption).foregroundStyle(conflicts.isEmpty ? Color.secondary : Color.orange)
+                    .accessibilityLabel("Offline journal status: \(message)")
+            }
+            ForEach(conflicts) { command in
+                HStack {
+                    Text("\(command.commandName) at stale revision \(command.expectedAggregateVersion)")
+                        .font(.caption).monospaced()
+                    Spacer()
+                    Button("Reconcile") { Task { await model.reconcileOfflineCommand(command) } }
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+        .padding(16)
+        .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.primary.opacity(0.08)) }
+    }
 }
 
 private struct OperationPulse: View {

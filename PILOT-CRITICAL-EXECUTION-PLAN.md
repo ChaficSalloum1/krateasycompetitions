@@ -3,7 +3,7 @@
 **Date:** 14 September 2026
 **Authority:** [`PRD-Krateasy-Competitions-Execution-Control.md`](./PRD-Krateasy-Competitions-Execution-Control.md)
 **Starting point:** commit `39c18a0` (`Connect authoritative live participant information`), preserving the separately committed publication, St Albans workbench and guarded no-show slices
-**Programme status:** Sprint 1 is complete. Sprint 2 has a connected first golden JSON workbench but its broader import, duplicate and organisation scope remains open. Sprint 3 has authoritative signed participant/public/organiser projections and durable targeted delivery, while token lifecycle, recovery and an external provider/fallback remain open. Sprint 4 has the connected command set, guarded no-show and court-outage repair, actual-result knockout progression and a server-derived delay/overrun revision; richer incident policies remain open, while durable Mac offline operation is the next pilot-critical slice.
+**Programme status:** Sprint 1 is complete. Sprint 2 has a connected first golden JSON workbench but its broader import, duplicate and organisation scope remains open. Sprint 3 has authoritative signed participant/public/organiser projections and durable targeted delivery, while token lifecycle, recovery and an external provider/fallback remain open. Sprint 4 has the connected command set, guarded no-show and court-outage repair, actual-result knockout progression and a server-derived delay/overrun revision. Sprint 5 now has a connected, scoped and durable Mac command journal with explicit retry/conflict/reconciliation; the signed offline event pack and emergency/manual operation remain the next pilot-critical slice.
 **Outcome:** a controlled live pilot can be created, validated, published, operated, disrupted, repaired, communicated, closed, replayed and repeated without a second source of competition truth.
 
 ## 1. Pilot definition
@@ -195,7 +195,7 @@ Committed outcomes:
 **Dependencies:** Sprints 1–3; live command and repair kernels.
 **Exit:** a deliberate court outage is resolved end to end and only affected participants receive the new authoritative instruction.
 
-### Sprint 5 — Make Mac and manual operation resilient — **Not started**
+### Sprint 5 — Make Mac and manual operation resilient — **In progress (durable Mac command journal and reconciliation connected)**
 
 **Sprint goal:** essential event operation remains controlled through connectivity loss and recovery.
 
@@ -274,7 +274,7 @@ The event may proceed only when all statements are true:
 - [x] Zero hard structure, dependency, participant or resource violations remain in the named St Albans pilot fixture.
 - [x] The exact approved revision is the exact published and publicly projected revision.
 - [x] Participant tokens cannot enumerate or expose other participants.
-- [ ] Live commands survive retry, reordering and reconnection without duplicate effect.
+- [x] Live commands survive retry, reordering and reconnection without duplicate effect.
 - [x] Court outage, delay, withdrawal and correction rehearsals pass.
 - [ ] Delivery failure visibly triggers the declared fallback.
 - [ ] Manual/emergency operation has been rehearsed.

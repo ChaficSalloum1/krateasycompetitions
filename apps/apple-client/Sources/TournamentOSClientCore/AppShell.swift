@@ -215,9 +215,14 @@ public final class TournamentOSAppModel {
     public var peoplePath: [AppRoute] = []
     public var morePath: [AppRoute] = []
     public private(set) var localDrafts: [LocalTournamentDraft] = []
+    public private(set) var offlineCommands: [OfflineCommandEnvelope] = []
+    public private(set) var offlineJournalMessage: String?
+    public private(set) var isSynchronizingOfflineCommands = false
 
     private let sessionsByWorkspaceID: [String: TournamentWorkspaceSession]
     private let draftStorage: UserDefaults?
+    private let offlineJournalDirectory: URL?
+    private var offlineQueues: [String: OfflineCommandQueue] = [:]
     private static let draftStorageKeyPrefix = "krateasy.competitions.local-drafts.v2"
 
     public init(
@@ -228,16 +233,19 @@ public final class TournamentOSAppModel {
             kind: .club,
             roleName: "Organiser"
         ),
-        draftStorage: UserDefaults? = nil
+        draftStorage: UserDefaults? = nil,
+        offlineJournalDirectory: URL? = nil
     ) {
         self.availableWorkspaces = [workspace]
         self.selectedWorkspaceID = workspace.id
         self.sessionsByWorkspaceID = [workspace.id: TournamentWorkspaceSession(workspace: workspace, client: client)]
         self.draftStorage = draftStorage
+        self.offlineJournalDirectory = offlineJournalDirectory
         self.localDrafts = Self.readDrafts(from: draftStorage, workspaceID: workspace.id)
     }
 
-    public init(workspaces: [TournamentWorkspaceSession], draftStorage: UserDefaults? = nil) {
+    public init(workspaces: [TournamentWorkspaceSession], draftStorage: UserDefaults? = nil,
+                offlineJournalDirectory: URL? = nil) {
         precondition(!workspaces.isEmpty, "At least one competition workspace is required")
         let ordered = workspaces.sorted {
             let comparison = $0.workspace.name.localizedCaseInsensitiveCompare($1.workspace.name)
@@ -248,6 +256,7 @@ public final class TournamentOSAppModel {
         self.selectedWorkspaceID = first.id
         self.sessionsByWorkspaceID = Dictionary(uniqueKeysWithValues: ordered.map { ($0.workspace.id, $0) })
         self.draftStorage = draftStorage
+        self.offlineJournalDirectory = offlineJournalDirectory
         self.localDrafts = Self.readDrafts(from: draftStorage, workspaceID: first.id)
     }
 
@@ -285,6 +294,8 @@ public final class TournamentOSAppModel {
         selectedCompactTab = .home
         portfolioState = .idle
         clearCompetitionState()
+        offlineCommands = []
+        offlineJournalMessage = nil
         localDrafts = Self.readDrafts(from: draftStorage, workspaceID: workspaceID)
         resetNavigationPaths()
     }
@@ -471,6 +482,109 @@ public final class TournamentOSAppModel {
     public func refresh() async {
         await loadPortfolio()
         await loadSelectedTournament()
+        await loadOfflineJournal()
+    }
+
+    public func loadOfflineJournal() async {
+        guard let competitionID = selectedTournamentID, !isLocalDraft(competitionID) else {
+            offlineCommands = []
+            return
+        }
+        do {
+            offlineCommands = try await offlineQueue(for: competitionID).all()
+            offlineJournalMessage = nil
+        } catch {
+            offlineCommands = []
+            offlineJournalMessage = "The offline command journal failed its integrity or scope check."
+        }
+    }
+
+    public func queueLiveAction(_ action: OfflineLiveCommandAction) async {
+        guard !isSynchronizingOfflineCommands, !isDemoWorkspace,
+              let competitionID = selectedTournamentID,
+              case .loaded(let blueprint) = blueprintState, blueprint.revision >= 1,
+              case .loaded(let operations) = operationsState else {
+            offlineJournalMessage = "Only a connected published competition can queue live commands."
+            return
+        }
+        isSynchronizingOfflineCommands = true
+        defer { isSynchronizingOfflineCommands = false }
+        do {
+            let queue = try offlineQueue(for: competitionID)
+            let existing = try await queue.all().filter { $0.state != .acknowledged }
+            let expectedVersion = max(operations.revision,
+                                      (existing.map(\.expectedAggregateVersion).max() ?? operations.revision - 1) + 1)
+            let key = "mac.\(UUID().uuidString.lowercased())"
+            _ = try await queue.enqueue(.live(
+                idempotencyKey: key,
+                competitionID: competitionID,
+                publishedRevision: blueprint.revision,
+                expectedLiveVersion: expectedVersion,
+                action: action
+            ))
+            offlineCommands = try await queue.all()
+            offlineJournalMessage = "Command saved durably. It remains pending until the server acknowledges it."
+        } catch {
+            offlineJournalMessage = "The live command could not be saved to the scoped offline journal."
+        }
+    }
+
+    public func synchronizeOfflineCommands() async {
+        guard !isSynchronizingOfflineCommands, !isDemoWorkspace,
+              let competitionID = selectedTournamentID,
+              let transport = activeClient as? any OfflineCommandTransport else {
+            offlineJournalMessage = "Offline synchronization is unavailable for this workspace."
+            return
+        }
+        isSynchronizingOfflineCommands = true
+        defer { isSynchronizingOfflineCommands = false }
+        do {
+            let queue = try offlineQueue(for: competitionID)
+            let synchronizer = OfflineCommandSynchronizer(
+                queue: queue, transport: transport, workerID: "mac.connected-sync", retryDelay: 5
+            )
+            var accepted = 0
+            while true {
+                switch try await synchronizer.syncNext() {
+                case .idle:
+                    offlineJournalMessage = accepted > 0
+                        ? "\(accepted) command(s) accepted by the authoritative server."
+                        : "No eligible pending commands."
+                    offlineCommands = try await queue.all()
+                    if accepted > 0 { await loadSelectedTournament() }
+                    return
+                case .acknowledged:
+                    accepted += 1
+                case .conflicted:
+                    offlineCommands = try await queue.all()
+                    offlineJournalMessage = "A stale command is conflicted and requires explicit reconciliation."
+                    return
+                case .retryScheduled:
+                    offlineCommands = try await queue.all()
+                    offlineJournalMessage = "The server is unavailable. The command remains durable and pending."
+                    return
+                }
+            }
+        } catch {
+            offlineJournalMessage = "Offline synchronization stopped without changing authoritative truth."
+        }
+    }
+
+    public func reconcileOfflineCommand(_ command: OfflineCommandEnvelope) async {
+        guard command.state == .conflicted, let conflict = command.conflict,
+              let competitionID = selectedTournamentID else { return }
+        do {
+            let queue = try offlineQueue(for: competitionID)
+            _ = try await queue.reconcileConflict(
+                idempotencyKey: command.idempotencyKey,
+                replacementIdempotencyKey: "mac.reconciled.\(UUID().uuidString.lowercased())",
+                expectedAggregateVersion: conflict.actualAggregateVersion
+            )
+            offlineCommands = try await queue.all()
+            offlineJournalMessage = "Conflict reconciled to the observed server revision and queued for reviewable retry."
+        } catch {
+            offlineJournalMessage = "The conflict could not be reconciled. No server state was overwritten."
+        }
     }
 
     private static func message(for error: Error) -> String {
@@ -500,6 +614,27 @@ public final class TournamentOSAppModel {
         operationsState = .idle
         findingsState = .idle
         certificationState = .idle
+    }
+
+    private func offlineQueue(for competitionID: String) throws -> OfflineCommandQueue {
+        let cacheKey = "\(selectedWorkspaceID):\(competitionID)"
+        if let existing = offlineQueues[cacheKey] { return existing }
+        let persistence: any OfflineCommandQueuePersistence
+        if let offlineJournalDirectory {
+            let safeWorkspace = selectedWorkspaceID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "workspace"
+            let safeCompetition = competitionID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "competition"
+            let file = offlineJournalDirectory.appendingPathComponent(safeWorkspace, isDirectory: true)
+                .appendingPathComponent("\(safeCompetition).commands.json", isDirectory: false)
+            persistence = try FileOfflineCommandQueuePersistence(
+                fileURL: file,
+                scope: OfflineCommandQueueScope(organizationID: selectedWorkspaceID, competitionID: competitionID)
+            )
+        } else {
+            persistence = InMemoryOfflineCommandQueuePersistence()
+        }
+        let queue = OfflineCommandQueue(persistence: persistence)
+        offlineQueues[cacheKey] = queue
+        return queue
     }
 
     private func currentRemotePortfolioItems() -> [PortfolioTournamentDTO] {
@@ -587,11 +722,16 @@ public struct TournamentOSAppShell: View {
     }
 
     public init(client: any TournamentAPIClient) {
-        _model = State(initialValue: TournamentOSAppModel(client: client))
+        _model = State(initialValue: TournamentOSAppModel(
+            client: client, offlineJournalDirectory: defaultOfflineJournalDirectory()
+        ))
     }
 
     public init() {
-        _model = State(initialValue: TournamentOSAppModel(workspaces: demoWorkspaceSessions(), draftStorage: .standard))
+        _model = State(initialValue: TournamentOSAppModel(
+            workspaces: demoWorkspaceSessions(), draftStorage: .standard,
+            offlineJournalDirectory: defaultOfflineJournalDirectory()
+        ))
     }
 
     public var body: some View {
@@ -608,6 +748,7 @@ public struct TournamentOSAppShell: View {
         }
         .task(id: model.selectedTournamentID) {
             await model.loadSelectedTournament()
+            await model.loadOfflineJournal()
         }
         .sheet(item: $model.presentedSheet) { sheet in
             switch sheet {
@@ -886,6 +1027,12 @@ private func localCompilerBaseURL() -> URL {
           let configured = URL(string: raw), ["127.0.0.1", "localhost"].contains(configured.host),
           ["http", "https"].contains(configured.scheme?.lowercased() ?? "") else { return fallback }
     return configured
+}
+
+private func defaultOfflineJournalDirectory() -> URL? {
+    FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+        .appendingPathComponent("Krateasy Competitions", isDirectory: true)
+        .appendingPathComponent("Offline Command Journals", isDirectory: true)
 }
 
 #Preview("Krateasy Competitions – Mac") {

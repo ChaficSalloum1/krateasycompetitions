@@ -173,6 +173,66 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(approvalJSON["acknowledgedFindingCodes"] as? [String], ["TSW210"])
         XCTAssertNil(approvalJSON["guardInput"])
     }
+
+    func testOfflineLiveCommandTransportSendsOnlyTheExactQueuedServerCommand() async throws {
+        let (client, transport) = makeClient()
+        transport.respond(status: 200, json: #"{"live":{"state":{"version":8}}}"#)
+        let draft = try OfflineCommandDraft.live(
+            idempotencyKey: "mac.command.1",
+            competitionID: "st-albans",
+            publishedRevision: 1,
+            expectedLiveVersion: 7,
+            action: .checkIn(entrantID: "advanced.pair.1")
+        )
+        let envelope = OfflineCommandEnvelope(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000010")!,
+            draft: draft,
+            createdAt: Date(timeIntervalSince1970: 1_788_600_000)
+        )
+
+        let receipt = try await client.submit(envelope)
+
+        XCTAssertEqual(receipt.aggregateVersion, 8)
+        XCTAssertEqual(transport.lastRequest?.url?.path, "/v1/competition-journey/st-albans/live-command")
+        let body = try XCTUnwrap(transport.allRequestBodies.last ?? nil)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(object["expectedRevision"] as? Int, 1)
+        let command = try XCTUnwrap(object["command"] as? [String: Any])
+        XCTAssertEqual(command["kind"] as? String, "CHECK_IN")
+        XCTAssertEqual(command["commandId"] as? String, "mac.command.1")
+        XCTAssertEqual(command["expectedVersion"] as? Int, 7)
+        XCTAssertEqual(command["entrantId"] as? String, "advanced.pair.1")
+        XCTAssertNil(command["actorId"])
+        XCTAssertNil(command["occurredAt"])
+        XCTAssertNil(object["guardInput"])
+    }
+
+    func testOfflineLiveCommandConflictReadsTheAuthoritativeHeadInsteadOfOverwritingIt() async throws {
+        let (client, transport) = makeClient()
+        transport.respond(status: 400, json: #"{"error":"live_version_conflict"}"#)
+        transport.respond(status: 200, json: #"{"live":{"state":{"version":9}}}"#)
+        let draft = try OfflineCommandDraft.live(
+            idempotencyKey: "mac.command.stale",
+            competitionID: "st-albans",
+            publishedRevision: 1,
+            expectedLiveVersion: 7,
+            action: .call(contestID: "advanced.pools.P1.R1.M1")
+        )
+        let envelope = OfflineCommandEnvelope(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000011")!,
+            draft: draft,
+            createdAt: Date(timeIntervalSince1970: 1_788_600_000)
+        )
+
+        await XCTAssertThrowsErrorAsync(try await client.submit(envelope)) { error in
+            XCTAssertEqual(error as? OfflineCommandTransportError,
+                           .rejected(actualAggregateVersion: 9, reason: "live_version_conflict"))
+        }
+        XCTAssertEqual(transport.allRequests.map { $0.url?.path }, [
+            "/v1/competition-journey/st-albans/live-command",
+            "/v1/competition-journey/st-albans",
+        ])
+    }
 }
 
 private func XCTAssertThrowsErrorAsync<T>(

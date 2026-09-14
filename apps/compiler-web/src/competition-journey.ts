@@ -217,6 +217,7 @@ export interface CompetitionJourneySnapshot {
   readonly compiled: null | {
     revision: number;
     compiledAt: string;
+    timezone: string;
     specHash: string;
     graphHash: string;
     scheduleHash: string;
@@ -395,6 +396,7 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
     compiled: compiled ? {
       revision: compiled.revision,
       compiledAt: compiled.compiledAt,
+      timezone: compiled.spec.scheduling.timezone,
       specHash: canonicalHash(compiled.spec),
       graphHash: canonicalHash(compiled.graph),
       scheduleHash: canonicalHash(compiled.schedule),

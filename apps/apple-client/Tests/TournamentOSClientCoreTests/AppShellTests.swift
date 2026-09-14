@@ -182,6 +182,45 @@ final class AppShellTests: XCTestCase {
         ])
     }
 
+    func testConnectedMacPersistsQueuesAndAcknowledgesOneAuthoritativeLiveCommandAcrossRestart() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("krateasy-app-offline-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let client = OfflineCapableClient()
+        let first = TournamentOSAppModel(client: client, offlineJournalDirectory: directory)
+        first.selectedTournamentID = "st-albans"
+        await first.loadSelectedTournament()
+
+        await first.queueLiveAction(.call(contestID: "advanced.pools.P1.R1.M1"))
+
+        XCTAssertEqual(first.offlineCommands.count, 1)
+        XCTAssertEqual(first.offlineCommands.first?.state, .pending)
+        XCTAssertEqual(first.offlineCommands.first?.expectedAggregateVersion, 7)
+        let submissionsBeforeSync = await client.submissionCount()
+        XCTAssertEqual(submissionsBeforeSync, 0)
+
+        let restarted = TournamentOSAppModel(client: client, offlineJournalDirectory: directory)
+        restarted.selectedTournamentID = "st-albans"
+        await restarted.loadSelectedTournament()
+        await restarted.loadOfflineJournal()
+        XCTAssertEqual(restarted.offlineCommands.first?.state, .pending)
+
+        await restarted.synchronizeOfflineCommands()
+        XCTAssertEqual(restarted.offlineCommands.first?.state, .acknowledged)
+        XCTAssertEqual(restarted.offlineCommands.first?.acknowledgement?.aggregateVersion, 8)
+        let submissionsAfterSync = await client.submissionCount()
+        XCTAssertEqual(submissionsAfterSync, 1)
+
+        let finalProcess = TournamentOSAppModel(client: client, offlineJournalDirectory: directory)
+        finalProcess.selectedTournamentID = "st-albans"
+        await finalProcess.loadSelectedTournament()
+        await finalProcess.loadOfflineJournal()
+        await finalProcess.synchronizeOfflineCommands()
+        XCTAssertEqual(finalProcess.offlineCommands.first?.state, .acknowledged)
+        let submissionsAfterRestart = await client.submissionCount()
+        XCTAssertEqual(submissionsAfterRestart, 1)
+    }
+
     private func assertFailure<Value>(_ state: ContentState<Value>, file: StaticString = #filePath, line: UInt = #line) {
         guard case .failed(let failure) = state else {
             return XCTFail("Expected failure state", file: file, line: line)
@@ -249,4 +288,49 @@ private struct FailingClient: TournamentAPIClient {
     func fetchLiveControlRoom(tournamentID: String) async throws -> LiveControlRoomDTO { throw TournamentAPIClientError.httpStatus(503) }
     func fetchFindings(tournamentID: String) async throws -> FindingsDTO { throw TournamentAPIClientError.httpStatus(503) }
     func fetchCertification(tournamentID: String) async throws -> CertificationDTO { throw TournamentAPIClientError.httpStatus(503) }
+}
+
+private actor OfflineCapableClient: TournamentAPIClient, OfflineCommandTransport {
+    private var submissions = 0
+
+    func submissionCount() -> Int { submissions }
+
+    func submit(_ envelope: OfflineCommandEnvelope) throws -> OfflineCommandReceipt {
+        submissions += 1
+        return OfflineCommandReceipt(aggregateVersion: envelope.expectedAggregateVersion + 1)
+    }
+
+    func fetchPortfolio() throws -> PortfolioDTO {
+        PortfolioDTO(apiVersion: "1.0", items: [
+            PortfolioTournamentDTO(id: "st-albans", name: "St Albans", revision: 1, certificationStatus: .certified),
+        ])
+    }
+
+    func fetchBlueprint(tournamentID: String) throws -> BlueprintSummaryDTO {
+        BlueprintSummaryDTO(apiVersion: "1.0", id: tournamentID, name: "St Albans", revision: 1,
+                            certificationStatus: .certified, solverStatus: .optimal, participantCount: 48,
+                            actualContestCount: 108, scheduledContestCount: 108, actionRequired: false)
+    }
+
+    func fetchSchedule(tournamentID: String) throws -> ScheduleDTO {
+        ScheduleDTO(apiVersion: "1.0", tournamentID: tournamentID, timezone: "Europe/London",
+                    solverStatus: .optimal, objectiveValueMinutes: 540, lowerBoundMinutes: 540,
+                    optimalityGap: 0, items: [])
+    }
+
+    func fetchLiveControlRoom(tournamentID: String) throws -> LiveControlRoomDTO {
+        LiveControlRoomDTO(apiVersion: "1.0", tournamentID: tournamentID, revision: 7,
+                           asOf: "2026-09-20T12:00:00Z", timezone: "Europe/London",
+                           summary: LiveControlRoomSummaryDTO(now: 0, next: 1, late: 0, blocked: 0, unreported: 0),
+                           items: [])
+    }
+
+    func fetchFindings(tournamentID: String) throws -> FindingsDTO {
+        FindingsDTO(apiVersion: "1.0", tournamentID: tournamentID, items: [])
+    }
+
+    func fetchCertification(tournamentID: String) throws -> CertificationDTO {
+        CertificationDTO(apiVersion: "1.0", tournamentID: tournamentID, status: .certified,
+                         statement: "Guard passed", certificationHash: "hash", proofIDs: [:])
+    }
 }

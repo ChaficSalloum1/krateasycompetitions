@@ -393,14 +393,42 @@ function journeyClientApiResponse(path: string, journey: CompetitionJourney): un
     participantCount: snapshot.blueprint.participantCount ?? 0, actualContestCount: compiled?.actualContestCount ?? 0,
     scheduledContestCount: compiled?.scheduledContestCount ?? 0, actionRequired: snapshot.status !== "PUBLISHED" });
   if (section === "schedule") return immutable({ apiVersion: CLIENT_API_VERSION, tournamentID: snapshot.id,
-    timezone: "Asia/Beirut", solverStatus: compiled?.solverStatus ?? "UNKNOWN", objectiveValueMinutes: null,
+    timezone: compiled?.timezone ?? "UTC", solverStatus: compiled?.solverStatus ?? "UNKNOWN", objectiveValueMinutes: null,
     lowerBoundMinutes: 0, optimalityGap: null,
     items: compiled?.schedule.map((contest) => ({ id: contest.contestId, resourceID: contest.resourceId,
       start: contest.start, end: contest.end, possibleEntrantIDs: [],
       accessibilityLabel: `${contest.contestId} on ${contest.resourceId}, ${contest.start} to ${contest.end}` })) ?? [] });
-  if (section === "operations") return immutable({ apiVersion: CLIENT_API_VERSION, tournamentID: snapshot.id,
-    revision: snapshot.revision, asOf: compiled?.compiledAt ?? new Date(0).toISOString(), timezone: "Asia/Beirut",
-    summary: { now: 0, next: 0, late: 0, blocked: 0, unreported: 0 }, items: [] });
+  if (section === "operations") {
+    if (!snapshot.live) return immutable({ apiVersion: CLIENT_API_VERSION, tournamentID: snapshot.id,
+      revision: 0, asOf: compiled?.compiledAt ?? new Date(0).toISOString(), timezone: compiled?.timezone ?? "UTC",
+      summary: { now: 0, next: 0, late: 0, blocked: 0, unreported: 0 }, items: [] });
+    const state = snapshot.live.state;
+    const asOf = state.events.at(-1)?.occurredAt ?? compiled?.compiledAt ?? new Date(0).toISOString();
+    const operations = deriveLiveControlRoom(state, asOf);
+    const groups = [
+      ...operations.now.map((contest) => ({ contest, status: "NOW" as const, statusText: "In progress", detail: "Contest is active now." })),
+      ...operations.next.map((contest) => ({ contest, status: "NEXT" as const, statusText: "Up next", detail: "Entrants and assigned resource are ready." })),
+      ...operations.late.map((contest) => ({ contest, status: "LATE" as const, statusText: `${contest.minutesLate} minutes late`, detail: "Scheduled start has passed and the contest has not begun." })),
+      ...operations.blocked.map((contest) => ({ contest, status: "BLOCKED" as const, statusText: "Blocked",
+        detail: contest.reasons.map(({ code, subjectIds }) => `${code}: ${subjectIds.join(", ")}`).join("; ") })),
+      ...operations.unreported.map((contest) => ({ contest, status: "UNREPORTED" as const,
+        statusText: "Result unreported", detail: "Contest is settled but its result receipt is outstanding." })),
+    ];
+    const definitions = new Map(state.definition.contests.map((contest) => [contest.contestId, contest]));
+    return immutable({ apiVersion: CLIENT_API_VERSION, tournamentID: snapshot.id, revision: state.version,
+      asOf: operations.generatedAt, timezone: compiled?.timezone ?? "UTC",
+      summary: { now: operations.now.length, next: operations.next.length, late: operations.late.length,
+        blocked: operations.blocked.length, unreported: operations.unreported.length },
+      items: groups.map(({ contest, status, statusText, detail }) => {
+        const participantIDs = [...(state.resolvedEntrants[contest.contestId]
+          ?? definitions.get(contest.contestId)?.entrantIds ?? [])];
+        return { id: `${status}.${contest.contestId}`, contestID: contest.contestId, status,
+          title: contest.contestId, statusText, detail, resourceID: contest.courtId,
+          scheduledStart: contest.scheduledStart, participantIDs,
+          participantNames: participantIDs.map(entrantDisplayName),
+          accessibilityLabel: `${contest.contestId}, ${statusText}, ${contest.courtId}, scheduled ${contest.scheduledStart}${detail ? `, ${detail}` : ""}` };
+      }) });
+  }
   if (section === "findings") return immutable({ apiVersion: CLIENT_API_VERSION, tournamentID: snapshot.id,
     items: compiled?.guardFindings.map((finding, index) => ({ id: `${finding.sourceCode}.${index + 1}`, code: finding.sourceCode,
       severity: ["CRITICAL", "INTEGRITY"].includes(finding.severity) ? "ERROR" as const : "WARNING" as const,

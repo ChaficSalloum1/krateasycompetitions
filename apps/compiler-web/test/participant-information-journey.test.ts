@@ -303,6 +303,13 @@ test("connected control-room commands append call, score, finish, correction, an
         expectedVersion: current.live!.state.version - 1 } });
     assert.equal(replay.status, 200);
     assert.equal(replay.body.live.state.proofHash, current.live!.state.proofHash);
+    const operations = await http(server, "GET", `/v1/tournaments/${encodeURIComponent(base.id)}/operations`);
+    assert.equal(operations.status, 200);
+    assert.equal(operations.body.revision, current.live!.state.version);
+    assert.equal(operations.body.timezone, "Europe/London");
+    assert.equal(operations.body.items.length, 108);
+    assert.ok(operations.body.items.some((item: any) => item.contestID === contest.contestId
+      && item.status === "UNREPORTED" && item.participantIDs.length === 2));
     const restarted = new CompetitionJourney({ storagePath, organizationId: "org.st-albans",
       participantTokenSecret: secret, now: () => timestamp });
     assert.equal(restarted.read(base.id)!.live!.state.proofHash, current.live!.state.proofHash);

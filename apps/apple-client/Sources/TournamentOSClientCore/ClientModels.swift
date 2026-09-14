@@ -215,6 +215,7 @@ public struct LiveControlRoomItemDTO: Codable, Equatable, Sendable, Identifiable
     public let detail: String
     public let resourceID: String?
     public let scheduledStart: String?
+    public let participantIDs: [String]?
     public let participantNames: [String]
     public let accessibilityLabel: String
 
@@ -227,6 +228,7 @@ public struct LiveControlRoomItemDTO: Codable, Equatable, Sendable, Identifiable
         detail: String,
         resourceID: String?,
         scheduledStart: String?,
+        participantIDs: [String]? = nil,
         participantNames: [String],
         accessibilityLabel: String
     ) {
@@ -238,6 +240,7 @@ public struct LiveControlRoomItemDTO: Codable, Equatable, Sendable, Identifiable
         self.detail = detail
         self.resourceID = resourceID
         self.scheduledStart = scheduledStart
+        self.participantIDs = participantIDs
         self.participantNames = participantNames
         self.accessibilityLabel = accessibilityLabel
     }

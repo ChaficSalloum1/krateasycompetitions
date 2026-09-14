@@ -143,7 +143,7 @@ public extension TournamentAPIClient {
     var workspaceKind: TournamentWorkspaceKind { .connected }
 }
 
-public final class URLSessionTournamentAPIClient: TournamentAPIClient, CompetitionJourneyClient, @unchecked Sendable {
+public final class URLSessionTournamentAPIClient: TournamentAPIClient, CompetitionJourneyClient, OfflineCommandTransport, @unchecked Sendable {
     private let baseURL: URL
     private let session: URLSession
     private let supportedAPIVersion: String
@@ -194,6 +194,50 @@ public final class URLSessionTournamentAPIClient: TournamentAPIClient, Competiti
                                             acknowledgedFindingCodes: compiled.compiled?.requiredAcknowledgementCodes ?? [])
     }
 
+    public func submit(_ envelope: OfflineCommandEnvelope) async throws -> OfflineCommandReceipt {
+        guard let body = try? JSONSerialization.jsonObject(with: envelope.payload) as? [String: Any],
+              let command = body["command"] as? [String: Any],
+              command["commandId"] as? String == envelope.idempotencyKey,
+              command["kind"] as? String == envelope.commandName,
+              command["expectedVersion"] as? Int == envelope.expectedAggregateVersion,
+              body["expectedRevision"] as? Int != nil else {
+            throw OfflineCommandTransportError.rejected(
+                actualAggregateVersion: envelope.expectedAggregateVersion,
+                reason: "offline_command_envelope_mismatch"
+            )
+        }
+        let url: URL
+        do { url = try requestURL(pathComponents: ["v1", "competition-journey", envelope.aggregateID, "live-command"]) }
+        catch {
+            throw OfflineCommandTransportError.rejected(
+                actualAggregateVersion: envelope.expectedAggregateVersion,
+                reason: "invalid_competition_identity"
+            )
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = envelope.payload
+        let data: Data
+        let response: URLResponse
+        do { (data, response) = try await session.data(for: request) }
+        catch { throw OfflineCommandTransportError.unavailable }
+        guard let http = response as? HTTPURLResponse else { throw OfflineCommandTransportError.unavailable }
+        if (200..<300).contains(http.statusCode),
+           let accepted = try? JSONDecoder().decode(LiveCommandResponse.self, from: data) {
+            return OfflineCommandReceipt(aggregateVersion: accepted.live.state.version)
+        }
+        if http.statusCode == 408 || http.statusCode == 429 || http.statusCode >= 500 {
+            throw OfflineCommandTransportError.unavailable
+        }
+        let reason = (try? JSONDecoder().decode(ServerErrorResponse.self, from: data).error)
+            ?? "authoritative_server_rejected_command"
+        let actualVersion = (try? await fetchJourneyLiveHead(competitionID: envelope.aggregateID))
+            ?? envelope.expectedAggregateVersion
+        throw OfflineCommandTransportError.rejected(actualAggregateVersion: actualVersion, reason: reason)
+    }
+
     public func fetchPortfolio() async throws -> PortfolioDTO {
         try await fetch(pathComponents: ["v1", "tournaments"])
     }
@@ -219,16 +263,7 @@ public final class URLSessionTournamentAPIClient: TournamentAPIClient, Competiti
     }
 
     private func fetch<Response: VersionedAPIDTO>(pathComponents: [String]) async throws -> Response {
-        guard ["http", "https"].contains(baseURL.scheme?.lowercased() ?? ""), baseURL.host != nil,
-              pathComponents.allSatisfy({
-                  !$0.isEmpty && $0 != "." && $0 != ".." &&
-                  !$0.contains("/") && !$0.contains("\\") && !$0.contains("?") && !$0.contains("#")
-              }) else {
-            throw TournamentAPIClientError.invalidURL
-        }
-        let url = pathComponents.reduce(baseURL) { partial, component in
-            partial.appendingPathComponent(component, isDirectory: false)
-        }
+        let url = try requestURL(pathComponents: pathComponents)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -259,11 +294,7 @@ public final class URLSessionTournamentAPIClient: TournamentAPIClient, Competiti
     }
 
     private func send<Body: Encodable, Response: Decodable>(pathComponents: [String], body: Body) async throws -> Response {
-        guard ["http", "https"].contains(baseURL.scheme?.lowercased() ?? ""), baseURL.host != nil,
-              pathComponents.allSatisfy({ !$0.isEmpty && !$0.contains("/") && !$0.contains("\\") }) else {
-            throw TournamentAPIClientError.invalidURL
-        }
-        let url = pathComponents.reduce(baseURL) { $0.appendingPathComponent($1, isDirectory: false) }
+        let url = try requestURL(pathComponents: pathComponents)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -278,7 +309,39 @@ public final class URLSessionTournamentAPIClient: TournamentAPIClient, Competiti
         do { return try JSONDecoder().decode(Response.self, from: data) }
         catch { throw TournamentAPIClientError.decodingFailed }
     }
+
+    private func requestURL(pathComponents: [String]) throws -> URL {
+        guard ["http", "https"].contains(baseURL.scheme?.lowercased() ?? ""), baseURL.host != nil,
+              pathComponents.allSatisfy({
+                  !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains("/") && !$0.contains("\\")
+                      && !$0.contains("?") && !$0.contains("#")
+              }) else { throw TournamentAPIClientError.invalidURL }
+        return pathComponents.reduce(baseURL) { $0.appendingPathComponent($1, isDirectory: false) }
+    }
+
+    private func fetchJourneyLiveHead(competitionID: String) async throws -> Int {
+        let url = try requestURL(pathComponents: ["v1", "competition-journey", competitionID])
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let head = try? JSONDecoder().decode(LiveCommandResponse.self, from: data) else {
+            throw TournamentAPIClientError.invalidResponse
+        }
+        return head.live.state.version
+    }
 }
+
+private struct LiveCommandResponse: Decodable {
+    struct Live: Decodable {
+        struct State: Decodable { let version: Int }
+        let state: State
+    }
+    let live: Live
+}
+
+private struct ServerErrorResponse: Decodable { let error: String }
 
 private struct CreateJourneyCommand: Encodable { let source: CompetitionCreationSourceInput }
 private struct ReviseJourneyCommand: Encodable {
