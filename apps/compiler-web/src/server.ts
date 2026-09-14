@@ -642,7 +642,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           : competitionJourney.readOrganiserLive({ ...input, at: serverNow() }));
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|participant-access))?$/.exec(request.url ?? "");
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|participant-access))?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
@@ -745,6 +745,28 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
             throw new Error("invalid_journey_command");
           json(response, 200, competitionJourney.approveNoShow(competitionId, command.expectedRevision as number,
             command.expectedProposalHash, command.strategy as "KEEP_ANNOUNCED_SLOTS" | "RELEASE_WALKOVER_SLOTS",
+            "local.tournament-director", serverNow()));
+          return;
+        }
+        if (operation === "court-outage-preview") {
+          const allowed = ["expectedOperationalRevision", "expectedLiveVersion", "proposalId", "courtId", "reason", "expectedReopenAt"];
+          if (Object.keys(command).some((key) => !allowed.includes(key))
+            || !Number.isSafeInteger(command.expectedOperationalRevision) || !Number.isSafeInteger(command.expectedLiveVersion)
+            || !["proposalId", "courtId", "reason", "expectedReopenAt"].every((key) => typeof command[key] === "string"))
+            throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.proposeCourtOutage(competitionId,
+            command.expectedOperationalRevision as number, command.expectedLiveVersion as number,
+            { proposalId: command.proposalId as string, courtId: command.courtId as string,
+              reason: command.reason as string, expectedReopenAt: command.expectedReopenAt as string,
+              proposedBy: "local.live-operator", proposedAt: serverNow() }));
+          return;
+        }
+        if (operation === "court-outage-approve") {
+          if (Object.keys(command).some((key) => !["expectedOperationalRevision", "expectedProposalHash"].includes(key))
+            || !Number.isSafeInteger(command.expectedOperationalRevision) || typeof command.expectedProposalHash !== "string")
+            throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.approveCourtOutage(competitionId,
+            command.expectedOperationalRevision as number, command.expectedProposalHash,
             "local.tournament-director", serverNow()));
           return;
         }

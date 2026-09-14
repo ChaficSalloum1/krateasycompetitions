@@ -66,6 +66,14 @@ import {
   type PublicLiveProjection,
 } from "./participant-information.js";
 import { advanceLiveProgression, verifyLiveProgression } from "./live-progression.js";
+import {
+  approveCourtOutageProposal,
+  authoritativeOperationalAssignments,
+  proposeCourtOutageRepair,
+  verifyCourtOutageProposal,
+  type CourtOutageProposal,
+  type CourtOutageProposalRequest,
+} from "./court-outage-journey.js";
 
 export type CompetitionJourneyStatus = "NEEDS_INPUT" | "DRAFT" | "GUARD_BLOCKED" | "READY_FOR_APPROVAL" | "PUBLISHED";
 
@@ -110,6 +118,7 @@ interface JourneyPublication {
 }
 
 export interface LiveJourneyPublication {
+  readonly changeKind?: "NO_SHOW" | "COURT_OUTAGE";
   readonly revision: number;
   readonly baseRevision: number;
   readonly proposalHash: string;
@@ -149,7 +158,9 @@ interface JourneyLiveState {
   readonly participantRevisions: Readonly<Record<string, number>>;
   readonly contestRevisions: Readonly<Record<string, number>>;
   readonly proposal?: NoShowProposal;
+  readonly courtOutageProposal?: CourtOutageProposal;
   readonly publication?: LiveJourneyPublication;
+  readonly publicationHistory?: readonly LiveJourneyPublication[];
 }
 
 interface StoredJourneyRecord {
@@ -277,23 +288,62 @@ function verifyRecord(record: StoredJourneyRecord): boolean {
   if (record.compiled && progressionEntrants
     && !verifyLiveProgression(record.compiled.spec, record.compiled.graph, progressionEntrants, replay.state)) return false;
   if (record.live.proposal && !verifyNoShowProposal(record.live.proposal)) return false;
+  if (record.live.courtOutageProposal) {
+    const proposal = record.live.courtOutageProposal;
+    if (!verifyCourtOutageProposal(proposal) || !record.compiled) return false;
+    const baseEventCount = record.live.state.events.findIndex((_event, index) => {
+      const replayed = replayLiveOperationsEvents(record.live!.state.definition, record.live!.state.events.slice(0, index + 1));
+      return replayed.valid && replayed.state.proofHash === proposal.baseLiveStateProofHash;
+    });
+    const baseReplay = proposal.baseLiveStateProofHash === replayLiveOperationsEvents(record.live.state.definition, []).state.proofHash
+      ? replayLiveOperationsEvents(record.live.state.definition, [])
+      : baseEventCount >= 0 ? replayLiveOperationsEvents(record.live.state.definition,
+        record.live.state.events.slice(0, baseEventCount + 1)) : null;
+    const previousPublication = record.live.publicationHistory?.find(({ revision }) => revision === proposal.baseOperationalRevision);
+    const assignments = previousPublication?.operationalAssignments
+      ?? (proposal.baseOperationalRevision === record.publication?.revision
+        ? authoritativeOperationalAssignments(record.compiled.schedule) : null);
+    if (!baseReplay?.valid || !assignments) return false;
+    try {
+      const regenerated = proposeCourtOutageRepair(proposal.baseOperationalRevision, baseReplay.state, {
+        spec: record.compiled.spec, graph: record.compiled.graph, schedule: record.compiled.schedule,
+        ...(record.compiled.simulation ? { simulation: record.compiled.simulation } : {}),
+      }, assignments, { proposalId: proposal.proposalId, courtId: proposal.courtId, reason: proposal.reason,
+        expectedReopenAt: proposal.expectedReopenAt, proposedBy: proposal.proposedBy, proposedAt: proposal.proposedAt });
+      if (regenerated.proposalHash !== proposal.proposalHash) return false;
+    } catch { return false; }
+  }
   if (record.live.publication) {
     const { publicationHash, ...publicationBody } = record.live.publication;
     const publishedState = replayLiveOperationsEvents(record.live.state.definition,
       record.live.state.events.slice(0, publicationBody.stateVersion));
-    const option = record.live.proposal?.options.find(({ optionHash }) => optionHash === publicationBody.optionHash);
     if (publicationHash !== canonicalHash(publicationBody) || !publishedState.valid
-      || publicationBody.stateProofHash !== publishedState.state.proofHash || !record.live.proposal || !option
-      || publicationBody.proposalHash !== record.live.proposal.proposalHash
-      || publicationBody.baseRevision !== record.live.baseRevision
+      || publicationBody.stateProofHash !== publishedState.state.proofHash
       || publicationBody.revision !== publicationBody.baseRevision + 1
-      || publicationBody.approvedBy === record.live.proposal.proposedBy
-      || publicationBody.approvedBy === publicationBody.publishedBy
-      || canonicalHash(publicationBody.affectedContestIds) !== canonicalHash(record.live.proposal.affectedContestIds)
-      || canonicalHash(publicationBody.affectedEntrantIds) !== canonicalHash(record.live.proposal.affectedEntrantIds)
-      || canonicalHash(publicationBody.operationalAssignments) !== canonicalHash(option.operationalAssignments)
-      || canonicalHash(publicationBody.settledAsWalkoverContestIds) !== canonicalHash(option.settledAsWalkoverContestIds)) return false;
+      || publicationBody.approvedBy === publicationBody.publishedBy) return false;
+    if (publicationBody.changeKind === "COURT_OUTAGE") {
+      const proposal = record.live.courtOutageProposal;
+      if (!proposal || publicationBody.proposalHash !== proposal.proposalHash
+        || publicationBody.optionHash !== proposal.proposalHash || publicationBody.approvedBy === proposal.proposedBy
+        || canonicalHash(publicationBody.affectedContestIds) !== canonicalHash(proposal.affectedContestIds)
+        || canonicalHash(publicationBody.affectedEntrantIds) !== canonicalHash(proposal.affectedEntrantIds)
+        || canonicalHash(publicationBody.operationalAssignments) !== canonicalHash(proposal.operationalAssignments)
+        || publicationBody.settledAsWalkoverContestIds.length) return false;
+    } else {
+      const option = record.live.proposal?.options.find(({ optionHash }) => optionHash === publicationBody.optionHash);
+      if (!record.live.proposal || !option || publicationBody.proposalHash !== record.live.proposal.proposalHash
+        || publicationBody.baseRevision !== record.live.baseRevision
+        || publicationBody.approvedBy === record.live.proposal.proposedBy
+        || canonicalHash(publicationBody.affectedContestIds) !== canonicalHash(record.live.proposal.affectedContestIds)
+        || canonicalHash(publicationBody.affectedEntrantIds) !== canonicalHash(record.live.proposal.affectedEntrantIds)
+        || canonicalHash(publicationBody.operationalAssignments) !== canonicalHash(option.operationalAssignments)
+        || canonicalHash(publicationBody.settledAsWalkoverContestIds) !== canonicalHash(option.settledAsWalkoverContestIds)) return false;
+    }
   }
+  if (record.live.publicationHistory && (record.live.publicationHistory.some((publication) => {
+    const { publicationHash, ...body } = publication;
+    return publicationHash !== canonicalHash(body);
+  }) || record.live.publicationHistory.at(-1)?.publicationHash !== record.live.publication?.publicationHash)) return false;
   try { new InMemoryTransactionalOutbox(record.organizationId, record.live.delivery); } catch { return false; }
   return true;
 }
@@ -703,6 +753,7 @@ export class CompetitionJourney {
     const publishedBy = "competition-journey.live-publisher" as const;
     if (approvedBy === publishedBy) throw new Error("live_publication_requires_independent_actor");
     const publicationBody = {
+      changeKind: "NO_SHOW" as const,
       revision: expectedRevision + 1, baseRevision: expectedRevision, proposalHash: proposal.proposalHash,
       optionHash: option.optionHash, stateProofHash: option.proposedLiveState.proofHash,
       stateVersion: option.proposedLiveState.version, approvedBy, approvedAt,
@@ -732,10 +783,112 @@ export class CompetitionJourney {
       occurredAt: approvedAt, committedAt: approvedAt, payload: intent.payload,
     }, { topic: "competition.participant-next.v1", key: intent.key, payload: intent.payload });
     const revisedLive: JourneyLiveState = { ...live, state: option.proposedLiveState, publication,
+      publicationHistory: [...(live.publicationHistory ?? []), publication],
       participantRevisions: { ...live.participantRevisions,
         ...Object.fromEntries(proposal.affectedEntrantIds.map((entrantId) => [entrantId, expectedRevision + 1])) },
       contestRevisions: { ...live.contestRevisions,
         ...Object.fromEntries(proposal.affectedContestIds.map((contestId) => [contestId, expectedRevision + 1])) },
+      delivery: outbox.list() };
+    const revised = sealRecord({ ...withoutSeal(current), updatedAt: approvedAt, live: revisedLive });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  public proposeCourtOutage(id: string, expectedOperationalRevision: number, expectedLiveVersion: number,
+    request: CourtOutageProposalRequest): CompetitionJourneySnapshot {
+    const allowed = ["proposalId", "courtId", "reason", "expectedReopenAt", "proposedBy", "proposedAt"];
+    if (!request || typeof request !== "object" || Object.keys(request).some((key) => !allowed.includes(key))
+      || !allowed.every((key) => typeof (request as unknown as Record<string, unknown>)[key] === "string"))
+      throw new Error("invalid_court_outage_request");
+    const current = this.require(id);
+    const live = this.requireProjectedLive(current, expectedOperationalRevision);
+    if (live.state.version !== expectedLiveVersion) throw new Error("live_version_conflict");
+    if (live.courtOutageProposal?.proposalId === request.proposalId) {
+      const existing = live.courtOutageProposal;
+      const sameRequest = canonicalHash({ proposalId: existing.proposalId, courtId: existing.courtId,
+        reason: existing.reason, expectedReopenAt: existing.expectedReopenAt,
+        proposedBy: existing.proposedBy, proposedAt: existing.proposedAt }) === canonicalHash(request);
+      if (existing.baseLiveStateProofHash === live.state.proofHash && sameRequest) return snapshotOf(current);
+      throw new Error("court_outage_proposal_identity_conflict");
+    }
+    const compiled = current.compiled!;
+    const assignments = live.publication?.operationalAssignments ?? authoritativeOperationalAssignments(compiled.schedule);
+    const proposal = proposeCourtOutageRepair(expectedOperationalRevision, live.state, {
+      spec: compiled.spec, graph: compiled.graph, schedule: compiled.schedule,
+      ...(compiled.simulation ? { simulation: compiled.simulation } : {}),
+    }, assignments, request);
+    const revisedLive: JourneyLiveState = { ...live, courtOutageProposal: proposal };
+    const revised = sealRecord({ ...withoutSeal(current), updatedAt: request.proposedAt, live: revisedLive });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  public approveCourtOutage(id: string, expectedOperationalRevision: number, expectedProposalHash: string,
+    approvedBy: string, approvedAt: string): CompetitionJourneySnapshot {
+    const current = this.require(id);
+    const live = this.requireProjectedLive(current, expectedOperationalRevision);
+    const proposal = live.courtOutageProposal;
+    if (!proposal || proposal.proposalHash !== expectedProposalHash || !verifyCourtOutageProposal(proposal))
+      throw new Error("court_outage_proposal_mismatch");
+    if (live.publication?.changeKind === "COURT_OUTAGE" && live.publication.proposalHash === proposal.proposalHash) {
+      if (live.publication.approvedBy === approvedBy) return snapshotOf(current);
+      throw new Error("court_outage_revision_already_published");
+    }
+    if (proposal.baseOperationalRevision !== expectedOperationalRevision
+      || proposal.baseLiveStateProofHash !== live.state.proofHash) throw new Error("stale_live_proposal");
+    if (!approvedBy.trim() || approvedBy === proposal.proposedBy)
+      throw new Error("court_outage_approval_requires_independent_actor");
+    if (!Number.isFinite(Date.parse(approvedAt)) || new Date(Date.parse(approvedAt)).toISOString() !== approvedAt
+      || approvedAt < proposal.proposedAt) throw new Error("invalid_court_outage_approval_time");
+    const compiled = current.compiled!;
+    const assignments = live.publication?.operationalAssignments ?? authoritativeOperationalAssignments(compiled.schedule);
+    const regenerated = proposeCourtOutageRepair(expectedOperationalRevision, live.state, {
+      spec: compiled.spec, graph: compiled.graph, schedule: compiled.schedule,
+      ...(compiled.simulation ? { simulation: compiled.simulation } : {}),
+    }, assignments, { proposalId: proposal.proposalId, courtId: proposal.courtId, reason: proposal.reason,
+      expectedReopenAt: proposal.expectedReopenAt, proposedBy: proposal.proposedBy, proposedAt: proposal.proposedAt });
+    if (regenerated.proposalHash !== proposal.proposalHash) throw new Error("court_outage_guard_blocked_publication");
+    const proposedLiveState = approveCourtOutageProposal(regenerated, approvedBy, approvedAt);
+    const publishedBy = "competition-journey.live-publisher" as const;
+    if (approvedBy === publishedBy) throw new Error("live_publication_requires_independent_actor");
+    const publicationBody = {
+      changeKind: "COURT_OUTAGE" as const,
+      revision: expectedOperationalRevision + 1, baseRevision: expectedOperationalRevision,
+      proposalHash: proposal.proposalHash, optionHash: proposal.proposalHash,
+      stateProofHash: proposedLiveState.proofHash, stateVersion: proposedLiveState.version,
+      approvedBy, approvedAt, publishedBy, affectedContestIds: [...proposal.affectedContestIds],
+      affectedEntrantIds: [...proposal.affectedEntrantIds], operationalAssignments: [...proposal.operationalAssignments],
+      settledAsWalkoverContestIds: [] as readonly string[],
+      outboxIntents: proposal.affectedEntrantIds.map((recipientEntrantId) => ({
+        topic: "competition.live-update.v1" as const,
+        key: `${id}:v${expectedOperationalRevision + 1}:${recipientEntrantId}`,
+        payload: { organizationId: current.organizationId, competitionId: id,
+          revision: expectedOperationalRevision + 1, baseRevision: expectedOperationalRevision,
+          recipientEntrantId, affectedContestIds: [...proposal.affectedContestIds],
+          stateProofHash: proposedLiveState.proofHash,
+          projection: deriveParticipantNext({ competitionId: current.id,
+            competitionName: recognisedCompetitionName(current.workbench!) ?? current.proposal.blueprint.name ?? "Competition",
+            publishedRevision: current.publication!.revision, operationalRevision: expectedOperationalRevision + 1,
+            affectedParticipantIds: proposal.affectedEntrantIds, participantId: recipientEntrantId,
+            participantNames: participantNamesFromProductionLock(current.workbench!), state: proposedLiveState,
+            assignments: proposal.operationalAssignments }) },
+      })),
+    };
+    const publication: LiveJourneyPublication = { ...publicationBody, publicationHash: canonicalHash(publicationBody) };
+    const outbox = new InMemoryTransactionalOutbox(current.organizationId, live.delivery);
+    for (const intent of publication.outboxIntents) outbox.enqueueFromCommittedEvent({
+      id: `live-publication.${publication.publicationHash}`, streamId: current.id,
+      streamVersion: publication.stateVersion, type: "competition.live-revision-published",
+      occurredAt: approvedAt, committedAt: approvedAt, payload: intent.payload,
+    }, { topic: "competition.participant-next.v1", key: intent.key, payload: intent.payload });
+    const revisedLive: JourneyLiveState = { ...live, state: proposedLiveState, publication,
+      publicationHistory: [...(live.publicationHistory ?? []), publication],
+      participantRevisions: { ...live.participantRevisions,
+        ...Object.fromEntries(proposal.affectedEntrantIds.map((entrantId) => [entrantId, expectedOperationalRevision + 1])) },
+      contestRevisions: { ...live.contestRevisions,
+        ...Object.fromEntries(proposal.affectedContestIds.map((contestId) => [contestId, expectedOperationalRevision + 1])) },
       delivery: outbox.list() };
     const revised = sealRecord({ ...withoutSeal(current), updatedAt: approvedAt, live: revisedLive });
     this.records.set(id, revised);
