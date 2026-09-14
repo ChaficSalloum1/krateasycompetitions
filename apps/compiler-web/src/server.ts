@@ -21,7 +21,7 @@ import { compilerHtml } from "./ui.js";
 import { creatorHtml } from "./creator-view.js";
 import { productHtml } from "./product-view.js";
 import { parseCreationProposalPayload } from "./creation-proposal.js";
-import { CompetitionJourney, competitionJourneyHtml, parseCreationSource } from "./competition-journey.js";
+import { CompetitionJourney, competitionJourneyHtml, parseConnectedLiveCommand, parseCreationSource } from "./competition-journey.js";
 import { playerHtml } from "./player-view.js";
 import { participantOperationsHtml, venueDisplayHtml } from "./attention-views.js";
 import { createParticipantAttentionDemo, parseParticipantAttentionAction } from "./participant-attention.js";
@@ -643,7 +643,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         json(response, 201, competitionJourney.create(parseCreationSource((body as { source: unknown }).source)));
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve))?$/.exec(request.url ?? "");
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve))?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
@@ -702,6 +702,42 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
             || !command.acknowledgedFindingCodes.every((value) => typeof value === "string")) throw new Error("invalid_journey_command");
           json(response, 200, competitionJourney.approve(competitionId, command.expectedRevision as number,
             "local.organiser", command.acknowledgedFindingCodes as string[]));
+          return;
+        }
+        if (operation === "live-activate") {
+          if (Object.keys(command).some((key) => key !== "expectedRevision")
+            || !Number.isSafeInteger(command.expectedRevision)) throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.activateLive(competitionId, command.expectedRevision as number,
+            "local.live-operator"));
+          return;
+        }
+        if (operation === "live-command") {
+          if (Object.keys(command).some((key) => !["expectedRevision", "command"].includes(key))
+            || !Number.isSafeInteger(command.expectedRevision)) throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.submitLiveCommand(competitionId, command.expectedRevision as number,
+            parseConnectedLiveCommand(command.command, "local.live-operator", new Date().toISOString())));
+          return;
+        }
+        if (operation === "no-show-preview") {
+          const allowed = ["expectedRevision", "expectedLiveVersion", "proposalId", "contestId", "entrantId", "reason"];
+          if (Object.keys(command).some((key) => !allowed.includes(key))
+            || !Number.isSafeInteger(command.expectedRevision) || !Number.isSafeInteger(command.expectedLiveVersion)
+            || !["proposalId", "contestId", "entrantId", "reason"].every((key) => typeof command[key] === "string"))
+            throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.proposeNoShow(competitionId, command.expectedRevision as number,
+            command.expectedLiveVersion as number, { proposalId: command.proposalId as string,
+              contestId: command.contestId as string, entrantId: command.entrantId as string,
+              reason: command.reason as string, proposedBy: "local.live-operator", proposedAt: new Date().toISOString() }));
+          return;
+        }
+        if (operation === "no-show-approve") {
+          if (Object.keys(command).some((key) => !["expectedRevision", "expectedProposalHash", "strategy"].includes(key))
+            || !Number.isSafeInteger(command.expectedRevision) || typeof command.expectedProposalHash !== "string"
+            || !["KEEP_ANNOUNCED_SLOTS", "RELEASE_WALKOVER_SLOTS"].includes(String(command.strategy)))
+            throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.approveNoShow(competitionId, command.expectedRevision as number,
+            command.expectedProposalHash, command.strategy as "KEEP_ANNOUNCED_SLOTS" | "RELEASE_WALKOVER_SLOTS",
+            "local.tournament-director", new Date().toISOString()));
           return;
         }
       }

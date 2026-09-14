@@ -8,10 +8,14 @@ import {
 } from "@tournament-os/tournament-schema";
 import { playAndKonnectDefinition } from "@tournament-os/tournament-schema/example";
 import {
+  type LiveOperationsCommand,
+  type LiveOperationsState,
   createEntrants,
   createPublicationCertificate,
   evaluateCompetitionGuard,
+  replayLiveOperationsEvents,
   runScenario,
+  submitLiveOperationsCommand,
   type CompetitionGraph,
   type CompetitionGuardReport,
   type ScheduleSolution,
@@ -36,6 +40,17 @@ import {
 } from "./competition-workbench.js";
 import { definitionFromProductionLock, entrantsFromProductionLock,
   verifiedScheduleFromProductionLock } from "./production-lock-definition.js";
+import {
+  activatePublishedLiveState,
+  independentlyVerifyNoShowOption,
+  preservedActualTruth,
+  proposeNoShowRepair,
+  verifyNoShowProposal,
+  type NoShowProposal,
+  type NoShowProposalRequest,
+  type NoShowRepairStrategy,
+  type OperationalAssignment,
+} from "./no-show-journey.js";
 
 export type CompetitionJourneyStatus = "NEEDS_INPUT" | "DRAFT" | "GUARD_BLOCKED" | "READY_FOR_APPROVAL" | "PUBLISHED";
 
@@ -79,6 +94,43 @@ interface JourneyPublication {
   }];
 }
 
+export interface LiveJourneyPublication {
+  readonly revision: number;
+  readonly baseRevision: number;
+  readonly proposalHash: string;
+  readonly optionHash: string;
+  readonly stateProofHash: string;
+  readonly approvedBy: string;
+  readonly approvedAt: string;
+  readonly publishedBy: "competition-journey.live-publisher";
+  readonly affectedContestIds: readonly string[];
+  readonly affectedEntrantIds: readonly string[];
+  readonly operationalAssignments: readonly OperationalAssignment[];
+  readonly settledAsWalkoverContestIds: readonly string[];
+  readonly outboxIntents: readonly {
+    readonly topic: "competition.live-update.v1";
+    readonly key: string;
+    readonly payload: {
+      readonly competitionId: string;
+      readonly revision: number;
+      readonly baseRevision: number;
+      readonly recipientEntrantId: string;
+      readonly affectedContestIds: readonly string[];
+      readonly stateProofHash: string;
+    };
+  }[];
+  readonly publicationHash: string;
+}
+
+interface JourneyLiveState {
+  readonly baseRevision: number;
+  readonly activatedBy: string;
+  readonly activatedAt: string;
+  readonly state: LiveOperationsState;
+  readonly proposal?: NoShowProposal;
+  readonly publication?: LiveJourneyPublication;
+}
+
 interface StoredJourneyRecord {
   readonly id: string;
   readonly draftVersion: number;
@@ -93,6 +145,7 @@ interface StoredJourneyRecord {
   readonly compiled?: CompiledJourneyRevision;
   readonly approval?: JourneyApproval;
   readonly publication?: JourneyPublication;
+  readonly live?: JourneyLiveState;
   readonly recordHash: string;
 }
 
@@ -149,6 +202,7 @@ export interface CompetitionJourneySnapshot {
   };
   readonly approval: JourneyApproval | null;
   readonly publication: JourneyPublication | null;
+  readonly live: JourneyLiveState | null;
   readonly webPath: string;
 }
 
@@ -186,7 +240,17 @@ function sealRecord(record: Omit<StoredJourneyRecord, "recordHash">): StoredJour
 
 function verifyRecord(record: StoredJourneyRecord): boolean {
   const { recordHash, ...body } = record;
-  return recordHash === makeRecordHash(body);
+  if (recordHash !== makeRecordHash(body)) return false;
+  if (!record.live) return true;
+  const replay = replayLiveOperationsEvents(record.live.state.definition, record.live.state.events);
+  if (!replay.valid || replay.state.proofHash !== record.live.state.proofHash) return false;
+  if (record.live.proposal && !verifyNoShowProposal(record.live.proposal)) return false;
+  if (record.live.publication) {
+    const { publicationHash, ...publicationBody } = record.live.publication;
+    if (publicationHash !== canonicalHash(publicationBody)
+      || publicationBody.stateProofHash !== record.live.state.proofHash) return false;
+  }
+  return true;
 }
 
 function statusOf(record: StoredJourneyRecord): CompetitionJourneyStatus {
@@ -247,6 +311,7 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
     } : null,
     approval: record.approval ?? null,
     publication: record.publication ?? null,
+    live: record.live ?? null,
     webPath: `/competitions/${encodeURIComponent(record.id)}`,
   };
 }
@@ -455,10 +520,119 @@ export class CompetitionJourney {
     return snapshotOf(revised);
   }
 
+  public activateLive(id: string, expectedRevision: number, activatedBy: string): CompetitionJourneySnapshot {
+    const current = this.require(id);
+    const compiled = current.compiled;
+    if (!compiled || !current.publication || compiled.revision !== expectedRevision
+      || current.publication.revision !== expectedRevision) throw new Error("journey_revision_conflict");
+    if (!activatedBy.trim()) throw new Error("live_activation_requires_actor");
+    if (current.live) {
+      if (current.live.baseRevision !== expectedRevision) throw new Error("live_base_revision_conflict");
+      return snapshotOf(current);
+    }
+    const activatedAt = this.canonicalNow();
+    const live: JourneyLiveState = { baseRevision: expectedRevision, activatedBy, activatedAt,
+      state: activatePublishedLiveState(id, compiled.graph, compiled.schedule) };
+    const revised = sealRecord({ ...withoutSeal(current), updatedAt: activatedAt, live });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  public submitLiveCommand(id: string, expectedRevision: number,
+    command: LiveOperationsCommand): CompetitionJourneySnapshot {
+    const current = this.require(id);
+    const live = this.requireLive(current, expectedRevision);
+    if (live.publication) throw new Error("live_revision_already_published");
+    const result = submitLiveOperationsCommand(live.state, command);
+    if (!result.accepted) throw new Error(`live_command_rejected:${result.findings.map(({ code }) => code).join(",")}`);
+    const revisedLive: JourneyLiveState = { ...live, state: result.state };
+    const revised = sealRecord({ ...withoutSeal(current), updatedAt: command.occurredAt, live: revisedLive });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  public proposeNoShow(id: string, expectedRevision: number, expectedLiveVersion: number,
+    request: NoShowProposalRequest): CompetitionJourneySnapshot {
+    const current = this.require(id);
+    const live = this.requireLive(current, expectedRevision);
+    if (live.publication) throw new Error("live_revision_already_published");
+    if (live.state.version !== expectedLiveVersion) throw new Error("live_version_conflict");
+    const compiled = current.compiled!;
+    const proposal = proposeNoShowRepair(expectedRevision, live.state, {
+      spec: compiled.spec, graph: compiled.graph, schedule: compiled.schedule,
+      ...(compiled.simulation ? { simulation: compiled.simulation } : {}),
+    }, request);
+    const revisedLive: JourneyLiveState = { ...live, proposal };
+    const revised = sealRecord({ ...withoutSeal(current), updatedAt: request.proposedAt, live: revisedLive });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  public approveNoShow(id: string, expectedRevision: number, expectedProposalHash: string,
+    strategy: NoShowRepairStrategy, approvedBy: string, approvedAt: string): CompetitionJourneySnapshot {
+    const current = this.require(id);
+    const live = this.requireLive(current, expectedRevision);
+    const proposal = live.proposal;
+    if (!proposal || proposal.proposalHash !== expectedProposalHash || !verifyNoShowProposal(proposal))
+      throw new Error("no_show_proposal_mismatch");
+    if (live.publication) {
+      if (live.publication.proposalHash === proposal.proposalHash && live.publication.approvedBy === approvedBy
+        && proposal.options.some(({ strategy: candidate, optionHash }) => candidate === strategy
+          && optionHash === live.publication!.optionHash)) return snapshotOf(current);
+      throw new Error("live_revision_already_published");
+    }
+    if (live.state.proofHash !== proposal.baseLiveStateProofHash) throw new Error("stale_live_proposal");
+    if (!approvedBy.trim() || approvedBy === proposal.proposedBy) throw new Error("no_show_approval_requires_independent_actor");
+    if (!Number.isFinite(Date.parse(approvedAt)) || new Date(Date.parse(approvedAt)).toISOString() !== approvedAt)
+      throw new Error("invalid_no_show_approval_time");
+    if (approvedAt < proposal.proposedAt) throw new Error("stale_no_show_approval_time");
+    const option = proposal.options.find((candidate) => candidate.strategy === strategy);
+    if (!option) throw new Error("no_show_option_not_found");
+    const compiled = current.compiled!;
+    const artifacts = { spec: compiled.spec, graph: compiled.graph, schedule: compiled.schedule,
+      ...(compiled.simulation ? { simulation: compiled.simulation } : {}) };
+    if (option.competitionGuard.status !== "PASSED" || option.liveGuard.status !== "PASSED"
+      || !independentlyVerifyNoShowOption(live.state, artifacts, option)
+      || !preservedActualTruth(live.state.contests, option.proposedLiveState.contests))
+      throw new Error("no_show_guard_blocked_publication");
+    const publishedBy = "competition-journey.live-publisher" as const;
+    if (approvedBy === publishedBy) throw new Error("live_publication_requires_independent_actor");
+    const publicationBody = {
+      revision: expectedRevision + 1, baseRevision: expectedRevision, proposalHash: proposal.proposalHash,
+      optionHash: option.optionHash, stateProofHash: option.proposedLiveState.proofHash, approvedBy, approvedAt,
+      publishedBy, affectedContestIds: [...proposal.affectedContestIds],
+      affectedEntrantIds: [...proposal.affectedEntrantIds], operationalAssignments: [...option.operationalAssignments],
+      settledAsWalkoverContestIds: [...option.settledAsWalkoverContestIds],
+      outboxIntents: proposal.affectedEntrantIds.map((recipientEntrantId) => ({
+        topic: "competition.live-update.v1" as const,
+        key: `${id}:v${expectedRevision + 1}:${recipientEntrantId}`,
+        payload: { competitionId: id, revision: expectedRevision + 1, baseRevision: expectedRevision,
+          recipientEntrantId, affectedContestIds: [...proposal.affectedContestIds],
+          stateProofHash: option.proposedLiveState.proofHash },
+      })),
+    };
+    const publication: LiveJourneyPublication = { ...publicationBody, publicationHash: canonicalHash(publicationBody) };
+    const revisedLive: JourneyLiveState = { ...live, state: option.proposedLiveState, publication };
+    const revised = sealRecord({ ...withoutSeal(current), updatedAt: approvedAt, live: revisedLive });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
   private require(id: string): StoredJourneyRecord {
     const record = this.records.get(id);
     if (!record) throw new Error("journey_not_found");
     return record;
+  }
+
+  private requireLive(record: StoredJourneyRecord, expectedRevision: number): JourneyLiveState {
+    if (!record.compiled || !record.publication || record.compiled.revision !== expectedRevision
+      || record.publication.revision !== expectedRevision) throw new Error("journey_revision_conflict");
+    if (!record.live || record.live.baseRevision !== expectedRevision) throw new Error("live_not_activated");
+    return record.live;
   }
 
   private canonicalNow(): string {
@@ -507,6 +681,31 @@ export function parseCreationSource(value: unknown): CreationSource {
   if (record.mode === "quick" && Object.keys(record).every((key) => ["mode", "value"].includes(key)))
     return { mode: "quick", value: record.value };
   throw new Error("invalid_creation_source");
+}
+
+export function parseConnectedLiveCommand(value: unknown, actorId: string, occurredAt: string): LiveOperationsCommand {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !actorId.trim())
+    throw new Error("invalid_live_command");
+  const command = value as Record<string, unknown>;
+  if (typeof command.kind !== "string" || typeof command.commandId !== "string"
+    || !Number.isSafeInteger(command.expectedVersion)) throw new Error("invalid_live_command");
+  const exact = (keys: readonly string[]) => Object.keys(command).every((key) => keys.includes(key));
+  const audit = { commandId: command.commandId, expectedVersion: command.expectedVersion as number, actorId, occurredAt };
+  if (command.kind === "CHECK_IN" && typeof command.entrantId === "string"
+    && exact(["kind", "commandId", "expectedVersion", "entrantId"]))
+    return { ...audit, kind: "CHECK_IN", entrantId: command.entrantId };
+  if (command.kind === "MARK_LATE" && typeof command.entrantId === "string" && typeof command.reason === "string"
+    && exact(["kind", "commandId", "expectedVersion", "entrantId", "reason"]))
+    return { ...audit, kind: "MARK_LATE", entrantId: command.entrantId, reason: command.reason };
+  if (command.kind === "START_CONTEST" && typeof command.contestId === "string" && typeof command.courtId === "string"
+    && typeof command.startedAt === "string"
+    && exact(["kind", "commandId", "expectedVersion", "contestId", "courtId", "startedAt"]))
+    return { ...audit, kind: "START_CONTEST", contestId: command.contestId,
+      courtId: command.courtId, startedAt: command.startedAt };
+  if (command.kind === "COMPLETE_CONTEST" && typeof command.contestId === "string" && typeof command.endedAt === "string"
+    && exact(["kind", "commandId", "expectedVersion", "contestId", "endedAt"]))
+    return { ...audit, kind: "COMPLETE_CONTEST", contestId: command.contestId, endedAt: command.endedAt };
+  throw new Error("invalid_live_command");
 }
 
 export function competitionJourneyHtml(competitionId: string): string {
