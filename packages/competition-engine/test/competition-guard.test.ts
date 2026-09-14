@@ -112,6 +112,28 @@ test("a schedule with a missing required contest is blocked before publication",
   assert.ok(report.findings.some(({ severity }) => severity === "CRITICAL" || severity === "INTEGRITY"));
 });
 
+test("the Guard blocks a coordinated graph and schedule omission even when proposer counts agree", () => {
+  const spec = reference();
+  const scenario = runScenario(spec, createEntrants(spec), "guard-coordinated-omission");
+  const graph = structuredClone(scenario.graph);
+  const omitted = graph.nodes.find(({ kind }) => kind === "contest");
+  assert.ok(omitted);
+  graph.nodes = graph.nodes.filter(({ id }) => id !== omitted.id);
+  graph.edges = graph.edges.filter(({ fromContestId, toContestId }) => fromContestId !== omitted.id && toContestId !== omitted.id);
+  graph.expectedActualContestCount -= 1;
+  graph.generatedActualContestCount -= 1;
+  graph.findings = [];
+  const schedule = structuredClone(scenario.schedule);
+  schedule.contests = schedule.contests.filter(({ contestId }) => contestId !== omitted.id);
+
+  const report = evaluateCompetitionGuard({ sourceDefinitionHash: canonicalHash(spec), spec, graph, schedule });
+
+  assert.equal(report.status, "BLOCKED");
+  assert.ok(report.findings.some(({ sourceCode }) => sourceCode === "KCG003"));
+  assert.ok(report.findings.some(({ sourceCode }) => sourceCode === "KCG004"));
+  assert.equal(report.accounting.unscheduledContestIds.length, 0);
+});
+
 test("certificate acknowledgements are exact and tampering is detectable", () => {
   const spec = reference();
   const scenario = runScenario(spec, createEntrants(spec), "guard-tampering");

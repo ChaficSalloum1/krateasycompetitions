@@ -21,6 +21,7 @@ import { compilerHtml } from "./ui.js";
 import { creatorHtml } from "./creator-view.js";
 import { productHtml } from "./product-view.js";
 import { parseCreationProposalPayload } from "./creation-proposal.js";
+import { CompetitionJourney, competitionJourneyHtml, parseCreationSource } from "./competition-journey.js";
 import { playerHtml } from "./player-view.js";
 import { participantOperationsHtml, venueDisplayHtml } from "./attention-views.js";
 import { createParticipantAttentionDemo, parseParticipantAttentionAction } from "./participant-attention.js";
@@ -68,6 +69,7 @@ export interface CompilerServerOptions {
   maximumRequestBodyBytes?: number;
   productionReadiness?: () => Readonly<ProductionReadinessReport> | Promise<Readonly<ProductionReadinessReport>>;
   productionLiveness?: () => Readonly<LivenessReport>;
+  competitionJourney?: CompetitionJourney;
 }
 
 function normalizedHeaders(request: IncomingMessage): Readonly<Record<string, string | undefined>> {
@@ -382,8 +384,53 @@ export function clientApiResponse(path: string): unknown | undefined {
   return api[match[2] as "blueprint" | "schedule" | "operations" | "findings" | "certification"];
 }
 
+function journeyClientApiResponse(path: string, journey: CompetitionJourney): unknown | undefined {
+  const snapshots = journey.list();
+  if (path === "/v1/tournaments") {
+    const reference = compilerClientApi().portfolio;
+    return immutable({ ...reference, items: [
+      ...snapshots.map((snapshot) => ({ id: snapshot.id, name: snapshot.name, revision: snapshot.revision,
+        certificationStatus: snapshot.compiled?.guardStatus === "PASSED" ? "CERTIFIED" as const : "REJECTED" as const })),
+      ...reference.items.filter(({ id }) => !snapshots.some((snapshot) => snapshot.id === id)),
+    ] });
+  }
+  const match = /^\/v1\/tournaments\/([^/]+)\/(blueprint|schedule|operations|findings|certification)$/.exec(path);
+  if (!match) return undefined;
+  const snapshot = journey.read(decodeURIComponent(match[1]!));
+  if (!snapshot) return undefined;
+  const compiled = snapshot.compiled;
+  const certificationStatus = compiled?.guardStatus === "PASSED" ? "CERTIFIED" as const : "REJECTED" as const;
+  const section = match[2]!;
+  if (section === "blueprint") return immutable({ apiVersion: CLIENT_API_VERSION, id: snapshot.id, name: snapshot.name,
+    revision: snapshot.revision, certificationStatus, solverStatus: compiled?.solverStatus ?? "UNKNOWN",
+    participantCount: snapshot.blueprint.participantCount ?? 0, actualContestCount: compiled?.actualContestCount ?? 0,
+    scheduledContestCount: compiled?.scheduledContestCount ?? 0, actionRequired: snapshot.status !== "APPROVED" });
+  if (section === "schedule") return immutable({ apiVersion: CLIENT_API_VERSION, tournamentID: snapshot.id,
+    timezone: "Asia/Beirut", solverStatus: compiled?.solverStatus ?? "UNKNOWN", objectiveValueMinutes: null,
+    lowerBoundMinutes: 0, optimalityGap: null,
+    items: compiled?.schedule.map((contest) => ({ id: contest.contestId, resourceID: contest.resourceId,
+      start: contest.start, end: contest.end, possibleEntrantIDs: [],
+      accessibilityLabel: `${contest.contestId} on ${contest.resourceId}, ${contest.start} to ${contest.end}` })) ?? [] });
+  if (section === "operations") return immutable({ apiVersion: CLIENT_API_VERSION, tournamentID: snapshot.id,
+    revision: snapshot.revision, asOf: compiled?.compiledAt ?? new Date(0).toISOString(), timezone: "Asia/Beirut",
+    summary: { now: 0, next: 0, late: 0, blocked: 0, unreported: 0 }, items: [] });
+  if (section === "findings") return immutable({ apiVersion: CLIENT_API_VERSION, tournamentID: snapshot.id,
+    items: compiled?.guardFindings.map((finding, index) => ({ id: `${finding.sourceCode}.${index + 1}`, code: finding.sourceCode,
+      severity: ["CRITICAL", "INTEGRITY"].includes(finding.severity) ? "ERROR" as const : "WARNING" as const,
+      path: finding.path, message: finding.message, accessibilityLabel: `${finding.severity}: ${finding.message}`,
+      debugID: `${compiled.guardReportHash.slice(0, 12)}.${finding.sourceCode}.${index + 1}` })) ?? [] });
+  return immutable({ apiVersion: CLIENT_API_VERSION, tournamentID: snapshot.id, status: certificationStatus,
+    statement: compiled ? `Competition Guard ${compiled.guardStatus}; approved revision ${snapshot.revision}.` : "No compiled revision.",
+    certificationHash: compiled?.guardReportHash ?? "pending",
+    proofIDs: compiled ? { spec: compiled.specHash, graph: compiled.graphHash, schedule: compiled.scheduleHash,
+      ...(compiled.simulationHash ? { simulation: compiled.simulationHash } : {}) } : {} });
+}
+
 export function createCompilerServer(options: CompilerServerOptions = {}) {
   const production = options.production ?? process.env.NODE_ENV === "production";
+  const competitionJourney = options.competitionJourney ?? new CompetitionJourney({
+    ...(production ? {} : { storagePath: process.env.KRATEASY_JOURNEY_STORE ?? `${process.cwd()}/work/competition-journey.json` }),
+  });
   const readiness = () => options.productionReadiness?.()
     ?? compilerReadiness({ production, hasAuthorizer: Boolean(options.authorize) });
 
@@ -565,12 +612,82 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end(productHtml);
         return;
       }
+      const journeyPage = !production && /^\/competitions\/([^/?#]+)$/.exec(request.url ?? "");
+      if (journeyPage && request.method === "GET") {
+        const competitionId = decodeURIComponent(journeyPage[1]!);
+        if (!competitionJourney.read(competitionId)) {
+          json(response, 404, { apiVersion: "1.0", error: "journey_not_found" });
+          return;
+        }
+        response.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+          "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
+        });
+        response.end(competitionJourneyHtml(competitionId));
+        return;
+      }
+      if (!production && request.url === "/v1/competition-journey" && request.method === "GET") {
+        json(response, 200, { apiVersion: "1.0", items: competitionJourney.list() });
+        return;
+      }
+      if (!production && request.url === "/v1/competition-journey" && request.method === "POST") {
+        const body = await readJsonRequestBody(request, 65_536);
+        if (!body || typeof body !== "object" || Array.isArray(body)
+          || Object.keys(body as Record<string, unknown>).some((key) => key !== "source")
+          || !("source" in body)) throw new Error("invalid_journey_command");
+        json(response, 201, competitionJourney.create(parseCreationSource((body as { source: unknown }).source)));
+        return;
+      }
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|compile|approve))?$/.exec(request.url ?? "");
+      if (journeyApi) {
+        const competitionId = decodeURIComponent(journeyApi[1]!);
+        const operation = journeyApi[2];
+        if (!operation && request.method === "GET") {
+          const snapshot = competitionJourney.read(competitionId);
+          json(response, snapshot ? 200 : 404, snapshot ?? { apiVersion: "1.0", error: "journey_not_found" });
+          return;
+        }
+        if (request.method !== "POST") {
+          json(response, 405, { apiVersion: "1.0", error: "method_not_allowed" }, { allow: "GET, POST" });
+          return;
+        }
+        const body = await readJsonRequestBody(request, 65_536);
+        if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid_journey_command");
+        const command = body as Record<string, unknown>;
+        if (operation === "draft") {
+          if (Object.keys(command).some((key) => !["expectedDraftVersion", "source"].includes(key))
+            || !Number.isSafeInteger(command.expectedDraftVersion)) throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.revise(competitionId, command.expectedDraftVersion as number, parseCreationSource(command.source)));
+          return;
+        }
+        if (operation === "compile") {
+          if (Object.keys(command).some((key) => key !== "expectedDraftVersion")
+            || !Number.isSafeInteger(command.expectedDraftVersion)) throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.compile(competitionId, command.expectedDraftVersion as number));
+          return;
+        }
+        if (operation === "approve") {
+          if (Object.keys(command).some((key) => !["expectedRevision", "acknowledgedFindingCodes"].includes(key))
+            || !Number.isSafeInteger(command.expectedRevision) || !Array.isArray(command.acknowledgedFindingCodes)
+            || !command.acknowledgedFindingCodes.every((value) => typeof value === "string")) throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.approve(competitionId, command.expectedRevision as number,
+            "local.organiser", command.acknowledgedFindingCodes as string[]));
+          return;
+        }
+      }
       if (request.url === "/api/interpret" && request.method === "POST") {
         json(response, 200, interpretApiPayload(await readJsonRequestBody(request)));
         return;
       }
       if (request.method === "GET" && request.url?.startsWith("/v1/")) {
-        const value = clientApiResponse(request.url);
+        const authorized = options.authorize ? await options.authorize(request) : false;
+        const access = apiAccessDecision({ production, hasAuthorizer: Boolean(options.authorize), authorized });
+        if (access) {
+          json(response, access.status, access.body);
+          return;
+        }
+        const value = journeyClientApiResponse(request.url, competitionJourney) ?? clientApiResponse(request.url);
         if (value !== undefined) json(response, 200, value);
         else json(response, 404, { error: "not_found" });
         return;

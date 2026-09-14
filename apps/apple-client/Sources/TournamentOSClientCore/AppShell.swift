@@ -327,6 +327,58 @@ public final class TournamentOSAppModel {
         editingDraftID = nil
     }
 
+    public func createApprovedCompetition(_ source: CompetitionCreationSourceInput) async throws -> CompetitionJourneyDTO {
+        guard let journeyClient = activeClient as? any CompetitionJourneyClient else {
+            throw TournamentAPIClientError.unsupportedOperation
+        }
+        let result = try await journeyClient.createApprovedCompetition(source)
+        await loadPortfolio()
+        openTournament(result.id)
+        await loadSelectedTournament()
+        editingDraftID = nil
+        return result
+    }
+
+    public func reviewCompetitionDraft(_ source: CompetitionCreationSourceInput, replacing current: CompetitionJourneyDTO?) async throws -> CompetitionJourneyDTO {
+        guard let journeyClient = activeClient as? any CompetitionJourneyClient else {
+            throw TournamentAPIClientError.unsupportedOperation
+        }
+        if let current {
+            return try await journeyClient.reviseCompetitionDraft(
+                id: current.id, expectedDraftVersion: current.draftVersion, source: source
+            )
+        }
+        return try await journeyClient.createCompetitionDraft(source)
+    }
+
+    public func compileCompetitionDraft(_ draft: CompetitionJourneyDTO) async throws -> CompetitionJourneyDTO {
+        guard let journeyClient = activeClient as? any CompetitionJourneyClient else {
+            throw TournamentAPIClientError.unsupportedOperation
+        }
+        return try await journeyClient.compileCompetition(id: draft.id, expectedDraftVersion: draft.draftVersion)
+    }
+
+    public func approveCompetitionRevision(_ draft: CompetitionJourneyDTO) async throws -> CompetitionJourneyDTO {
+        guard let journeyClient = activeClient as? any CompetitionJourneyClient,
+              let compiled = draft.compiled, compiled.guardStatus == "PASSED" else {
+            throw TournamentAPIClientError.invalidResponse
+        }
+        let result = try await journeyClient.approveCompetition(
+            id: draft.id, expectedRevision: draft.revision,
+            acknowledgedFindingCodes: compiled.requiredAcknowledgementCodes
+        )
+        await loadPortfolio()
+        openTournament(result.id)
+        await loadSelectedTournament()
+        return result
+    }
+
+    public func competitionWebURL(for path: String) -> URL? {
+        guard let journeyClient = activeClient as? any CompetitionJourneyClient,
+              path.hasPrefix("/"), !path.hasPrefix("//") else { return nil }
+        return URL(string: path, relativeTo: journeyClient.competitionWebBaseURL)?.absoluteURL
+    }
+
     public func pathBinding(for tab: CompactTab) -> Binding<[AppRoute]> {
         Binding(
             get: {
@@ -799,6 +851,13 @@ private func demoWorkspaceSessions() -> [TournamentWorkspaceSession] {
     [
         TournamentWorkspaceSession(
             workspace: CompetitionWorkspaceSummaryDTO(
+                id: "local-compiler", name: "Local Krateasy compiler", kind: .club,
+                roleName: "Organiser", publicHost: "127.0.0.1:4173", isLocalPreview: true
+            ),
+            client: URLSessionTournamentAPIClient(baseURL: localCompilerBaseURL())
+        ),
+        TournamentWorkspaceSession(
+            workspace: CompetitionWorkspaceSummaryDTO(
                 id: "play-and-konnect", name: "Play & Konnect", kind: .club,
                 roleName: "Owner", publicHost: "play-and-konnect.krateasy.com", isLocalPreview: true
             ),
@@ -819,6 +878,14 @@ private func demoWorkspaceSessions() -> [TournamentWorkspaceSession] {
             client: DemoTournamentAPIClient(profile: .xgLeagues)
         ),
     ]
+}
+
+private func localCompilerBaseURL() -> URL {
+    let fallback = URL(string: "http://127.0.0.1:4173")!
+    guard let raw = ProcessInfo.processInfo.environment["KRATEASY_LOCAL_SERVER_URL"],
+          let configured = URL(string: raw), ["127.0.0.1", "localhost"].contains(configured.host),
+          ["http", "https"].contains(configured.scheme?.lowercased() ?? "") else { return fallback }
+    return configured
 }
 
 #Preview("Krateasy Competitions – Mac") {

@@ -5,6 +5,7 @@ import {
   type ValidationFinding,
 } from "@tournament-os/tournament-schema";
 import { certify } from "./certification.js";
+import { independentlyExpectedContestCount } from "./graph.js";
 import type { CompetitionGraph, ScheduleSolution, SimulationRun } from "./types.js";
 
 export type CompetitionGuardSeverity =
@@ -147,6 +148,7 @@ function accountingFor(graph: CompetitionGraph, schedule: ScheduleSolution, spec
 export function evaluateCompetitionGuard(input: CompetitionGuardInput): Readonly<CompetitionGuardReport> {
   const certification = certify(input.spec, input.graph, input.schedule, input.simulation);
   const bindingFindings: ValidationFinding[] = [];
+  const independentlyRequiredContestCount = independentlyExpectedContestCount(input.spec);
   if (canonicalHash(input.spec) !== input.sourceDefinitionHash) bindingFindings.push({
     code: "KCG001", severity: "ERROR", path: "/sourceDefinitionHash",
     message: "The proposed source definition hash does not bind the exact compiled specification supplied to the Competition Guard.",
@@ -156,6 +158,16 @@ export function evaluateCompetitionGuard(input: CompetitionGuardInput): Readonly
     code: "KCG002", severity: "ERROR", path: "/graph/specHash",
     message: "The competition graph was not derived from the supplied compiled specification.",
     evidence: { expected: input.spec.metadata.compiledSpecHash, actual: input.graph.specHash },
+  });
+  if (input.graph.expectedActualContestCount !== independentlyRequiredContestCount) bindingFindings.push({
+    code: "KCG003", severity: "ERROR", path: "/graph/expectedActualContestCount",
+    message: "The proposed graph's expected contest count disagrees with the Guard's independent derivation from the compiled specification.",
+    evidence: { expected: independentlyRequiredContestCount, actual: input.graph.expectedActualContestCount },
+  });
+  if (input.graph.generatedActualContestCount !== independentlyRequiredContestCount) bindingFindings.push({
+    code: "KCG004", severity: "ERROR", path: "/graph/generatedActualContestCount",
+    message: "The proposed graph omits or invents contests relative to the Guard's independent derivation from the compiled specification.",
+    evidence: { expected: independentlyRequiredContestCount, actual: input.graph.generatedActualContestCount },
   });
   const findings = [...certification.findings, ...bindingFindings]
     .map((finding): CompetitionGuardFinding => ({

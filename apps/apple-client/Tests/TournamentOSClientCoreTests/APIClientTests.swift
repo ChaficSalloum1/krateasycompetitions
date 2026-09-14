@@ -133,6 +133,44 @@ final class APIClientTests: XCTestCase {
         }
         XCTAssertNil(transport.lastRequest)
     }
+
+    func testConnectedCreationReviewsServerDraftThenCompilesGuardsAndApprovesTheExactRevision() async throws {
+        let (client, transport) = makeClient()
+        transport.respond(status: 201, json: """
+        {"apiVersion":"1.0","id":"t1","name":"Open","draftVersion":1,"revision":0,"status":"DRAFT",
+         "blueprint":{},"understood":[],"questions":[],"warnings":[],"supportFindings":[],"assumptions":[],
+         "compiled":null,"webPath":"/competitions/t1"}
+        """)
+        transport.respond(status: 200, json: """
+        {"apiVersion":"1.0","id":"t1","name":"Open","draftVersion":1,"revision":1,"status":"READY_FOR_APPROVAL",
+         "blueprint":{},"understood":[],"questions":[],"warnings":[],"supportFindings":[],"assumptions":[],
+         "compiled":{"guardStatus":"PASSED","requiredAcknowledgementCodes":["TSW210"]},"webPath":"/competitions/t1"}
+        """)
+        transport.respond(status: 200, json: """
+        {"apiVersion":"1.0","id":"t1","name":"Open","draftVersion":1,"revision":1,"status":"APPROVED",
+         "blueprint":{},"understood":[],"questions":[],"warnings":[],"supportFindings":[],"assumptions":[],
+         "compiled":{"guardStatus":"PASSED","requiredAcknowledgementCodes":["TSW210"]},"webPath":"/competitions/t1"}
+        """)
+        let input = CompetitionCreationInput(
+            name: "Open", sport: "padel", participantUnit: "pairs", participantCount: 47,
+            resourceCount: 7, resourceLabel: "courts", format: "pools_to_knockout", poolSize: 4,
+            qualifiersPerPool: 1, minimumMatches: 3, minimumRestMinutes: 0,
+            matchDurationMinutes: 30, startsAt: "2026-10-03T09:00:00Z",
+            endsAt: "2026-10-03T17:00:00Z", priority: "finish_on_time"
+        )
+
+        let approved = try await client.createApprovedCompetition(.quick(input))
+
+        XCTAssertEqual(approved.status, "APPROVED")
+        XCTAssertEqual(transport.allRequests.map { $0.url?.path }, [
+            "/v1/competition-journey", "/v1/competition-journey/t1/compile", "/v1/competition-journey/t1/approve",
+        ])
+        let approvalBody = try XCTUnwrap(transport.allRequestBodies.last ?? nil)
+        let approvalJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: approvalBody) as? [String: Any])
+        XCTAssertEqual(approvalJSON["expectedRevision"] as? Int, 1)
+        XCTAssertEqual(approvalJSON["acknowledgedFindingCodes"] as? [String], ["TSW210"])
+        XCTAssertNil(approvalJSON["guardInput"])
+    }
 }
 
 private func XCTAssertThrowsErrorAsync<T>(
@@ -160,21 +198,41 @@ private func makeClient() -> (URLSessionTournamentAPIClient, StubTransport) {
 
 private final class StubTransport: @unchecked Sendable {
     private let lock = NSLock()
-    private var response: (Int, Data) = (500, Data())
-    private var request: URLRequest?
+    private var responses: [(Int, Data)] = []
+    private var requests: [URLRequest] = []
+    private var requestBodies: [Data?] = []
 
-    var lastRequest: URLRequest? { lock.withLock { request } }
+    var lastRequest: URLRequest? { lock.withLock { requests.last } }
+    var allRequests: [URLRequest] { lock.withLock { requests } }
+    var allRequestBodies: [Data?] { lock.withLock { requestBodies } }
 
     func respond(status: Int, json: String) {
-        lock.withLock { response = (status, Data(json.utf8)) }
+        lock.withLock { responses.append((status, Data(json.utf8))) }
     }
 
     func handle(_ request: URLRequest) -> (HTTPURLResponse, Data) {
         lock.withLock {
-            self.request = request
+            requests.append(request)
+            requestBodies.append(Self.bodyData(request))
+            let response = responses.isEmpty ? (500, Data()) : responses.removeFirst()
             return (HTTPURLResponse(url: request.url!, statusCode: response.0, httpVersion: nil,
                                     headerFields: ["Content-Type": "application/json"])!, response.1)
         }
+    }
+
+    private static func bodyData(_ request: URLRequest) -> Data? {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count <= 0 { break }
+            data.append(buffer, count: count)
+        }
+        return data
     }
 }
 

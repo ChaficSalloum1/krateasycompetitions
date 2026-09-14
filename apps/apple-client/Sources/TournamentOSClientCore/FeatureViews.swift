@@ -427,20 +427,27 @@ private struct TournamentPortfolioCard: View {
 
 struct NewTournamentSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     let model: TournamentOSAppModel
     let draft: LocalTournamentDraft?
 
     @State private var step = 0
+    @State private var entryMode = "Quick setup"
+    @State private var description = ""
     @State private var name = ""
     @State private var clubName = ""
     @State private var startsAt = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
     @State private var sport = "Padel"
     @State private var participantCount = 16
+    @State private var participantUnit = "Pairs"
     @State private var formatName = "Pools → knockout"
     @State private var minimumRestMinutes = 30
     @State private var courtCount = 4
     @State private var priority = "Protect player rest"
     @State private var validationMessage: String?
+    @State private var isSubmitting = false
+    @State private var journeyDraft: CompetitionJourneyDTO?
+    @State private var interpretationReviewed = false
 
     private let steps = ["Basics", "People", "Format", "Rules", "Resources", "Review"]
 
@@ -452,11 +459,11 @@ struct NewTournamentSheet: View {
         _clubName = State(initialValue: draft?.clubName ?? model.activeWorkspace.name)
         _startsAt = State(initialValue: draft?.startsAt ?? (Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()))
         _sport = State(initialValue: draft?.sport ?? defaults.sport)
-        _participantCount = State(initialValue: draft?.participantCount ?? defaults.participantCount)
+        _participantCount = State(initialValue: draft?.participantCount ?? (model.isDemoWorkspace ? defaults.participantCount : 47))
         _formatName = State(initialValue: draft?.formatName ?? defaults.formatName)
-        _minimumRestMinutes = State(initialValue: draft?.minimumRestMinutes ?? defaults.minimumRestMinutes)
-        _courtCount = State(initialValue: draft?.courtCount ?? defaults.resourceCount)
-        _priority = State(initialValue: draft?.priority ?? defaults.priority)
+        _minimumRestMinutes = State(initialValue: draft?.minimumRestMinutes ?? (model.isDemoWorkspace ? defaults.minimumRestMinutes : 0))
+        _courtCount = State(initialValue: draft?.courtCount ?? (model.isDemoWorkspace ? defaults.resourceCount : 7))
+        _priority = State(initialValue: draft?.priority ?? (model.isDemoWorkspace ? defaults.priority : "Finish on time"))
     }
 
     var body: some View {
@@ -466,7 +473,7 @@ struct NewTournamentSheet: View {
                     HStack(spacing: 8) {
                         ForEach(Array(steps.enumerated()), id: \.offset) { index, title in
                             Button {
-                                if index <= step { step = index }
+                                if index <= step { move(to: index) }
                             } label: {
                                 HStack(spacing: 6) {
                                     Image(systemName: index < step ? "checkmark.circle.fill" : "\(index + 1).circle.fill")
@@ -504,7 +511,11 @@ struct NewTournamentSheet: View {
                     if step < steps.count - 1 {
                         Button("Continue") { continueForward() }.buttonStyle(.borderedProminent)
                     } else {
-                        Button(draft == nil ? "Create draft" : "Save changes") { saveDraft() }.buttonStyle(.borderedProminent)
+                        Button(finalActionTitle) {
+                            Task { await performFinalAction() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isSubmitting)
                     }
                 }
                 .padding(16)
@@ -521,6 +532,18 @@ struct NewTournamentSheet: View {
         switch step {
         case 0:
             Section(model.creationPreset.title) {
+                Picker("Start from", selection: $entryMode) {
+                    Text("Quick setup").tag("Quick setup")
+                    Text("Describe it").tag("Describe it")
+                }
+                .pickerStyle(.segmented)
+                if entryMode == "Describe it" {
+                    TextEditor(text: $description)
+                        .frame(minHeight: 120)
+                        .accessibilityLabel("Competition description")
+                    Text("The local deterministic interpreter extracts only registered facts and stops for anything missing or unsupported.")
+                        .foregroundStyle(.secondary)
+                }
                 TextField("Competition name", text: $name, prompt: Text("Autumn championship"))
                 TextField("Organiser or group", text: $clubName)
                 DatePicker("Starts", selection: $startsAt)
@@ -531,8 +554,11 @@ struct NewTournamentSheet: View {
             Section { Text("This creates a private draft. Publication is a separate, verified action.").foregroundStyle(.secondary) }
         case 1:
             Section("Participants") {
+                Picker("Entrant unit", selection: $participantUnit) {
+                    ForEach(["Pairs", "Teams", "Players", "Athletes"], id: \.self) { Text($0) }
+                }
                 Stepper(value: $participantCount, in: 2...4096) {
-                    LabeledContent("Expected players or teams", value: participantCount.formatted())
+                    LabeledContent("Expected \(participantUnit.lowercased())", value: participantCount.formatted())
                 }
                 Text("You can import, invite, or select exact people after the draft is created.").foregroundStyle(.secondary)
             }
@@ -564,13 +590,71 @@ struct NewTournamentSheet: View {
                 LabeledContent("Competition", value: name.isEmpty ? "Not named" : name)
                 LabeledContent("Organiser", value: clubName)
                 LabeledContent("Sport", value: sport)
-                LabeledContent("Participants", value: participantCount.formatted())
+                LabeledContent("Participants", value: "\(participantCount) \(participantUnit.lowercased())")
                 LabeledContent("Format", value: formatName)
                 LabeledContent("Minimum rest", value: "\(minimumRestMinutes) min")
                 LabeledContent("Resources", value: courtCount.formatted())
                 LabeledContent("Priority", value: priority)
             }
-            Section { Label("Saved as a local draft · Nothing published", systemImage: "lock.fill").foregroundStyle(CompetitionTheme.accent) }
+            Section("Authority & evidence") {
+                Label(model.isDemoWorkspace ? "Saved as a local draft · Nothing published" : "The server recompiles authoritative artefacts, runs Competition Guard, and binds an approval to that exact revision.", systemImage: "checkmark.shield.fill")
+                    .foregroundStyle(CompetitionTheme.accent)
+                if !model.isDemoWorkspace {
+                    Text("Current verified milestone: 47 padel pairs · seven courts · approved mixed pools-to-knockout template · 30-minute standard slots · no mandatory rest.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let journeyDraft, interpretationReviewed {
+                Section("What Krateasy understood") {
+                    LabeledContent("Lifecycle", value: journeyDraft.status.replacingOccurrences(of: "_", with: " ").capitalized)
+                    LabeledContent("Recognised fields", value: journeyDraft.understood.count.formatted())
+                    if let blueprintName = journeyDraft.blueprint.name { LabeledContent("Name", value: blueprintName) }
+                    if let count = journeyDraft.blueprint.participantCount, let unit = journeyDraft.blueprint.participantUnit {
+                        LabeledContent("Entrants", value: "\(count) \(unit)")
+                    }
+                    ForEach(journeyDraft.questions) { question in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label(question.prompt, systemImage: question.blocking ? "questionmark.circle.fill" : "info.circle")
+                            Text(question.why).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    ForEach(journeyDraft.supportFindings, id: \.self) { finding in
+                        Label(finding, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    }
+                }
+                Section("Assumptions & provenance") {
+                    ForEach(journeyDraft.assumptions.prefix(8)) { assumption in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(assumption.rulePath).font(.callout.weight(.medium))
+                            Text("\(assumption.knowledge.capitalized) · \(assumption.origin.replacingOccurrences(of: "_", with: " "))")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    if journeyDraft.assumptions.count > 8 {
+                        Text("+ \(journeyDraft.assumptions.count - 8) more hash-bound rule decisions")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if let compiled = journeyDraft.compiled {
+                    Section("Competition Guard") {
+                        Label(compiled.guardStatus, systemImage: compiled.guardStatus == "PASSED" ? "checkmark.seal.fill" : "xmark.octagon.fill")
+                            .foregroundStyle(compiled.guardStatus == "PASSED" ? CompetitionTheme.accent : .red)
+                        Text("Operational findings requiring acknowledgement: \(compiled.requiredAcknowledgementCodes.joined(separator: ", "))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var finalActionTitle: String {
+        if model.isDemoWorkspace { return draft == nil ? "Create local draft" : "Save changes" }
+        guard interpretationReviewed, let journeyDraft else { return "Review interpretation" }
+        switch journeyDraft.status {
+        case "DRAFT": return "Compile & run Guard"
+        case "READY_FOR_APPROVAL": return "Approve exact revision"
+        case "APPROVED": return "Open web experience"
+        default: return "Edit required decisions"
         }
     }
 
@@ -591,10 +675,11 @@ struct NewTournamentSheet: View {
 
     private func move(to newStep: Int) {
         validationMessage = nil
+        if newStep < steps.count - 1 { interpretationReviewed = false }
         withAnimation(.snappy) { step = newStep }
     }
 
-    private func saveDraft() {
+    @MainActor private func performFinalAction() async {
         let savedDraft = LocalTournamentDraft(
             id: draft?.id ?? "local.\(UUID().uuidString.lowercased())",
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -607,8 +692,62 @@ struct NewTournamentSheet: View {
             minimumRestMinutes: minimumRestMinutes,
             priority: priority
         )
-        model.saveLocalDraft(savedDraft)
-        dismiss()
+        if model.isDemoWorkspace {
+            model.saveLocalDraft(savedDraft)
+            dismiss()
+            return
+        }
+        if entryMode == "Describe it" && description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            validationMessage = "Describe the competition before asking the deterministic interpreter to review it."
+            return
+        }
+        isSubmitting = true
+        validationMessage = nil
+        let formatter = ISO8601DateFormatter()
+        let finish = Calendar.current.date(byAdding: .hour, value: 8, to: startsAt) ?? startsAt
+        let input = CompetitionCreationInput(
+            name: savedDraft.name,
+            sport: sport.lowercased(),
+            participantUnit: participantUnit.lowercased(),
+            participantCount: participantCount,
+            resourceCount: courtCount,
+            resourceLabel: sport == "Golf" ? "courses" : "courts",
+            format: formatName == "Pools → knockout" ? "pools_to_knockout" : formatName.lowercased().replacingOccurrences(of: " ", with: "_"),
+            poolSize: 4,
+            qualifiersPerPool: 1,
+            minimumMatches: 3,
+            minimumRestMinutes: minimumRestMinutes,
+            matchDurationMinutes: 30,
+            startsAt: formatter.string(from: startsAt),
+            endsAt: formatter.string(from: finish),
+            priority: priority == "Finish on time" ? "finish_on_time" : priority == "Minimise court changes" ? "minimum_disruption" : "fair_recovery"
+        )
+        let source: CompetitionCreationSourceInput = entryMode == "Describe it"
+            ? .language(description.trimmingCharacters(in: .whitespacesAndNewlines))
+            : .quick(input)
+        do {
+            if !interpretationReviewed {
+                journeyDraft = try await model.reviewCompetitionDraft(source, replacing: journeyDraft)
+                interpretationReviewed = true
+            } else if journeyDraft?.status == "DRAFT", let journeyDraft {
+                self.journeyDraft = try await model.compileCompetitionDraft(journeyDraft)
+            } else if journeyDraft?.status == "READY_FOR_APPROVAL", let journeyDraft {
+                let result = try await model.approveCompetitionRevision(journeyDraft)
+                self.journeyDraft = result
+                if let url = model.competitionWebURL(for: result.webPath) { openURL(url) }
+                dismiss()
+            } else if journeyDraft?.status == "APPROVED", let journeyDraft,
+                      let url = model.competitionWebURL(for: journeyDraft.webPath) {
+                openURL(url)
+                dismiss()
+            } else {
+                validationMessage = "Return to the earlier steps and resolve every required question before compilation."
+            }
+            isSubmitting = false
+        } catch {
+            validationMessage = "Stopped safely: \(error.localizedDescription) Check every required fact and the verified milestone envelope."
+            isSubmitting = false
+        }
     }
 }
 
