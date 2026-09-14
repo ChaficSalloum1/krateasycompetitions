@@ -377,7 +377,7 @@ function journeyClientApiResponse(path: string, journey: CompetitionJourney): un
     const reference = compilerClientApi().portfolio;
     return immutable({ ...reference, items: [
       ...snapshots.map((snapshot) => ({ id: snapshot.id, name: snapshot.name, revision: snapshot.revision,
-        certificationStatus: snapshot.status === "PUBLISHED" && snapshot.compiled?.guardStatus === "PASSED"
+        certificationStatus: ["PUBLISHED", "CLOSED"].includes(snapshot.status) && snapshot.compiled?.guardStatus === "PASSED"
           ? "CERTIFIED" as const : "REJECTED" as const })),
       ...reference.items.filter(({ id }) => !snapshots.some((snapshot) => snapshot.id === id)),
     ] });
@@ -387,13 +387,14 @@ function journeyClientApiResponse(path: string, journey: CompetitionJourney): un
   const snapshot = journey.read(decodeURIComponent(match[1]!));
   if (!snapshot) return undefined;
   const compiled = snapshot.compiled;
-  const certificationStatus = snapshot.status === "PUBLISHED" && compiled?.guardStatus === "PASSED"
+  const certificationStatus = ["PUBLISHED", "CLOSED"].includes(snapshot.status) && compiled?.guardStatus === "PASSED"
     ? "CERTIFIED" as const : "REJECTED" as const;
   const section = match[2]!;
   if (section === "blueprint") return immutable({ apiVersion: CLIENT_API_VERSION, id: snapshot.id, name: snapshot.name,
     revision: snapshot.revision, certificationStatus, solverStatus: compiled?.solverStatus ?? "UNKNOWN",
     participantCount: snapshot.blueprint.participantCount ?? 0, actualContestCount: compiled?.actualContestCount ?? 0,
-    scheduledContestCount: compiled?.scheduledContestCount ?? 0, actionRequired: snapshot.status !== "PUBLISHED" });
+    scheduledContestCount: compiled?.scheduledContestCount ?? 0,
+    actionRequired: !["PUBLISHED", "CLOSED"].includes(snapshot.status) });
   if (section === "schedule") return immutable({ apiVersion: CLIENT_API_VERSION, tournamentID: snapshot.id,
     timezone: compiled?.timezone ?? "UTC", solverStatus: compiled?.solverStatus ?? "UNKNOWN", objectiveValueMinutes: null,
     lowerBoundMinutes: 0, optimalityGap: null,
@@ -632,7 +633,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
       const journeyPage = !production && /^\/competitions\/([^/?#]+)$/.exec(request.url ?? "");
       if (journeyPage && request.method === "GET") {
         const competitionId = decodeURIComponent(journeyPage[1]!);
-        if (competitionJourney.read(competitionId)?.status !== "PUBLISHED") {
+        if (!["PUBLISHED", "CLOSED"].includes(competitionJourney.read(competitionId)?.status ?? "")) {
           json(response, 404, { apiVersion: "1.0", error: "journey_not_found" });
           return;
         }
@@ -646,6 +647,15 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
       }
       if (!production && request.url === "/v1/competition-journey" && request.method === "GET") {
         json(response, 200, { apiVersion: "1.0", items: competitionJourney.list() });
+        return;
+      }
+      if (!production && request.url === "/v1/competition-journey/restore" && request.method === "POST") {
+        const body = await readJsonRequestBody(request, 8_388_608);
+        if (!body || typeof body !== "object" || Array.isArray(body)
+          || Object.keys(body as Record<string, unknown>).some((key) => key !== "bundle")
+          || !("bundle" in body)) throw new Error("invalid_journey_command");
+        json(response, 201, competitionJourney.restoreClosedBundle({ organizationId,
+          bundle: (body as { bundle: Parameters<CompetitionJourney["restoreClosedBundle"]>[0]["bundle"] }).bundle }));
         return;
       }
       if (!production && request.url === "/v1/competition-journey" && request.method === "POST") {
@@ -701,13 +711,21 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end(html);
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer))?$/.exec(request.url ?? "");
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
         if (!operation && request.method === "GET") {
           const snapshot = competitionJourney.read(competitionId);
           json(response, snapshot ? 200 : 404, snapshot ?? { apiVersion: "1.0", error: "journey_not_found" });
+          return;
+        }
+        if (operation === "closure-bundle" && request.method === "GET") {
+          const url = new URL(request.url ?? "/", "http://local.invalid");
+          if ([...url.searchParams.keys()].join(",") !== "closure") throw new Error("invalid_journey_command");
+          const expectedClosureHash = url.searchParams.get("closure") ?? "";
+          json(response, 200, competitionJourney.exportClosedBundle({ organizationId, competitionId,
+            expectedClosureHash }));
           return;
         }
         if (request.method !== "POST") {
@@ -767,6 +785,30 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
             || !Number.isSafeInteger(command.expectedRevision)) throw new Error("invalid_journey_command");
           json(response, 200, competitionJourney.activateLive(competitionId, command.expectedRevision as number,
             "local.live-operator"));
+          return;
+        }
+        if (operation === "close") {
+          if (Object.keys(command).some((key) => !["expectedPublishedRevision", "expectedOperationalRevision",
+            "expectedLiveVersion", "acknowledgedCodes"].includes(key))
+            || !Number.isSafeInteger(command.expectedPublishedRevision)
+            || !Number.isSafeInteger(command.expectedOperationalRevision)
+            || !Number.isSafeInteger(command.expectedLiveVersion) || !Array.isArray(command.acknowledgedCodes)
+            || !command.acknowledgedCodes.every((code) => typeof code === "string"))
+            throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.closeCompetition({ organizationId, competitionId,
+            expectedPublishedRevision: command.expectedPublishedRevision as number,
+            expectedOperationalRevision: command.expectedOperationalRevision as number,
+            expectedLiveVersion: command.expectedLiveVersion as number,
+            acknowledgedCodes: command.acknowledgedCodes as string[], closedBy: "local.competition-closer" }));
+          return;
+        }
+        if (operation === "duplicate") {
+          if (Object.keys(command).some((key) => !["expectedClosureHash", "name", "eventDate"].includes(key))
+            || typeof command.expectedClosureHash !== "string" || typeof command.name !== "string"
+            || typeof command.eventDate !== "string") throw new Error("invalid_journey_command");
+          json(response, 201, competitionJourney.duplicateClosed({ organizationId, competitionId,
+            expectedClosureHash: command.expectedClosureHash, name: command.name, eventDate: command.eventDate,
+            createdBy: "local.organiser" }));
           return;
         }
         if (operation === "live-command") {

@@ -3,7 +3,7 @@
 **Date:** 15 September 2026
 **Authority:** [`PRD-Krateasy-Competitions-Execution-Control.md`](./PRD-Krateasy-Competitions-Execution-Control.md)
 **Starting point:** commit `39c18a0` (`Connect authoritative live participant information`), preserving the separately committed publication, St Albans workbench and guarded no-show slices
-**Programme status:** Sprint 1 is complete. Sprint 2 has a connected first golden JSON workbench but its broader import, duplicate and organisation scope remains open. Sprint 3 has authoritative signed participant/public/organiser projections and durable targeted delivery, while token lifecycle, recovery and an external provider/fallback remain open. Sprint 4 has the connected command set, guarded no-show and court-outage repair, actual-result knockout progression and a server-derived delay/overrun revision. Sprint 5 now has a server-signed, revision-scoped Mac offline event pack and participant lookup, a durable live/incident/stop command journal with explicit retry/conflict/reconciliation, a replayable Normal/Degraded/Paused/Stopped/Cancelled/Recovering authority state, typed incident log, command transfer and separately cleared restart, plus signed printable order-of-play, court, score, participant-QR and restoration materials. The authorised emergency details and the full disconnect/provider/manual restore rehearsal remain open.
+**Programme status:** Sprint 1 is complete. Sprint 2 has a connected first golden JSON workbench and clean-edition duplication from a closed competition, but its broader YAML/CSV/XLSX import and organisation scope remains open. Sprint 3 has authoritative signed participant/public/organiser projections and durable targeted delivery, while token lifecycle, recovery and an external provider/fallback remain open. Sprint 4 has the connected command set, guarded no-show and court-outage repair, actual-result knockout progression and a server-derived delay/overrun revision. Sprint 5 has a server-signed, revision-scoped Mac offline event pack and participant lookup, a durable live/incident/stop command journal with explicit retry/conflict/reconciliation, a replayable Normal/Degraded/Paused/Stopped/Cancelled/Recovering authority state, typed incident log, command transfer and separately cleared restart, plus signed printable order-of-play, court, score, participant-QR and restoration materials. Sprint 6 now has the first connected authoritative close, replay, evidence export, isolated restore and clean-duplication journey over the completed St Albans state. The authorised emergency details, external delivery provider/fallback, full disconnect/manual restore rehearsal, accessibility evidence and staff dress rehearsal remain open.
 **Outcome:** a controlled live pilot can be created, validated, published, operated, disrupted, repaired, communicated, closed, replayed and repeated without a second source of competition truth.
 
 ## 1. Pilot definition
@@ -213,18 +213,18 @@ Committed outcomes:
 **Dependencies:** authoritative operation commands and projections from Sprint 4.
 **Exit:** the event continues in the declared offline envelope and reconciles without lost or duplicated acknowledged commands.
 
-### Sprint 6 — Close, restore and pass the pilot gate — **Not started**
+### Sprint 6 — Close, restore and pass the pilot gate — **In progress**
 
 **Sprint goal:** complete the event with defensible evidence and demonstrate that it can safely repeat.
 
 Committed outcomes:
 
-1. Block close on unresolved results, corrections or appeals unless explicitly governed.
-2. Seal final result and competition revisions without rewriting original facts.
-3. Generate human report and machine spec/graph/schedule/Guard/audit/result bundle.
-4. Replay from pinned versions and seeds and compare proof hashes.
-5. Execute backup/restore and fresh-process recovery drills.
-6. Duplicate the completed event into a clean new edition with explicit carried-forward memory.
+1. Block close on unresolved results, corrections or appeals unless explicitly governed. **Connected:** close requires all 108 exact terminal results, no pending protest/appeal, normal operational authority and four exact acknowledgements.
+2. Seal final result and competition revisions without rewriting original facts. **Connected:** closure binds publication, operational and live heads, result and delivery hashes, server time, separate closer identity and an atomic outbox intent.
+3. Generate human report and machine spec/graph/schedule/Guard/audit/result bundle. **Connected:** one verified evidence bundle contains preserved sources, canonical artefacts, Guard, approval, publication history, actual/live/operational truth, closure, authoritative record and human-readable audit.
+4. Replay from pinned versions and seeds and compare proof hashes. **Connected:** export and restore independently replay live, operational and closure truth and compare every artifact and manifest hash.
+5. Execute backup/restore and fresh-process recovery drills. **Connected for the isolated local file-store drill:** a fresh store restores and re-exports byte-identical evidence. Managed production backup credentials and the staff-run recovery drill remain deployment gates.
+6. Duplicate the completed event into a clean new edition with explicit carried-forward memory. **Connected:** duplicate carries the exact closed source and organiser decisions with closure provenance, applies explicit name/date edits, and starts without compile, approval, publication, live or result truth.
 7. Complete accessibility evidence: automated checks plus keyboard, VoiceOver/NVDA, 200–400% zoom/reflow, contrast, reduced motion, print and representative outdoor/mobile conditions.
 8. Complete tenant, privacy, concurrency, provider-crash and malicious-import review.
 9. Run a full dress rehearsal with trained staff and documented manual fallback.
@@ -278,7 +278,7 @@ The event may proceed only when all statements are true:
 - [x] Court outage, delay, withdrawal and correction rehearsals pass.
 - [ ] Delivery failure visibly triggers the declared fallback.
 - [ ] Manual/emergency operation has been rehearsed.
-- [ ] Close, replay, export, restore and duplicate pass from the pilot state.
+- [x] Close, replay, export, restore and duplicate pass from the pilot state.
 - [ ] Core tasks pass accessibility evidence.
 - [ ] Cross-organisation attacks fail closed.
 - [ ] Known operational limitations, support owner and rollback plan are documented.

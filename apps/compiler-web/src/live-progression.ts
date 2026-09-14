@@ -70,9 +70,21 @@ function outcome(state: LiveOperationsState, contestId: string, kind: "winner" |
   return result ? (kind === "winner" ? result.winnerId : result.loserId) : null;
 }
 
-function resolvedForNode(state: LiveOperationsState, node: ContestNode): readonly [string, string] | null {
-  const resolved = node.slots.map((slot) => slot.type === "entrant" ? slot.entrantId
-    : slot.type === "winner" || slot.type === "loser" ? outcome(state, slot.contestId, slot.type) : null);
+function resolveSlot(state: LiveOperationsState, nodes: ReadonlyMap<string, ContestNode>,
+  slot: ContestNode["slots"][number], visited: ReadonlySet<string>): string | null {
+  if (slot.type === "entrant") return slot.entrantId;
+  if (slot.type === "bye") return null;
+  const source = nodes.get(slot.contestId);
+  if (!source || source.kind === "contest") return outcome(state, slot.contestId, slot.type);
+  if (slot.type === "loser" || visited.has(source.id)) return null;
+  const candidates = source.slots.filter((candidate) => candidate.type !== "bye");
+  if (candidates.length !== 1) return null;
+  return resolveSlot(state, nodes, candidates[0]!, new Set([...visited, source.id]));
+}
+
+function resolvedForNode(state: LiveOperationsState, node: ContestNode,
+  nodes: ReadonlyMap<string, ContestNode>): readonly [string, string] | null {
+  const resolved = node.slots.map((slot) => resolveSlot(state, nodes, slot, new Set([node.id])));
   if (resolved.some((entrantId) => entrantId === null) || resolved[0] === resolved[1]) return null;
   return [...resolved].sort() as [string, string];
 }
@@ -83,11 +95,12 @@ function expectedResolutions(spec: TournamentSpec, planningGraph: CompetitionGra
     fixedEntrantIds ? [[contestId, fixedEntrantIds]] : []));
   const graph = actualGraph(spec, planningGraph, entrantsByDivision, state);
   if (!graph) return fixed;
+  const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
   const expected: Record<string, readonly [string, string]> = { ...fixed };
   for (const node of graph.nodes.filter(({ kind }) => kind === "contest")
     .sort((left, right) => left.roundIndex - right.roundIndex || left.id.localeCompare(right.id))) {
     if (spec.stages.find((stage) => stage.id === node.stageId)?.pool) continue;
-    const resolved = resolvedForNode({ ...state, resolvedEntrants: { ...state.resolvedEntrants, ...expected } }, node);
+    const resolved = resolvedForNode({ ...state, resolvedEntrants: { ...state.resolvedEntrants, ...expected } }, node, nodes);
     if (resolved) expected[node.id] = resolved;
   }
   return expected;

@@ -63,6 +63,7 @@ export interface StructuredWorkbenchEditPreview {
 }
 
 const registeredDecisionValues: Readonly<Record<string, (value: string) => boolean>> = {
+  "event-name": (value) => value.trim().length >= 2 && value.trim().length <= 120,
   qualification: (value) => value === "top_four_konnect_remainder_tower",
   scoring: (value) => value === "padel.timed.standard@1.0.0",
   tiebreak: (value) => value === "wins_game_difference_games_won_head_to_head_manual",
@@ -71,6 +72,10 @@ const registeredDecisionValues: Readonly<Record<string, (value: string) => boole
   "approval-authority": (value) => value === "separate_compiler_approver_publisher",
   "event-date": (value) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`)),
   timezone: (value) => value === "Europe/London",
+};
+
+const optionalDecisionPaths: Readonly<Record<string, string>> = {
+  "event-name": "/identity/name",
 };
 
 const requiredDecisions: readonly WorkbenchDecision[] = [
@@ -248,6 +253,7 @@ function operationalImpact(edits: readonly StructuredWorkbenchEdit[]): string[] 
     impacts.push("Changes competition semantics and requires graph, schedule, simulation and Guard regeneration.");
   if (["event-date", "timezone"].some((id) => ids.has(id)))
     impacts.push("Changes the operating calendar and requires a 108-fixture recompilation against court availability and the hard stop.");
+  if (ids.has("event-name")) impacts.push("Changes the edition label while retaining the source competition memory and immutable prior event.");
   if (ids.has("withdrawal")) impacts.push("Changes live disruption adjudication and repair behaviour; completed results remain immutable.");
   if (ids.has("approval-authority")) impacts.push("Changes who may approve and publish; proposer self-approval remains prohibited.");
   return impacts;
@@ -264,7 +270,8 @@ export function planWorkbenchEdit(projection: CompetitionWorkbenchProjection, ex
   const semantic = semanticDiff(before, after).map((change) => {
     const key = change.path.slice(1);
     const registered = requiredDecisions.find(({ id }) => id === key);
-    return registered ? { ...change, path: registered.path } : change;
+    const path = registered?.path ?? optionalDecisionPaths[key];
+    return path ? { ...change, path } : change;
   });
   const body = { expectedDraftVersion, editedBy, edits: [...edits].sort((a, b) => a.id.localeCompare(b.id)),
     semanticDiff: semantic, operationalImpact: operationalImpact(edits) };
@@ -276,8 +283,9 @@ export function applyWorkbenchEdit(projection: CompetitionWorkbenchProjection, p
   const indexedSource = { ...source, id: `${source.id}.${projection.sources.length + 1}` };
   const decisions = { ...decisionMap(projection), ...Object.fromEntries(preview.edits.map(({ id, value }) => [id, value])) };
   const assumptions = Object.entries(decisions).sort(([left], [right]) => left.localeCompare(right)).map(([id, value]) => {
-    const registered = requiredDecisions.find((decision) => decision.id === id)!;
-    return { id, path: registered.path, value, provenance: provenance(indexedSource, `/edits/${id}`), kind: "ORGANISER_DECISION" as const };
+    const path = requiredDecisions.find((decision) => decision.id === id)?.path ?? optionalDecisionPaths[id];
+    if (!path) throw new Error(`unsupported_structured_decision:${id}`);
+    return { id, path, value, provenance: provenance(indexedSource, `/edits/${id}`), kind: "ORGANISER_DECISION" as const };
   });
   return { ...projection, sources: [...projection.sources, indexedSource], assumptions,
     missingDecisions: requiredDecisions.filter(({ id }) => !(id in decisions)),
@@ -303,6 +311,8 @@ export function rebaseWorkbenchSources(projection: CompetitionWorkbenchProjectio
 }
 
 export function recognisedCompetitionName(projection: CompetitionWorkbenchProjection): string | null {
+  const editedName = decisionMap(projection)["event-name"];
+  if (editedName) return editedName;
   const source = projection.sources[0];
   if (!source || source.kind !== "json" || typeof source.original !== "string") return null;
   try { const root = record(JSON.parse(source.original)); return typeof root?.event === "string" ? root.event : null; }

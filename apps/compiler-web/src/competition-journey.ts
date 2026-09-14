@@ -23,6 +23,7 @@ import {
   InMemoryTransactionalOutbox,
   type OutboxDeliveryStore,
   type OutboxMessage,
+  runAuthoritativeRestoreDrill,
 } from "@tournament-os/competition-engine";
 import {
   createCompetitionProposal,
@@ -40,6 +41,7 @@ import {
   type StructuredWorkbenchEdit,
   type StructuredWorkbenchEditPreview,
   workbenchSourceDocument,
+  workbenchDecisionValues,
 } from "./competition-workbench.js";
 import { definitionFromProductionLock, entrantsFromProductionLock, participantNamesFromProductionLock,
   verifiedScheduleFromProductionLock } from "./production-lock-definition.js";
@@ -85,8 +87,16 @@ import {
   type OperationalSafetyCommand,
   type OperationalSafetyState,
 } from "./operational-safety.js";
+import {
+  createCompetitionEvidenceBundle,
+  deriveCompetitionClosure,
+  verifyCompetitionClosure,
+  verifyCompetitionEvidenceBundle,
+  type CompetitionClosure,
+  type CompetitionEvidenceBundle,
+} from "./competition-lifecycle.js";
 
-export type CompetitionJourneyStatus = "NEEDS_INPUT" | "DRAFT" | "GUARD_BLOCKED" | "READY_FOR_APPROVAL" | "PUBLISHED";
+export type CompetitionJourneyStatus = "NEEDS_INPUT" | "DRAFT" | "GUARD_BLOCKED" | "READY_FOR_APPROVAL" | "PUBLISHED" | "CLOSED";
 
 interface CompiledJourneyRevision {
   readonly revision: number;
@@ -175,6 +185,18 @@ interface JourneyLiveState {
   readonly publicationHistory?: readonly LiveJourneyPublication[];
 }
 
+interface JourneyDuplication {
+  readonly sourceCompetitionId: string;
+  readonly sourceClosureHash: string;
+  readonly sourceDocumentHashes: readonly string[];
+  readonly carriedDecisionIds: readonly string[];
+  readonly newEditionName: string;
+  readonly newEventDate: string;
+  readonly duplicatedBy: string;
+  readonly duplicatedAt: string;
+  readonly memoryHash: string;
+}
+
 interface StoredJourneyRecord {
   readonly id: string;
   readonly organizationId: string;
@@ -192,6 +214,8 @@ interface StoredJourneyRecord {
   readonly publication?: JourneyPublication;
   readonly live?: JourneyLiveState;
   readonly participantAccess?: readonly ParticipantAccessGrant[];
+  readonly closure?: CompetitionClosure;
+  readonly duplication?: JourneyDuplication;
   readonly recordHash: string;
 }
 
@@ -250,6 +274,8 @@ export interface CompetitionJourneySnapshot {
   readonly approval: JourneyApproval | null;
   readonly publication: JourneyPublication | null;
   readonly live: JourneyLiveState | null;
+  readonly closure: CompetitionClosure | null;
+  readonly duplication: JourneyDuplication | null;
   readonly webPath: string;
 }
 
@@ -290,13 +316,52 @@ function sealRecord(record: Omit<StoredJourneyRecord, "recordHash">): StoredJour
   return { ...record, recordHash: makeRecordHash(record) };
 }
 
+function closureAuthority(record: StoredJourneyRecord): CompetitionClosure["authority"] | null {
+  if (!record.compiled || !record.publication || !record.live) return null;
+  return {
+    specificationHash: canonicalHash(record.compiled.spec),
+    graphHash: canonicalHash(record.compiled.graph),
+    scheduleHash: canonicalHash(record.compiled.schedule),
+    simulationHash: record.compiled.simulation ? canonicalHash(record.compiled.simulation) : null,
+    guardReportHash: record.compiled.guardReport.reportHash,
+    publicationCertificateHash: record.publication.certificateHash,
+    operationalPublicationHash: record.live.publication?.publicationHash ?? null,
+    liveStateProofHash: record.live.state.proofHash,
+    operationalStateProofHash: record.live.operations.proofHash,
+    sourceDocumentsHash: canonicalHash(record.workbench?.sources ?? []),
+  };
+}
+
+function evidenceBundleForRecord(record: StoredJourneyRecord): CompetitionEvidenceBundle {
+  if (!record.closure || !record.compiled || !record.approval || !record.publication || !record.live)
+    throw new Error("competition_closure_mismatch");
+  return createCompetitionEvidenceBundle({
+    name: recognisedCompetitionName(record.workbench!) ?? record.proposal.blueprint.name ?? "Competition",
+    closure: record.closure, sources: record.workbench?.sources ?? [], spec: record.compiled.spec,
+    graph: record.compiled.graph, schedule: record.compiled.schedule,
+    ...(record.compiled.simulation ? { simulation: record.compiled.simulation } : {}),
+    guardReport: record.compiled.guardReport, approval: record.approval, publication: record.publication,
+    operationalPublications: record.live.publicationHistory ?? [], live: record.live.state,
+    operations: record.live.operations, authoritativeRecord: record, recordHash: record.recordHash,
+  });
+}
+
 function verifyRecord(record: StoredJourneyRecord): boolean {
   const { recordHash, ...body } = record;
   if (recordHash !== makeRecordHash(body)) return false;
+  if (record.duplication) {
+    const memory = { sourceCompetitionId: record.duplication.sourceCompetitionId,
+      sourceClosureHash: record.duplication.sourceClosureHash,
+      newEditionName: record.duplication.newEditionName, newEventDate: record.duplication.newEventDate };
+    if (record.duplication.memoryHash !== canonicalHash(memory) || memory.sourceCompetitionId === record.id
+      || !/^[a-f0-9]{64}$/.test(memory.sourceClosureHash)
+      || new Set(record.duplication.sourceDocumentHashes).size !== record.duplication.sourceDocumentHashes.length
+      || record.duplication.sourceDocumentHashes.some((hash) => !/^[a-f0-9]{64}$/.test(hash))) return false;
+  }
   if (record.participantAccess && (new Set(record.participantAccess.map(({ tokenHash }) => tokenHash)).size
     !== record.participantAccess.length || record.participantAccess.some((grant) => grant.organizationId !== record.organizationId
       || grant.competitionId !== record.id || !/^[a-f0-9]{64}$/.test(grant.tokenHash)))) return false;
-  if (!record.live) return true;
+  if (!record.live) return !record.closure;
   if (!record.live.operations || !verifyOperationalSafetyState(record.live.operations)) return false;
   const replay = replayLiveOperationsEvents(record.live.state.definition, record.live.state.events);
   if (!replay.valid || replay.state.proofHash !== record.live.state.proofHash) return false;
@@ -364,10 +429,19 @@ function verifyRecord(record: StoredJourneyRecord): boolean {
     return publicationHash !== canonicalHash(body);
   }) || record.live.publicationHistory.at(-1)?.publicationHash !== record.live.publication?.publicationHash)) return false;
   try { new InMemoryTransactionalOutbox(record.organizationId, record.live.delivery); } catch { return false; }
+  if (record.closure) {
+    const authority = closureAuthority(record);
+    if (!authority || record.closure.organizationId !== record.organizationId || record.closure.competitionId !== record.id
+      || record.closure.publishedRevision !== record.publication?.revision
+      || record.closure.operationalRevision !== (record.live.publication?.revision ?? record.publication?.revision)
+      || !verifyCompetitionClosure(record.closure, { live: record.live.state,
+        operations: record.live.operations, authority })) return false;
+  }
   return true;
 }
 
 function statusOf(record: StoredJourneyRecord): CompetitionJourneyStatus {
+  if (record.closure) return "CLOSED";
   if (record.publication) return "PUBLISHED";
   if (record.compiled?.guardReport.status === "PASSED") return "READY_FOR_APPROVAL";
   if (record.compiled) return "GUARD_BLOCKED";
@@ -427,6 +501,8 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
     approval: record.approval ?? null,
     publication: record.publication ?? null,
     live: record.live ?? null,
+    closure: record.closure ?? null,
+    duplication: record.duplication ?? null,
     webPath: `/competitions/${encodeURIComponent(record.id)}`,
   };
 }
@@ -652,6 +728,7 @@ export class CompetitionJourney {
 
   public activateLive(id: string, expectedRevision: number, activatedBy: string): CompetitionJourneySnapshot {
     const current = this.require(id);
+    if (current.closure) throw new Error("competition_is_closed");
     const compiled = current.compiled;
     if (!compiled || !current.publication || compiled.revision !== expectedRevision
       || current.publication.revision !== expectedRevision) throw new Error("journey_revision_conflict");
@@ -674,6 +751,7 @@ export class CompetitionJourney {
   public submitLiveCommand(id: string, expectedRevision: number,
     command: LiveOperationsCommand): CompetitionJourneySnapshot {
     const current = this.require(id);
+    if (current.closure) throw new Error("competition_is_closed");
     const live = this.requireProjectedLive(current, expectedRevision);
     if (["PAUSED", "STOPPED", "RECOVERING", "CANCELLED"].includes(live.operations.mode)
       && ["CALL_CONTEST", "START_CONTEST"].includes(command.kind))
@@ -740,6 +818,7 @@ export class CompetitionJourney {
   public submitOperationalCommand(id: string, expectedOperationalRevision: number,
     command: OperationalSafetyCommand): CompetitionJourneySnapshot {
     const current = this.require(id);
+    if (current.closure) throw new Error("competition_is_closed");
     const live = this.requireProjectedLive(current, expectedOperationalRevision);
     const result = submitOperationalSafetyCommand(live.operations, command);
     if (!result.accepted) throw new Error(`operational_command_rejected:${result.findings.join(",")}`);
@@ -778,6 +857,7 @@ export class CompetitionJourney {
   public proposeNoShow(id: string, expectedRevision: number, expectedLiveVersion: number,
     request: NoShowProposalRequest): CompetitionJourneySnapshot {
     const current = this.require(id);
+    if (current.closure) throw new Error("competition_is_closed");
     const live = this.requireLive(current, expectedRevision);
     if (live.publication) throw new Error("live_revision_already_published");
     if (live.state.version !== expectedLiveVersion) throw new Error("live_version_conflict");
@@ -796,6 +876,7 @@ export class CompetitionJourney {
   public approveNoShow(id: string, expectedRevision: number, expectedProposalHash: string,
     strategy: NoShowRepairStrategy, approvedBy: string, approvedAt: string): CompetitionJourneySnapshot {
     const current = this.require(id);
+    if (current.closure) throw new Error("competition_is_closed");
     const live = this.requireLive(current, expectedRevision);
     this.assertOperationalPublicationAllowed(live);
     const proposal = live.proposal;
@@ -873,6 +954,7 @@ export class CompetitionJourney {
       || !allowed.every((key) => typeof (request as unknown as Record<string, unknown>)[key] === "string"))
       throw new Error("invalid_court_outage_request");
     const current = this.require(id);
+    if (current.closure) throw new Error("competition_is_closed");
     const live = this.requireProjectedLive(current, expectedOperationalRevision);
     if (live.state.version !== expectedLiveVersion) throw new Error("live_version_conflict");
     if (live.courtOutageProposal?.proposalId === request.proposalId) {
@@ -909,6 +991,7 @@ export class CompetitionJourney {
       || !allowed.every((key) => typeof (request as unknown as Record<string, unknown>)[key] === "string"))
       throw new Error("invalid_delay_overrun_request");
     const current = this.require(id);
+    if (current.closure) throw new Error("competition_is_closed");
     const live = this.requireProjectedLive(current, expectedOperationalRevision);
     if (live.state.version !== expectedLiveVersion) throw new Error("live_version_conflict");
     const definition = live.state.definition.contests.find(({ contestId }) => contestId === request.contestId);
@@ -951,6 +1034,7 @@ export class CompetitionJourney {
   private approveResourceChange(id: string, expectedOperationalRevision: number, expectedProposalHash: string,
     approvedBy: string, approvedAt: string, expectedKind: "COURT_OUTAGE" | "DELAY_OVERRUN"): CompetitionJourneySnapshot {
     const current = this.require(id);
+    if (current.closure) throw new Error("competition_is_closed");
     const live = this.requireProjectedLive(current, expectedOperationalRevision);
     this.assertOperationalPublicationAllowed(live);
     const proposal = live.courtOutageProposal;
@@ -1021,6 +1105,137 @@ export class CompetitionJourney {
     this.records.set(id, revised);
     this.persist();
     return snapshotOf(revised);
+  }
+
+  public closeCompetition(input: { readonly organizationId: string; readonly competitionId: string;
+    readonly expectedPublishedRevision: number; readonly expectedOperationalRevision: number;
+    readonly expectedLiveVersion: number; readonly acknowledgedCodes: readonly string[];
+    readonly closedBy: string }): CompetitionJourneySnapshot {
+    const current = this.requireScoped(input.organizationId, input.competitionId);
+    if (current.closure) {
+      if (current.closure.publishedRevision === input.expectedPublishedRevision
+        && current.closure.operationalRevision === input.expectedOperationalRevision
+        && current.closure.liveVersion === input.expectedLiveVersion
+        && current.closure.closedBy === input.closedBy
+        && exactAcknowledgements(current.closure.acknowledgedCodes, input.acknowledgedCodes)) return snapshotOf(current);
+      throw new Error("competition_is_closed");
+    }
+    const live = this.requireProjectedLive(current, input.expectedOperationalRevision);
+    if (current.publication!.revision !== input.expectedPublishedRevision
+      || live.baseRevision !== input.expectedPublishedRevision
+      || live.state.version !== input.expectedLiveVersion) throw new Error("journey_revision_conflict");
+    if (!input.closedBy.trim() || input.closedBy === current.approval?.approvedBy
+      || input.closedBy === current.publication!.publishedBy
+      || input.closedBy === live.publication?.approvedBy) throw new Error("competition_close_requires_independent_actor");
+    const replay = replayLiveOperationsEvents(live.state.definition, live.state.events);
+    if (!replay.valid || replay.state.proofHash !== live.state.proofHash || !verifyOperationalSafetyState(live.operations))
+      throw new Error("competition_close_replay_failed");
+    const compiled = current.compiled!;
+    const guard = evaluateCompetitionGuard({ sourceDefinitionHash: canonicalHash(compiled.spec), spec: compiled.spec,
+      graph: compiled.graph, schedule: compiled.schedule, ...(compiled.simulation ? { simulation: compiled.simulation } : {}) });
+    if (guard.status !== "PASSED" || guard.reportHash !== compiled.guardReport.reportHash)
+      throw new Error("competition_close_guard_failed");
+    const closedAt = this.canonicalNow();
+    const latestFactAt = [...live.state.events.map(({ occurredAt }) => occurredAt),
+      ...live.operations.events.map(({ command }) => command.occurredAt), current.publication!.publishedAt].sort().at(-1)!;
+    if (closedAt < latestFactAt) throw new Error("competition_close_time_precedes_truth");
+    const authority = closureAuthority(current)!;
+    const closure = deriveCompetitionClosure({ organizationId: current.organizationId, competitionId: current.id,
+      publishedRevision: current.publication!.revision,
+      operationalRevision: live.publication?.revision ?? current.publication!.revision,
+      closedBy: input.closedBy, closedAt, acknowledgedCodes: input.acknowledgedCodes,
+      live: live.state, operations: live.operations, delivery: live.delivery, authority });
+    const revised = sealRecord({ ...withoutSeal(current), updatedAt: closedAt, closure });
+    this.records.set(current.id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  public exportClosedBundle(input: { readonly organizationId: string; readonly competitionId: string;
+    readonly expectedClosureHash: string }): CompetitionEvidenceBundle {
+    const current = this.requireScoped(input.organizationId, input.competitionId);
+    if (!current.closure || current.closure.closureHash !== input.expectedClosureHash)
+      throw new Error("competition_closure_mismatch");
+    return evidenceBundleForRecord(current);
+  }
+
+  public restoreClosedBundle(input: { readonly organizationId: string; readonly bundle: CompetitionEvidenceBundle }): {
+    readonly snapshot: CompetitionJourneySnapshot & { readonly closure: CompetitionClosure };
+    readonly report: ReturnType<typeof runAuthoritativeRestoreDrill>;
+  } {
+    if (input.organizationId !== this.organizationId || input.bundle.organizationId !== input.organizationId)
+      throw new Error("competition_restore_scope_mismatch");
+    const verified = verifyCompetitionEvidenceBundle(input.bundle);
+    const record = verified.authoritativeRecord as StoredJourneyRecord;
+    if (!record || record.organizationId !== input.organizationId || record.id !== input.bundle.competitionId
+      || record.closure?.closureHash !== input.bundle.closureHash || !verifyRecord(record))
+      throw new Error("invalid_competition_evidence_bundle");
+    if (canonicalHash(evidenceBundleForRecord(record)) !== canonicalHash(input.bundle))
+      throw new Error("invalid_competition_evidence_bundle");
+    const existing = this.records.get(record.id);
+    if (existing && existing.recordHash !== record.recordHash) throw new Error("competition_restore_identity_conflict");
+    const restoredTruth = [{ organizationId: record.organizationId, streamId: record.id,
+      streamVersion: record.live!.state.version + record.live!.operations.version + 1,
+      eventHeadHash: canonicalHash({ live: record.live!.state.lastEventHash,
+        operations: record.live!.operations.lastEventHash }), stateHash: record.recordHash,
+      proofHashes: { closure: record.closure!.closureHash, live: record.live!.state.proofHash,
+        operations: record.live!.operations.proofHash, results: record.closure!.resultSummary.resultsHash } }];
+    const at = this.canonicalNow();
+    const report = runAuthoritativeRestoreDrill({ drillId: `restore.${record.closure!.closureHash.slice(0, 24)}`,
+      startedAt: at, completedAt: at, recoveryPointAt: input.bundle.generatedAt,
+      sourceLatestCommittedAt: input.bundle.generatedAt, maximumRecoveryTimeSeconds: 300,
+      maximumDataLossSeconds: 0, expectedSchemaVersion: "competition-journey-closure-bundle/1.0.0",
+      manifest: input.bundle.manifest, restoredArtifacts: verified.restoredArtifacts,
+      sourceTruth: input.bundle.sourceTruth, restoredTruth });
+    if (report.status !== "VERIFIED") throw new Error("competition_restore_verification_failed");
+    if (!existing) {
+      this.records.set(record.id, record);
+      this.persist();
+    }
+    return { snapshot: snapshotOf(record) as CompetitionJourneySnapshot & { closure: CompetitionClosure }, report };
+  }
+
+  public duplicateClosed(input: { readonly organizationId: string; readonly competitionId: string;
+    readonly expectedClosureHash: string; readonly name: string; readonly eventDate: string;
+    readonly createdBy: string }): CompetitionJourneySnapshot {
+    const current = this.requireScoped(input.organizationId, input.competitionId);
+    if (!current.closure || current.closure.closureHash !== input.expectedClosureHash)
+      throw new Error("competition_closure_mismatch");
+    const name = input.name.trim();
+    if (name.length < 2 || name.length > 120 || !/^\d{4}-\d{2}-\d{2}$/.test(input.eventDate)
+      || !Number.isFinite(Date.parse(`${input.eventDate}T00:00:00.000Z`)) || !input.createdBy.trim())
+      throw new Error("invalid_competition_duplicate");
+    const memoryIdentity = { sourceCompetitionId: current.id, sourceClosureHash: current.closure.closureHash,
+      newEditionName: name, newEventDate: input.eventDate };
+    const memoryHash = canonicalHash(memoryIdentity);
+    const existing = [...this.records.values()].find((record) => record.duplication?.memoryHash === memoryHash);
+    if (existing) return snapshotOf(existing);
+    const duplicatedAt = this.canonicalNow();
+    const source = (current.sources ?? [current.source])[0]!;
+    const workbench = analyseCompetitionSources([source], duplicatedAt);
+    const carried = workbenchDecisionValues(current.workbench!);
+    const edits = Object.entries({ ...carried, "event-name": name, "event-date": input.eventDate })
+      .map(([id, value]) => ({ id, value })).sort((left, right) => left.id.localeCompare(right.id));
+    const preview = planWorkbenchEdit(workbench, 1, edits, input.createdBy);
+    const editSource: CreationSource = { mode: "quick", value: { kind: "structured-organiser-edit",
+      editedBy: input.createdBy, previewHash: preview.previewHash, edits } };
+    const revisedWorkbench = applyWorkbenchEdit(workbench, preview, workbenchSourceDocument(editSource, duplicatedAt));
+    const memoryBody = { sourceCompetitionId: current.id, sourceClosureHash: current.closure.closureHash,
+      sourceDocumentHashes: [...new Set((current.workbench?.sources ?? []).map(({ sourceHash }) => sourceHash))].sort(),
+      carriedDecisionIds: edits.map(({ id }) => id), newEditionName: name, newEventDate: input.eventDate,
+      duplicatedBy: input.createdBy, duplicatedAt };
+    const duplication: JourneyDuplication = { ...memoryBody, memoryHash };
+    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "competition";
+    const id = `${base}.${canonicalHash({ sourceClosureHash: input.expectedClosureHash, name,
+      eventDate: input.eventDate }).slice(0, 10)}`;
+    if (this.records.has(id)) throw new Error("competition_duplicate_identity_conflict");
+    const record = sealRecord({ id, organizationId: current.organizationId, draftVersion: 2,
+      createdBy: input.createdBy, createdAt: duplicatedAt, updatedAt: duplicatedAt,
+      source: editSource, sources: [source, editSource], proposal: createCompetitionProposal(source),
+      workbench: revisedWorkbench, supportFindings: [], duplication });
+    this.records.set(id, record);
+    this.persist();
+    return snapshotOf(record);
   }
 
   public issueParticipantAccess(input: { readonly organizationId: string; readonly competitionId: string;
@@ -1334,5 +1549,5 @@ export function competitionJourneyHtml(competitionId: string): string {
   :root{color-scheme:light;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#f4f6f2;color:#17201d}body{margin:0}.shell{max-width:1100px;margin:auto;padding:32px 22px 64px}a{color:#315d4b}.eyebrow{font-size:.78rem;text-transform:uppercase;letter-spacing:.12em;color:#577064}.hero,.card{background:#fff;border:1px solid #dce3dc;border-radius:20px;box-shadow:0 10px 30px #1c3a2d0c}.hero{padding:28px;margin:18px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.card{padding:18px}.metric{font-size:2rem;font-weight:720}.ok{color:#19734a}.blocked{color:#a23b28}.schedule{margin-top:18px;overflow:auto}table{width:100%;border-collapse:collapse;background:#fff}th,td{text-align:left;padding:11px;border-bottom:1px solid #e5e9e5;white-space:nowrap}code{font-size:.78rem}.muted{color:#617068}.error{padding:18px;background:#fff1ee;color:#8b2c1f;border-radius:12px}@media(max-width:600px){.shell{padding:20px 14px}.hero{padding:20px}}
   </style></head><body><main class="shell"><a href="/">← Competitions</a><section id="app" aria-live="polite"><p>Loading authoritative revision…</p></section></main>
   <script>const id=${encodedId};const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  fetch('/v1/competition-journey/'+encodeURIComponent(id)).then(async r=>{const v=await r.json();if(!r.ok)throw Error(v.error||'Not found');return v}).then(v=>{const c=v.compiled;document.title=v.name+' · Krateasy';document.querySelector('#app').innerHTML='<div class="hero"><div class="eyebrow">Immutable published competition revision</div><h1>'+esc(v.name)+'</h1><p class="muted">'+esc(v.id)+' · revision '+v.revision+' · '+esc(v.status)+'</p></div><div class="grid"><div class="card"><div class="eyebrow">Guard</div><div class="metric '+(c?.guardStatus==='PASSED'?'ok':'blocked')+'">'+esc(c?.guardStatus||'Not run')+'</div><p>'+esc(c?.guardReportHash?.slice(0,16)||'No proof yet')+'</p></div><div class="card"><div class="eyebrow">Contest accounting</div><div class="metric">'+esc(c?.actualContestCount??'—')+'</div><p>'+esc(c?.scheduledContestCount??0)+' scheduled</p></div><div class="card"><div class="eyebrow">Publication</div><div class="metric">'+esc(v.publication?'Bound':'Pending')+'</div><p>'+esc(v.publication?.certificateHash?.slice(0,16)||'Independent approval required')+'</p></div></div>'+(c?'<div class="schedule card"><h2>Published schedule</h2><table><thead><tr><th>Contest</th><th>Resource</th><th>Start</th><th>End</th></tr></thead><tbody>'+c.schedule.map(x=>'<tr><td><code>'+esc(x.contestId)+'</code></td><td>'+esc(x.resourceId)+'</td><td>'+esc(x.start)+'</td><td>'+esc(x.end)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="card"><h2>Needs input</h2><p>'+esc(v.supportFindings.concat(v.questions.map(q=>q.prompt)).join(' · '))+'</p></div>')}).catch(e=>document.querySelector('#app').innerHTML='<p class="error">'+esc(e.message)+'</p>');</script></body></html>`;
+  fetch('/v1/competition-journey/'+encodeURIComponent(id)).then(async r=>{const v=await r.json();if(!r.ok)throw Error(v.error||'Not found');return v}).then(v=>{const c=v.compiled;const closed=v.closure?'<div class="card"><div class="eyebrow">Final closure</div><div class="metric ok">'+esc(v.closure.resultSummary.total)+'</div><p>settled results · 0 unresolved</p><p><code>'+esc(v.closure.closureHash.slice(0,16))+'</code></p><a href="/v1/competition-journey/'+encodeURIComponent(id)+'/closure-bundle?closure='+encodeURIComponent(v.closure.closureHash)+'">Open machine and human evidence bundle</a></div>':'';document.title=v.name+' · Krateasy';document.querySelector('#app').innerHTML='<div class="hero"><div class="eyebrow">Immutable published competition revision</div><h1>'+esc(v.name)+'</h1><p class="muted">'+esc(v.id)+' · revision '+v.revision+' · '+esc(v.status)+'</p></div><div class="grid"><div class="card"><div class="eyebrow">Guard</div><div class="metric '+(c?.guardStatus==='PASSED'?'ok':'blocked')+'">'+esc(c?.guardStatus||'Not run')+'</div><p>'+esc(c?.guardReportHash?.slice(0,16)||'No proof yet')+'</p></div><div class="card"><div class="eyebrow">Contest accounting</div><div class="metric">'+esc(c?.actualContestCount??'—')+'</div><p>'+esc(c?.scheduledContestCount??0)+' scheduled</p></div><div class="card"><div class="eyebrow">Publication</div><div class="metric">'+esc(v.publication?'Bound':'Pending')+'</div><p>'+esc(v.publication?.certificateHash?.slice(0,16)||'Independent approval required')+'</p></div>'+closed+'</div>'+(c?'<div class="schedule card"><h2>Published schedule</h2><table><thead><tr><th>Contest</th><th>Resource</th><th>Start</th><th>End</th></tr></thead><tbody>'+c.schedule.map(x=>'<tr><td><code>'+esc(x.contestId)+'</code></td><td>'+esc(x.resourceId)+'</td><td>'+esc(x.start)+'</td><td>'+esc(x.end)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="card"><h2>Needs input</h2><p>'+esc(v.supportFindings.concat(v.questions.map(q=>q.prompt)).join(' · '))+'</p></div>')}).catch(e=>document.querySelector('#app').innerHTML='<p class="error">'+esc(e.message)+'</p>');</script></body></html>`;
 }
