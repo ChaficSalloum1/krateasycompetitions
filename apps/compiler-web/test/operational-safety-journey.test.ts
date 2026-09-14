@@ -151,9 +151,11 @@ test("the connected operational boundary owns actors/messages and rejects stale 
   assert.equal(incident.status, 200);
   const degraded = await post(server, `${root}/operational-transition`, { expectedOperationalRevision: 1,
     expectedStateVersion: 1, commandId: "mode.http.1", targetMode: "DEGRADED", reason: "Primary network unavailable.",
-    sourceIncidentId: "service.1", publicMessageCode: "SERVICE_DEGRADED_USE_VENUE_BOARD",
+    sourceIncidentId: "service.1",
     scope: { kind: "VENUE", ids: ["encourt-st-albans"] } });
   assert.equal(degraded.status, 200);
+  assert.equal(degraded.body.live.operations.publicStatus.instruction,
+    "A service is degraded. Follow the venue board and desk instructions.");
   assert.equal(degraded.body.live.operations.authorityAssignments.competitionLead, "actor.competition");
   const forged = await post(server, `${root}/operational-transition`, { expectedOperationalRevision: 1,
     expectedStateVersion: 2, commandId: "mode.http.forged", targetMode: "NORMAL", reason: "Forged.",
@@ -163,7 +165,7 @@ test("the connected operational boundary owns actors/messages and rejects stale 
   assert.equal(forged.body.error, "invalid_journey_command");
   const stale = await post(server, `${root}/operational-transition`, { expectedOperationalRevision: 1,
     expectedStateVersion: 1, commandId: "mode.http.stale", targetMode: "NORMAL", reason: "Stale.",
-    publicMessageCode: "PLAY_RESUMED_CHECK_NEXT", scope: { kind: "VENUE", ids: ["encourt-st-albans"] } });
+    scope: { kind: "VENUE", ids: ["encourt-st-albans"] } });
   assert.equal(stale.status, 400);
   assert.match(stale.body.error, /STALE_STATE_VERSION/);
   const transfer = await post(server, `${root}/operational-transfer`, { expectedOperationalRevision: 1,
@@ -173,6 +175,28 @@ test("the connected operational boundary owns actors/messages and rejects stale 
   assert.equal(transfer.body.live.operations.authorityAssignments.competitionLead, "actor.competition.relief");
   const resumed = await post(server, `${root}/operational-transition`, { expectedOperationalRevision: 1,
     expectedStateVersion: 3, commandId: "mode.http.resume", targetMode: "NORMAL", reason: "Service restored.",
-    publicMessageCode: "PLAY_RESUMED_CHECK_NEXT", scope: { kind: "VENUE", ids: ["encourt-st-albans"] } });
+    scope: { kind: "VENUE", ids: ["encourt-st-albans"] } });
   assert.equal(resumed.status, 200, "the server must attribute the command to the transferred authority");
+
+  const forgedMessage = await post(server, `${root}/operational-transition`, { expectedOperationalRevision: 1,
+    expectedStateVersion: 4, commandId: "mode.http.forged-message", targetMode: "DEGRADED", reason: "Forged wording.",
+    publicMessageCode: "EVENT_CANCELLED_AWAIT_CONTACT", nextUpdateAt: "2099-01-01T00:00:00.000Z",
+    scope: { kind: "VENUE", ids: ["encourt-st-albans"] } });
+  assert.equal(forgedMessage.status, 400, "clients cannot provide public wording codes or update deadlines");
+
+  clock = "2026-09-20T13:20:00.000Z";
+  const offlineIncident = await post(server, `${root}/operational-incident`, { expectedOperationalRevision: 1,
+    expectedStateVersion: 4, commandId: "incident.http.offline", incidentId: "incident.offline.1", category: "SERVICE",
+    severity: "MAJOR", acknowledgement: "UNVERIFIED", location: "Control desk",
+    summary: "Primary connection unavailable.", affectedContestIds: [], affectedResourceIds: [],
+    affectedParticipantIds: [], evidenceRefs: ["router-alarm-2"] });
+  assert.equal(offlineIncident.status, 200);
+  clock = "2026-09-20T13:20:01.000Z";
+  const stopped = await post(server, `${root}/operational-transition`, { expectedOperationalRevision: 1,
+    expectedStateVersion: 5, commandId: "mode.http.offline-stop", targetMode: "STOPPED",
+    reason: "Recorded incident requires an immediate venue stop.", sourceIncidentId: "incident.offline.1",
+    scope: { kind: "VENUE", ids: ["encourt-st-albans"] } });
+  assert.equal(stopped.status, 200);
+  assert.equal(stopped.body.live.operations.publicStatus.nextUpdateAt, "2026-09-20T13:30:01.000Z",
+    "the server derives a fresh update deadline when a delayed offline stop reaches authority");
 });

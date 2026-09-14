@@ -256,6 +256,37 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(restartedFetchCount, 1, "a valid cache must not need a network fetch after restart")
     }
 
+    func testConnectedMacDurablyCapturesOfflineIncidentAndImmediateStop() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("krateasy-app-incident-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let client = OfflineCapableClient()
+        let now = ISO8601DateFormatter().date(from: "2026-09-20T13:00:00Z")!
+        let model = TournamentOSAppModel(client: client, offlineJournalDirectory: directory)
+        model.selectedTournamentID = "st-albans"
+        await model.loadSelectedTournament()
+        await model.refreshOfflineEventPack(now: now)
+
+        await model.queueOperationalIncident(
+            OfflineOperationalIncidentAction(
+                incidentID: "incident.mac.1", category: .service, severity: .major,
+                acknowledgement: .acknowledged, location: "Control desk",
+                summary: "Primary network unavailable.", affectedContestIDs: [],
+                affectedResourceIDs: [], affectedParticipantIDs: [], evidenceRefs: ["router-alarm-1"]
+            ),
+            stopPlay: true
+        )
+
+        XCTAssertEqual(model.offlineCommands.map(\.commandName), ["RECORD_INCIDENT", "TRANSITION_MODE"])
+        XCTAssertEqual(model.offlineCommands.map(\.expectedAggregateVersion), [0, 1])
+        XCTAssertTrue(model.offlineCommands.allSatisfy { $0.state == .pending })
+        let restarted = TournamentOSAppModel(client: client, offlineJournalDirectory: directory)
+        restarted.selectedTournamentID = "st-albans"
+        await restarted.loadSelectedTournament()
+        await restarted.loadOfflineJournal()
+        XCTAssertEqual(restarted.offlineCommands.map(\.commandName), ["RECORD_INCIDENT", "TRANSITION_MODE"])
+    }
+
     private func assertFailure<Value>(_ state: ContentState<Value>, file: StaticString = #filePath, line: UInt = #line) {
         guard case .failed(let failure) = state else {
             return XCTFail("Expected failure state", file: file, line: line)

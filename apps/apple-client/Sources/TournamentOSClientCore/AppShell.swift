@@ -588,6 +588,53 @@ public final class TournamentOSAppModel {
         }
     }
 
+    public func queueOperationalIncident(_ incident: OfflineOperationalIncidentAction, stopPlay: Bool) async {
+        guard !isSynchronizingOfflineCommands, !isDemoWorkspace,
+              let competitionID = selectedTournamentID,
+              let pack = offlineEventPack,
+              pack.body.competitionId == competitionID,
+              pack.body.organizationId == selectedWorkspaceID else {
+            offlineJournalMessage = "Refresh and verify the signed offline event pack before recording an incident."
+            return
+        }
+        isSynchronizingOfflineCommands = true
+        defer { isSynchronizingOfflineCommands = false }
+        do {
+            let queue = try offlineQueue(for: competitionID)
+            let operationalNames: Set<String> = ["RECORD_INCIDENT", "TRANSITION_MODE",
+                                                 "RECORD_RESTART_CLEARANCE", "TRANSFER_AUTHORITY"]
+            let pending = try await queue.all().filter {
+                $0.state != .acknowledged && operationalNames.contains($0.commandName)
+            }
+            let expectedVersion = max(pack.body.operation.stateVersion,
+                                      (pending.map(\.expectedAggregateVersion).max()
+                                       ?? pack.body.operation.stateVersion - 1) + 1)
+            let incidentKey = "mac.incident.\(UUID().uuidString.lowercased())"
+            var drafts = [try OfflineCommandDraft.operationalIncident(
+                idempotencyKey: incidentKey, competitionID: competitionID,
+                operationalRevision: pack.body.operationalRevision,
+                expectedStateVersion: expectedVersion, incident: incident
+            )]
+            if stopPlay && pack.body.operation.mode != .stopped && pack.body.operation.mode != .cancelled {
+                drafts.append(try OfflineCommandDraft.operationalTransition(
+                    idempotencyKey: "mac.stop.\(UUID().uuidString.lowercased())",
+                    competitionID: competitionID, operationalRevision: pack.body.operationalRevision,
+                    expectedStateVersion: expectedVersion + 1, targetMode: .stopped,
+                    reason: "Recorded incident requires an immediate venue stop.",
+                    sourceIncidentID: incident.incidentID,
+                    scope: OfflineOperationalScope(kind: .venue, ids: [competitionID])
+                ))
+            }
+            _ = try await queue.enqueueBatch(drafts)
+            offlineCommands = try await queue.all()
+            offlineJournalMessage = stopPlay && drafts.count == 2
+                ? "Incident and stop intent saved durably. Stop play locally now; server publication follows acknowledgement."
+                : "Incident saved durably. It remains pending until the authoritative server acknowledges it."
+        } catch {
+            offlineJournalMessage = "The incident was not added because its facts, scope, or signed revision were invalid."
+        }
+    }
+
     public func synchronizeOfflineCommands() async {
         guard !isSynchronizingOfflineCommands, !isDemoWorkspace,
               let competitionID = selectedTournamentID,

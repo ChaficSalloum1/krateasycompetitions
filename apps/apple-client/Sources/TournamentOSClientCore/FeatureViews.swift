@@ -1247,12 +1247,20 @@ private struct LiveOperationsView: View {
 
 private struct LiveOperationsContent: View {
     let model: TournamentOSAppModel
+    @State private var showingIncidentCapture = false
 
     var body: some View {
         LoadStateView(state: model.operationsState, retry: retry) { operations in
             VStack(alignment: .leading, spacing: 22) {
                 OfflineEventPackView(model: model)
                 OfflineCommandJournalView(model: model)
+                Button {
+                    showingIncidentCapture = true
+                } label: {
+                    Label("Record incident", systemImage: "exclamationmark.shield")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityHint("Opens a form that saves incident facts to the durable offline journal")
                 OperationPulse(summary: operations.summary)
                 ForEach(LiveOperationStatusDTO.allCases, id: \.self) { status in
                     let matches = operations.items.filter { $0.status == status }
@@ -1282,9 +1290,76 @@ private struct LiveOperationsContent: View {
                 Text("Revision \(operations.revision) · \(operations.timezone) · Updated \(displayTime(operations.asOf))")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            .sheet(isPresented: $showingIncidentCapture) {
+                OfflineIncidentCaptureView(model: model)
+            }
         }
     }
     private func retry() { Task { await model.loadSelectedTournament() } }
+}
+
+private struct OfflineIncidentCaptureView: View {
+    let model: TournamentOSAppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var category = OfflineOperationalIncidentCategory.service
+    @State private var severity = OfflineOperationalIncidentSeverity.minor
+    @State private var acknowledgement = OfflineOperationalIncidentAcknowledgement.unverified
+    @State private var location = ""
+    @State private var summary = ""
+    @State private var stopPlay = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Incident facts") {
+                    Picker("Category", selection: $category) {
+                        ForEach(OfflineOperationalIncidentCategory.allCases, id: \.self) {
+                            Text($0.rawValue.replacingOccurrences(of: "_", with: " ").capitalized).tag($0)
+                        }
+                    }
+                    Picker("Severity", selection: $severity) {
+                        ForEach(OfflineOperationalIncidentSeverity.allCases, id: \.self) {
+                            Text($0.rawValue.replacingOccurrences(of: "_", with: " ").capitalized).tag($0)
+                        }
+                    }
+                    Picker("Verification", selection: $acknowledgement) {
+                        ForEach(OfflineOperationalIncidentAcknowledgement.allCases, id: \.self) {
+                            Text($0.rawValue.capitalized).tag($0)
+                        }
+                    }
+                    TextField("Location", text: $location)
+                    TextField("What was observed", text: $summary, axis: .vertical)
+                        .lineLimit(3...8)
+                }
+                Section("Immediate action") {
+                    Toggle("Stop play across the venue", isOn: $stopPlay)
+                    Text(stopPlay
+                         ? "Give the stop instruction locally now. The journal records the incident and stop intent atomically; public delivery begins only after the server acknowledges it."
+                         : "This records facts only. It does not change competition or public truth until acknowledged.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Record incident")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save offline") {
+                        let incident = OfflineOperationalIncidentAction(
+                            incidentID: "incident.mac.\(UUID().uuidString.lowercased())",
+                            category: category, severity: severity, acknowledgement: acknowledgement,
+                            location: location.trimmingCharacters(in: .whitespacesAndNewlines),
+                            summary: summary.trimmingCharacters(in: .whitespacesAndNewlines),
+                            affectedContestIDs: [], affectedResourceIDs: [], affectedParticipantIDs: [], evidenceRefs: []
+                        )
+                        Task { await model.queueOperationalIncident(incident, stopPlay: stopPlay); dismiss() }
+                    }
+                    .disabled(location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                              || summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .frame(minWidth: 460, minHeight: 480)
+    }
 }
 
 private struct OfflineEventPackView: View {

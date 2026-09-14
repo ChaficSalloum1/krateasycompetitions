@@ -801,13 +801,12 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         }
         if (operation === "operational-transition") {
           const allowed = ["expectedOperationalRevision", "expectedStateVersion", "commandId", "targetMode", "reason",
-            "sourceIncidentId", "publicMessageCode", "nextUpdateAt", "scope"];
+            "sourceIncidentId", "scope"];
           const scope = command.scope as Record<string, unknown> | undefined;
           if (Object.keys(command).some((key) => !allowed.includes(key))
             || !Number.isSafeInteger(command.expectedOperationalRevision) || !Number.isSafeInteger(command.expectedStateVersion)
-            || !["commandId", "targetMode", "reason", "publicMessageCode"].every((key) => typeof command[key] === "string")
+            || !["commandId", "targetMode", "reason"].every((key) => typeof command[key] === "string")
             || (command.sourceIncidentId !== undefined && typeof command.sourceIncidentId !== "string")
-            || (command.nextUpdateAt !== undefined && typeof command.nextUpdateAt !== "string")
             || !scope || Array.isArray(scope) || Object.keys(scope).some((key) => !["kind", "ids"].includes(key))
             || !["VENUE", "RESOURCE", "CONTEST", "PARTICIPANT"].includes(String(scope.kind))
             || !Array.isArray(scope.ids) || !scope.ids.every((value) => typeof value === "string"))
@@ -821,14 +820,22 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
               : "COMPETITION_LEAD" as const;
           const actorKey = functionName === "SAFETY_LEAD" ? "safetyLead"
             : functionName === "INCIDENT_LEAD" ? "incidentLead" : "competitionLead";
+          const publicMessageCode = { NORMAL: "PLAY_RESUMED_CHECK_NEXT", DEGRADED: "SERVICE_DEGRADED_USE_VENUE_BOARD",
+            PAUSED: "PLAY_PAUSED_STAY_CLEAR", STOPPED: "SAFETY_STOP_FOLLOW_VENUE_INSTRUCTIONS",
+            CANCELLED: "EVENT_CANCELLED_AWAIT_CONTACT", RECOVERING: "RECOVERY_IN_PROGRESS_AWAIT_UPDATE" }[target] as
+            "PLAY_RESUMED_CHECK_NEXT" | "SERVICE_DEGRADED_USE_VENUE_BOARD" | "PLAY_PAUSED_STAY_CLEAR"
+            | "SAFETY_STOP_FOLLOW_VENUE_INSTRUCTIONS" | "EVENT_CANCELLED_AWAIT_CONTACT"
+            | "RECOVERY_IN_PROGRESS_AWAIT_UPDATE";
+          const occurredAt = serverNow();
+          const needsUpdate = target === "PAUSED" || target === "STOPPED" || target === "RECOVERING";
           json(response, 200, competitionJourney.submitOperationalCommand(competitionId,
             command.expectedOperationalRevision as number, { kind: "TRANSITION_MODE",
               commandId: command.commandId as string, expectedVersion: command.expectedStateVersion as number,
               actorId: snapshot.live.operations.authorityAssignments[actorKey], authorityFunction: functionName,
-              occurredAt: serverNow(), targetMode: target, reason: command.reason as string,
+              occurredAt, targetMode: target, reason: command.reason as string,
               ...(command.sourceIncidentId ? { sourceIncidentId: command.sourceIncidentId as string } : {}),
-              publicMessageCode: command.publicMessageCode as never,
-              ...(command.nextUpdateAt ? { nextUpdateAt: command.nextUpdateAt as string } : {}),
+              publicMessageCode,
+              ...(needsUpdate ? { nextUpdateAt: new Date(Date.parse(occurredAt) + 10 * 60_000).toISOString() } : {}),
               scope: { kind: scope.kind as never, ids: scope.ids as string[] } }));
           return;
         }

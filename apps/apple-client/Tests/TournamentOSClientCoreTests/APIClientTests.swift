@@ -235,6 +235,79 @@ final class APIClientTests: XCTestCase {
         ])
     }
 
+    func testOfflineIncidentAndStopTransportUseServerOwnedAuthorityTimeAndMessages() async throws {
+        let (client, transport) = makeClient()
+        transport.respond(status: 200, json: #"{"live":{"operations":{"version":1}}}"#)
+        transport.respond(status: 200, json: #"{"live":{"operations":{"version":2}}}"#)
+        let incident = try OfflineCommandDraft.operationalIncident(
+            idempotencyKey: "mac.incident.1", competitionID: "st-albans", operationalRevision: 2,
+            expectedStateVersion: 0,
+            incident: OfflineOperationalIncidentAction(
+                incidentID: "incident.offline.1", category: .service, severity: .major,
+                acknowledgement: .acknowledged, location: "Control desk",
+                summary: "Primary network unavailable.", affectedContestIDs: [],
+                affectedResourceIDs: [], affectedParticipantIDs: [], evidenceRefs: ["router-alarm-1"]
+            )
+        )
+        let stop = try OfflineCommandDraft.operationalTransition(
+            idempotencyKey: "mac.stop.1", competitionID: "st-albans", operationalRevision: 2,
+            expectedStateVersion: 1, targetMode: .stopped,
+            reason: "Incident requires an immediate venue stop.", sourceIncidentID: "incident.offline.1",
+            scope: OfflineOperationalScope(kind: .venue, ids: ["st-albans"])
+        )
+
+        let incidentReceipt = try await client.submit(OfflineCommandEnvelope(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000012")!, draft: incident,
+            createdAt: Date(timeIntervalSince1970: 1_788_600_000)))
+        XCTAssertEqual(incidentReceipt.aggregateVersion, 1)
+        XCTAssertEqual(transport.lastRequest?.url?.path,
+                       "/v1/competition-journey/st-albans/operational-incident")
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: try XCTUnwrap(transport.allRequestBodies.last ?? nil)) as? [String: Any])
+        XCTAssertEqual(object["expectedOperationalRevision"] as? Int, 2)
+        XCTAssertEqual(object["expectedStateVersion"] as? Int, 0)
+        XCTAssertEqual(object["category"] as? String, "SERVICE")
+        XCTAssertNil(object["actorId"])
+        XCTAssertNil(object["occurredAt"])
+
+        let stopReceipt = try await client.submit(OfflineCommandEnvelope(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000013")!, draft: stop,
+            createdAt: Date(timeIntervalSince1970: 1_788_600_001)))
+        XCTAssertEqual(stopReceipt.aggregateVersion, 2)
+        XCTAssertEqual(transport.lastRequest?.url?.path,
+                       "/v1/competition-journey/st-albans/operational-transition")
+        object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: try XCTUnwrap(transport.allRequestBodies.last ?? nil)) as? [String: Any])
+        XCTAssertEqual(object["targetMode"] as? String, "STOPPED")
+        XCTAssertNil(object["actorId"])
+        XCTAssertNil(object["occurredAt"])
+        XCTAssertNil(object["publicMessageCode"])
+        XCTAssertNil(object["nextUpdateAt"])
+    }
+
+    func testOfflineOperationalConflictReadsTheOperationalHead() async throws {
+        let (client, transport) = makeClient()
+        transport.respond(status: 400, json: #"{"error":"operational_command_rejected:STALE_STATE_VERSION"}"#)
+        transport.respond(status: 200, json: #"{"live":{"state":{"version":21},"operations":{"version":5}}}"#)
+        let draft = try OfflineCommandDraft.operationalIncident(
+            idempotencyKey: "mac.incident.stale", competitionID: "st-albans", operationalRevision: 2,
+            expectedStateVersion: 1,
+            incident: OfflineOperationalIncidentAction(
+                incidentID: "incident.stale", category: .resource, severity: .minor,
+                acknowledgement: .unverified, location: "Court 4", summary: "Net post needs inspection.",
+                affectedContestIDs: [], affectedResourceIDs: ["Court 4"], affectedParticipantIDs: [], evidenceRefs: []
+            )
+        )
+
+        await XCTAssertThrowsErrorAsync(try await client.submit(OfflineCommandEnvelope(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000014")!, draft: draft,
+            createdAt: Date(timeIntervalSince1970: 1_788_600_000)))) { error in
+            XCTAssertEqual(error as? OfflineCommandTransportError,
+                           .rejected(actualAggregateVersion: 5,
+                                     reason: "operational_command_rejected:STALE_STATE_VERSION"))
+        }
+    }
+
     func testOfflineEventPackIsVerifiedAgainstPinnedTrustAndRequestContainsOnlyRevisionIdentityAndExpiry() async throws {
         let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: Data(repeating: 9, count: 32))
         let payload = Data(#"{"schemaVersion":"1.0.0","organizationId":"org.st-albans","competitionId":"st-albans","competitionName":"St Albans","publishedRevision":1,"operationalRevision":2,"liveVersion":8,"generatedAt":"2026-09-20T13:00:00.000Z","expiresAt":"2026-09-20T21:00:00.000Z","timezone":"Europe/London","authority":{"publicationCertificateHash":"cert","definitionHash":"definition","guardReportHash":"guard","stateProofHash":"state","operationalStateProofHash":"operations-proof"},"operation":{"mode":"STOPPED","stateVersion":2,"instruction":"Play is stopped. Follow venue staff instructions and await the next update.","effectiveAt":"2026-09-20T13:01:00.000Z","nextUpdateAt":"2026-09-20T13:10:00.000Z","stateProofHash":"operations-proof"},"publicProjection":{"publishedRevision":1,"operationalRevision":2,"operation":{"mode":"STOPPED","stateVersion":2,"instruction":"Play is stopped. Follow venue staff instructions and await the next update.","effectiveAt":"2026-09-20T13:01:00.000Z","nextUpdateAt":"2026-09-20T13:10:00.000Z","stateProofHash":"operations-proof"},"contests":[{"contestId":"M1","participantNames":["Pair 1","Pair 2"],"court":"Court 1","startsAt":"2026-09-20T14:00:00.000Z","status":"SCHEDULED","revision":2,"projectionHash":"contest-hash"}],"projectionHash":"public-hash"},"participantLookup":[{"participantId":"pair.1","projection":{"participant":{"displayName":"Pair 1","status":"CHECKED_IN"},"operation":{"mode":"STOPPED","stateVersion":2,"instruction":"Play is stopped. Follow venue staff instructions and await the next update.","effectiveAt":"2026-09-20T13:01:00.000Z","nextUpdateAt":"2026-09-20T13:10:00.000Z","stateProofHash":"operations-proof"},"revision":2,"next":{"contestId":"M1","opponent":"Pair 2","court":"Court 1","reportingTime":"2026-09-20T13:50:00.000Z","startsAt":"2026-09-20T14:00:00.000Z","status":"SCHEDULED"},"projectionHash":"participant-hash"}}],"emergencyReadiness":{"status":"BLOCKED_MISSING_AUTHORITY_DATA","missingDecisionCodes":["VENUE_ADDRESS"],"emergencyContacts":[],"instructions":[]}}"#.utf8)

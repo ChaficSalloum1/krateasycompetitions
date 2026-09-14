@@ -455,6 +455,56 @@ func essentialOfflineCommandsUseExactServerSchema() throws {
     }
 }
 
+@Test("offline incident and stop commands preserve facts but never claim server authority")
+func operationalCommandsUseExactServerOwnedBoundary() async throws {
+    let incident = try OfflineCommandDraft.operationalIncident(
+        idempotencyKey: "offline.incident.1", competitionID: "tournament-42", operationalRevision: 3,
+        expectedStateVersion: 4,
+        incident: OfflineOperationalIncidentAction(
+            incidentID: "incident.1", category: .medical, severity: .lifeSafety,
+            acknowledgement: .acknowledged, location: "Court 3", summary: "Participant needs assistance.",
+            affectedContestIDs: ["match.2", "match.1"], affectedResourceIDs: ["court.3"],
+            affectedParticipantIDs: ["pair.7"], evidenceRefs: ["radio.2", "radio.1"]
+        )
+    )
+    let incidentBody = try #require(JSONSerialization.jsonObject(with: incident.payload) as? [String: Any])
+    #expect(incident.commandName == "RECORD_INCIDENT")
+    #expect(incident.expectedAggregateVersion == 4)
+    #expect(incidentBody["expectedOperationalRevision"] as? Int == 3)
+    #expect(incidentBody["expectedStateVersion"] as? Int == 4)
+    #expect(incidentBody["commandId"] as? String == "offline.incident.1")
+    #expect(incidentBody["actorId"] == nil)
+    #expect(incidentBody["occurredAt"] == nil)
+
+    let stop = try OfflineCommandDraft.operationalTransition(
+        idempotencyKey: "offline.stop.1", competitionID: "tournament-42", operationalRevision: 3,
+        expectedStateVersion: 5, targetMode: .stopped, reason: "Immediate safety stop.",
+        sourceIncidentID: "incident.1", scope: OfflineOperationalScope(kind: .venue, ids: ["venue.1"])
+    )
+    let stopBody = try #require(JSONSerialization.jsonObject(with: stop.payload) as? [String: Any])
+    #expect(stop.commandName == "TRANSITION_MODE")
+    #expect(stopBody["targetMode"] as? String == "STOPPED")
+    #expect(stopBody["publicMessageCode"] == nil)
+    #expect(stopBody["nextUpdateAt"] == nil)
+    #expect(stopBody["actorId"] == nil)
+
+    let queue = OfflineCommandQueue(
+        persistence: InMemoryOfflineCommandQueuePersistence(),
+        clock: ScriptedClock([t0, t1, t2, t3]), idGenerator: ScriptedIDs([id1])
+    )
+    _ = try await queue.enqueue(incident)
+    _ = try await queue.claimNext(workerID: "mac.sync")
+    _ = try await queue.markConflicted(idempotencyKey: incident.idempotencyKey, workerID: "mac.sync",
+                                       actualAggregateVersion: 7, reason: "stale")
+    let reconciled = try await queue.reconcileConflict(
+        idempotencyKey: incident.idempotencyKey, replacementIdempotencyKey: "offline.incident.2",
+        expectedAggregateVersion: 7
+    )
+    let reconciledBody = try #require(JSONSerialization.jsonObject(with: reconciled.payload) as? [String: Any])
+    #expect(reconciledBody["commandId"] as? String == "offline.incident.2")
+    #expect(reconciledBody["expectedStateVersion"] as? Int == 7)
+}
+
 @Test("a conflicted earlier command blocks later commands from being reordered")
 func conflictPreservesCausalCommandOrder() async throws {
     let queue = OfflineCommandQueue(

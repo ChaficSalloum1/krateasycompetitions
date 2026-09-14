@@ -233,18 +233,14 @@ public final class URLSessionTournamentAPIClient: TournamentAPIClient, Competiti
 
     public func submit(_ envelope: OfflineCommandEnvelope) async throws -> OfflineCommandReceipt {
         guard let body = try? JSONSerialization.jsonObject(with: envelope.payload) as? [String: Any],
-              let command = body["command"] as? [String: Any],
-              command["commandId"] as? String == envelope.idempotencyKey,
-              command["kind"] as? String == envelope.commandName,
-              command["expectedVersion"] as? Int == envelope.expectedAggregateVersion,
-              body["expectedRevision"] as? Int != nil else {
+              let boundary = offlineBoundary(envelope: envelope, body: body) else {
             throw OfflineCommandTransportError.rejected(
                 actualAggregateVersion: envelope.expectedAggregateVersion,
                 reason: "offline_command_envelope_mismatch"
             )
         }
         let url: URL
-        do { url = try requestURL(pathComponents: ["v1", "competition-journey", envelope.aggregateID, "live-command"]) }
+        do { url = try requestURL(pathComponents: ["v1", "competition-journey", envelope.aggregateID, boundary.path]) }
         catch {
             throw OfflineCommandTransportError.rejected(
                 actualAggregateVersion: envelope.expectedAggregateVersion,
@@ -262,17 +258,64 @@ public final class URLSessionTournamentAPIClient: TournamentAPIClient, Competiti
         catch { throw OfflineCommandTransportError.unavailable }
         guard let http = response as? HTTPURLResponse else { throw OfflineCommandTransportError.unavailable }
         if (200..<300).contains(http.statusCode),
-           let accepted = try? JSONDecoder().decode(LiveCommandResponse.self, from: data) {
-            return OfflineCommandReceipt(aggregateVersion: accepted.live.state.version)
+           let accepted = try? JSONDecoder().decode(OfflineCommandResponse.self, from: data),
+           let version = boundary == .live ? accepted.live.state?.version : accepted.live.operations?.version {
+            return OfflineCommandReceipt(aggregateVersion: version)
         }
         if http.statusCode == 408 || http.statusCode == 429 || http.statusCode >= 500 {
             throw OfflineCommandTransportError.unavailable
         }
         let reason = (try? JSONDecoder().decode(ServerErrorResponse.self, from: data).error)
             ?? "authoritative_server_rejected_command"
-        let actualVersion = (try? await fetchJourneyLiveHead(competitionID: envelope.aggregateID))
+        let actualVersion = (try? await fetchJourneyHead(competitionID: envelope.aggregateID, boundary: boundary))
             ?? envelope.expectedAggregateVersion
         throw OfflineCommandTransportError.rejected(actualAggregateVersion: actualVersion, reason: reason)
+    }
+
+    private enum OfflineBoundary: Equatable {
+        case live
+        case operationalIncident
+        case operationalTransition
+
+        var path: String {
+            switch self {
+            case .live: "live-command"
+            case .operationalIncident: "operational-incident"
+            case .operationalTransition: "operational-transition"
+            }
+        }
+    }
+
+    private func offlineBoundary(envelope: OfflineCommandEnvelope,
+                                 body: [String: Any]) -> OfflineBoundary? {
+        let liveCommands: Set<String> = ["CHECK_IN", "CALL_CONTEST", "START_CONTEST", "RECORD_SCORE",
+                                         "COMPLETE_CONTEST", "AWARD_WALKOVER", "CORRECT_OPERATION"]
+        if liveCommands.contains(envelope.commandName),
+           Set(body.keys) == ["expectedRevision", "command"], body["expectedRevision"] as? Int != nil,
+           let command = body["command"] as? [String: Any],
+           command["commandId"] as? String == envelope.idempotencyKey,
+           command["kind"] as? String == envelope.commandName,
+           command["expectedVersion"] as? Int == envelope.expectedAggregateVersion {
+            return .live
+        }
+        let commonOperational = body["commandId"] as? String == envelope.idempotencyKey
+            && body["expectedStateVersion"] as? Int == envelope.expectedAggregateVersion
+            && body["expectedOperationalRevision"] as? Int != nil
+            && body["actorId"] == nil && body["occurredAt"] == nil
+        if envelope.commandName == "RECORD_INCIDENT", commonOperational {
+            let keys: Set<String> = ["expectedOperationalRevision", "expectedStateVersion", "commandId", "incidentId",
+                                     "category", "severity", "acknowledgement", "location", "summary",
+                                     "affectedContestIds", "affectedResourceIds", "affectedParticipantIds", "evidenceRefs"]
+            return Set(body.keys) == keys ? .operationalIncident : nil
+        }
+        if envelope.commandName == "TRANSITION_MODE", commonOperational,
+           body["publicMessageCode"] == nil, body["nextUpdateAt"] == nil {
+            var keys: Set<String> = ["expectedOperationalRevision", "expectedStateVersion", "commandId", "targetMode",
+                                     "reason", "scope"]
+            if body["sourceIncidentId"] != nil { keys.insert("sourceIncidentId") }
+            return Set(body.keys) == keys ? .operationalTransition : nil
+        }
+        return nil
     }
 
     public func fetchPortfolio() async throws -> PortfolioDTO {
@@ -356,24 +399,27 @@ public final class URLSessionTournamentAPIClient: TournamentAPIClient, Competiti
         return pathComponents.reduce(baseURL) { $0.appendingPathComponent($1, isDirectory: false) }
     }
 
-    private func fetchJourneyLiveHead(competitionID: String) async throws -> Int {
+    private func fetchJourneyHead(competitionID: String, boundary: OfflineBoundary) async throws -> Int {
         let url = try requestURL(pathComponents: ["v1", "competition-journey", competitionID])
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              let head = try? JSONDecoder().decode(LiveCommandResponse.self, from: data) else {
+              let head = try? JSONDecoder().decode(OfflineCommandResponse.self, from: data) else {
             throw TournamentAPIClientError.invalidResponse
         }
-        return head.live.state.version
+        if boundary == .live, let version = head.live.state?.version { return version }
+        if boundary != .live, let version = head.live.operations?.version { return version }
+        throw TournamentAPIClientError.invalidResponse
     }
 }
 
-private struct LiveCommandResponse: Decodable {
+private struct OfflineCommandResponse: Decodable {
     struct Live: Decodable {
         struct State: Decodable { let version: Int }
-        let state: State
+        let state: State?
+        let operations: State?
     }
     let live: Live
 }

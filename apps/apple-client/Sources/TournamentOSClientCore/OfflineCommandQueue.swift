@@ -112,6 +112,87 @@ public enum OfflineLiveCommandAction: Sendable, Equatable {
     }
 }
 
+public enum OfflineOperationalIncidentCategory: String, Codable, CaseIterable, Sendable, Equatable {
+    case medical = "MEDICAL"
+    case fire = "FIRE"
+    case structural = "STRUCTURAL"
+    case weather = "WEATHER"
+    case security = "SECURITY"
+    case evacuation = "EVACUATION"
+    case safeguarding = "SAFEGUARDING"
+    case service = "SERVICE"
+    case resource = "RESOURCE"
+    case competition = "COMPETITION"
+}
+
+public enum OfflineOperationalIncidentSeverity: String, Codable, CaseIterable, Sendable, Equatable {
+    case info = "INFO"
+    case minor = "MINOR"
+    case major = "MAJOR"
+    case lifeSafety = "LIFE_SAFETY"
+}
+
+public enum OfflineOperationalIncidentAcknowledgement: String, Codable, CaseIterable, Sendable, Equatable {
+    case unverified = "UNVERIFIED"
+    case acknowledged = "ACKNOWLEDGED"
+}
+
+public struct OfflineOperationalIncidentAction: Sendable, Equatable {
+    public let incidentID: String
+    public let category: OfflineOperationalIncidentCategory
+    public let severity: OfflineOperationalIncidentSeverity
+    public let acknowledgement: OfflineOperationalIncidentAcknowledgement
+    public let location: String
+    public let summary: String
+    public let affectedContestIDs: [String]
+    public let affectedResourceIDs: [String]
+    public let affectedParticipantIDs: [String]
+    public let evidenceRefs: [String]
+
+    public init(incidentID: String, category: OfflineOperationalIncidentCategory,
+                severity: OfflineOperationalIncidentSeverity,
+                acknowledgement: OfflineOperationalIncidentAcknowledgement,
+                location: String, summary: String, affectedContestIDs: [String],
+                affectedResourceIDs: [String], affectedParticipantIDs: [String], evidenceRefs: [String]) {
+        self.incidentID = incidentID
+        self.category = category
+        self.severity = severity
+        self.acknowledgement = acknowledgement
+        self.location = location
+        self.summary = summary
+        self.affectedContestIDs = affectedContestIDs
+        self.affectedResourceIDs = affectedResourceIDs
+        self.affectedParticipantIDs = affectedParticipantIDs
+        self.evidenceRefs = evidenceRefs
+    }
+}
+
+public enum OfflineOperationalMode: String, Codable, CaseIterable, Sendable, Equatable {
+    case normal = "NORMAL"
+    case degraded = "DEGRADED"
+    case paused = "PAUSED"
+    case stopped = "STOPPED"
+    case cancelled = "CANCELLED"
+    case recovering = "RECOVERING"
+}
+
+public enum OfflineOperationalScopeKind: String, Codable, CaseIterable, Sendable, Equatable {
+    case venue = "VENUE"
+    case resource = "RESOURCE"
+    case contest = "CONTEST"
+    case participant = "PARTICIPANT"
+}
+
+public struct OfflineOperationalScope: Sendable, Equatable {
+    public let kind: OfflineOperationalScopeKind
+    public let ids: [String]
+
+    public init(kind: OfflineOperationalScopeKind, ids: [String]) {
+        self.kind = kind
+        self.ids = ids
+    }
+}
+
 public extension OfflineCommandDraft {
     static func live(
         idempotencyKey: String,
@@ -137,6 +218,84 @@ public extension OfflineCommandDraft {
             commandName: action.commandName,
             payload: payload
         )
+    }
+
+    static func operationalIncident(
+        idempotencyKey: String,
+        competitionID: String,
+        operationalRevision: Int,
+        expectedStateVersion: Int,
+        incident: OfflineOperationalIncidentAction
+    ) throws -> OfflineCommandDraft {
+        guard validIdentity(idempotencyKey), validIdentity(competitionID), operationalRevision >= 1,
+              expectedStateVersion >= 0, validIdentity(incident.incidentID), validText(incident.location, maximum: 240),
+              validText(incident.summary, maximum: 1_000) else {
+            throw OfflineCommandQueueError.invalidDraft("operationalIncident")
+        }
+        let arrays = [incident.affectedContestIDs, incident.affectedResourceIDs,
+                      incident.affectedParticipantIDs, incident.evidenceRefs]
+        guard arrays.flatMap({ $0 }).allSatisfy({ validText($0, maximum: 240) }) else {
+            throw OfflineCommandQueueError.invalidDraft("operationalIncident")
+        }
+        let object: [String: Any] = [
+            "expectedOperationalRevision": operationalRevision,
+            "expectedStateVersion": expectedStateVersion,
+            "commandId": idempotencyKey,
+            "incidentId": incident.incidentID,
+            "category": incident.category.rawValue,
+            "severity": incident.severity.rawValue,
+            "acknowledgement": incident.acknowledgement.rawValue,
+            "location": incident.location,
+            "summary": incident.summary,
+            "affectedContestIds": sortedUnique(incident.affectedContestIDs),
+            "affectedResourceIds": sortedUnique(incident.affectedResourceIDs),
+            "affectedParticipantIds": sortedUnique(incident.affectedParticipantIDs),
+            "evidenceRefs": sortedUnique(incident.evidenceRefs),
+        ]
+        let payload = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        return OfflineCommandDraft(idempotencyKey: idempotencyKey, aggregateID: competitionID,
+                                   expectedAggregateVersion: expectedStateVersion,
+                                   commandName: "RECORD_INCIDENT", payload: payload)
+    }
+
+    static func operationalTransition(
+        idempotencyKey: String,
+        competitionID: String,
+        operationalRevision: Int,
+        expectedStateVersion: Int,
+        targetMode: OfflineOperationalMode,
+        reason: String,
+        sourceIncidentID: String? = nil,
+        scope: OfflineOperationalScope
+    ) throws -> OfflineCommandDraft {
+        guard validIdentity(idempotencyKey), validIdentity(competitionID), operationalRevision >= 1,
+              expectedStateVersion >= 0, validText(reason, maximum: 500), !scope.ids.isEmpty,
+              scope.ids.allSatisfy({ validText($0, maximum: 160) }),
+              sourceIncidentID.map(validIdentity) ?? true else {
+            throw OfflineCommandQueueError.invalidDraft("operationalTransition")
+        }
+        var object: [String: Any] = [
+            "expectedOperationalRevision": operationalRevision,
+            "expectedStateVersion": expectedStateVersion,
+            "commandId": idempotencyKey,
+            "targetMode": targetMode.rawValue,
+            "reason": reason,
+            "scope": ["kind": scope.kind.rawValue, "ids": sortedUnique(scope.ids)],
+        ]
+        if let sourceIncidentID { object["sourceIncidentId"] = sourceIncidentID }
+        let payload = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        return OfflineCommandDraft(idempotencyKey: idempotencyKey, aggregateID: competitionID,
+                                   expectedAggregateVersion: expectedStateVersion,
+                                   commandName: "TRANSITION_MODE", payload: payload)
+    }
+
+    private static func sortedUnique(_ values: [String]) -> [String] { Array(Set(values)).sorted() }
+    private static func validIdentity(_ value: String) -> Bool {
+        !value.isEmpty && value.count <= 128 && value.range(of: #"^[A-Za-z0-9][A-Za-z0-9._:-]*$"#,
+                                                             options: .regularExpression) != nil
+    }
+    private static func validText(_ value: String, maximum: Int) -> Bool {
+        !value.isEmpty && value.count <= maximum && value == value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -535,6 +694,40 @@ public actor OfflineCommandQueue {
         return envelope
     }
 
+    public func enqueueBatch(_ drafts: [OfflineCommandDraft]) async throws -> [OfflineCommandEnvelope] {
+        guard !drafts.isEmpty else { return [] }
+        try drafts.forEach(validate)
+        guard Set(drafts.map(\.idempotencyKey)).count == drafts.count else {
+            throw OfflineCommandQueueError.idempotencyKeyReuse(drafts.first?.idempotencyKey ?? "")
+        }
+        try await loadIfNeeded()
+        var updated = envelopes
+        var accepted: [OfflineCommandEnvelope] = []
+        for draft in drafts {
+            if let existing = updated.first(where: { $0.idempotencyKey == draft.idempotencyKey }) {
+                guard hasSameCommand(existing, as: draft) else {
+                    throw OfflineCommandQueueError.idempotencyKeyReuse(draft.idempotencyKey)
+                }
+                accepted.append(existing)
+                continue
+            }
+            let historicalReuse = updated.contains { envelope in
+                envelope.reconciliationHistory.contains {
+                    $0.previousIdempotencyKey == draft.idempotencyKey
+                        || $0.replacementIdempotencyKey == draft.idempotencyKey
+                }
+            }
+            guard !historicalReuse else { throw OfflineCommandQueueError.idempotencyKeyReuse(draft.idempotencyKey) }
+            let envelope = OfflineCommandEnvelope(id: await idGenerator.next(), draft: draft,
+                                                  createdAt: await clock.now())
+            updated.append(envelope)
+            accepted.append(envelope)
+        }
+        sortEnvelopes(&updated)
+        try await commit(updated)
+        return accepted
+    }
+
     public func all() async throws -> [OfflineCommandEnvelope] {
         try await loadIfNeeded()
         return envelopes
@@ -689,13 +882,20 @@ public actor OfflineCommandQueue {
         previousExpectedVersion: Int,
         replacementExpectedVersion: Int
     ) -> Data {
-        guard var body = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
-              var command = body["command"] as? [String: Any],
-              command["commandId"] as? String == previousIdempotencyKey,
-              command["expectedVersion"] as? Int == previousExpectedVersion else { return payload }
-        command["commandId"] = replacementIdempotencyKey
-        command["expectedVersion"] = replacementExpectedVersion
-        body["command"] = command
+        guard var body = try? JSONSerialization.jsonObject(with: payload) as? [String: Any] else { return payload }
+        if var command = body["command"] as? [String: Any],
+           command["commandId"] as? String == previousIdempotencyKey,
+           command["expectedVersion"] as? Int == previousExpectedVersion {
+            command["commandId"] = replacementIdempotencyKey
+            command["expectedVersion"] = replacementExpectedVersion
+            body["command"] = command
+        } else if body["commandId"] as? String == previousIdempotencyKey,
+                  body["expectedStateVersion"] as? Int == previousExpectedVersion {
+            body["commandId"] = replacementIdempotencyKey
+            body["expectedStateVersion"] = replacementExpectedVersion
+        } else {
+            return payload
+        }
         return (try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])) ?? payload
     }
 
