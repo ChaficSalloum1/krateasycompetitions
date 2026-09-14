@@ -7,7 +7,7 @@ import test from "node:test";
 import { canonicalHash } from "@tournament-os/tournament-schema";
 import { replayLiveOperationsEvents } from "@tournament-os/competition-engine";
 import { CompetitionJourney } from "../src/competition-journey.js";
-import { verifyOfflineEventPack } from "../src/offline-event-pack.js";
+import { signOfflineEventPack, verifyOfflineEventPack } from "../src/offline-event-pack.js";
 import { createCompilerServer } from "../src/server.js";
 
 const fixture = readFileSync(new URL("./fixtures/pk-st-albans-production-lock-candidate-2.json", import.meta.url), "utf8").trimEnd();
@@ -98,6 +98,10 @@ test("offline packs fail closed for stale, cross-organisation, unpublished, expi
   assert.throws(() => verifyOfflineEventPack(pack, Buffer.alloc(32, 7).toString("base64"), timestamp),
     /offline_pack_trust_mismatch/);
   assert.throws(() => verifyOfflineEventPack(pack, pack.publicKeyBase64, expiresAt), /offline_pack_expired/);
+  const body = verifyOfflineEventPack(pack, pack.publicKeyBase64, timestamp);
+  const inconsistent = signOfflineEventPack({ ...body, publicProjection: { ...body.publicProjection,
+    operation: { ...body.operation, stateVersion: body.operation.stateVersion + 1 } } }, signingSeedHex);
+  assert.throws(() => verifyOfflineEventPack(inconsistent, pack.publicKeyBase64, timestamp), /offline_pack_invalid/);
 
   const draftJourney = new CompetitionJourney({ organizationId: "org.st-albans", offlinePackSigningSeedHex: signingSeedHex,
     now: () => timestamp });

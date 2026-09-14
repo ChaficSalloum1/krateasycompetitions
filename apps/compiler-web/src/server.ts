@@ -675,7 +675,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           : competitionJourney.readOrganiserLive({ ...input, at: serverNow() }));
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|offline-pack))?$/.exec(request.url ?? "");
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer))?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
@@ -768,6 +768,114 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
             expectedPublishedRevision: command.expectedPublishedRevision as number,
             expectedOperationalRevision: command.expectedOperationalRevision as number,
             expiresAt: command.expiresAt }));
+          return;
+        }
+        if (operation === "operational-incident") {
+          const allowed = ["expectedOperationalRevision", "expectedStateVersion", "commandId", "incidentId", "category",
+            "severity", "acknowledgement", "location", "summary", "affectedContestIds", "affectedResourceIds",
+            "affectedParticipantIds", "evidenceRefs"];
+          const arrays = ["affectedContestIds", "affectedResourceIds", "affectedParticipantIds", "evidenceRefs"];
+          if (Object.keys(command).some((key) => !allowed.includes(key))
+            || !Number.isSafeInteger(command.expectedOperationalRevision) || !Number.isSafeInteger(command.expectedStateVersion)
+            || !["commandId", "incidentId", "location", "summary"].every((key) => typeof command[key] === "string")
+            || !["MEDICAL", "FIRE", "STRUCTURAL", "WEATHER", "SECURITY", "EVACUATION", "SAFEGUARDING", "SERVICE",
+              "RESOURCE", "COMPETITION"].includes(String(command.category))
+            || !["INFO", "MINOR", "MAJOR", "LIFE_SAFETY"].includes(String(command.severity))
+            || !["UNVERIFIED", "ACKNOWLEDGED"].includes(String(command.acknowledgement))
+            || !arrays.every((key) => Array.isArray(command[key])
+              && (command[key] as unknown[]).every((value) => typeof value === "string")))
+            throw new Error("invalid_journey_command");
+          const snapshot = competitionJourney.read(competitionId);
+          if (!snapshot?.live) throw new Error("journey_revision_conflict");
+          json(response, 200, competitionJourney.submitOperationalCommand(competitionId,
+            command.expectedOperationalRevision as number, { kind: "RECORD_INCIDENT",
+              commandId: command.commandId as string, expectedVersion: command.expectedStateVersion as number,
+              actorId: snapshot.live.operations.authorityAssignments.scribe, authorityFunction: "SCRIBE",
+              occurredAt: serverNow(), incident: { incidentId: command.incidentId as string,
+                category: command.category as never, severity: command.severity as never,
+                acknowledgement: command.acknowledgement as never, location: command.location as string,
+                summary: command.summary as string, affectedContestIds: command.affectedContestIds as string[],
+                affectedResourceIds: command.affectedResourceIds as string[],
+                affectedParticipantIds: command.affectedParticipantIds as string[], evidenceRefs: command.evidenceRefs as string[] } }));
+          return;
+        }
+        if (operation === "operational-transition") {
+          const allowed = ["expectedOperationalRevision", "expectedStateVersion", "commandId", "targetMode", "reason",
+            "sourceIncidentId", "publicMessageCode", "nextUpdateAt", "scope"];
+          const scope = command.scope as Record<string, unknown> | undefined;
+          if (Object.keys(command).some((key) => !allowed.includes(key))
+            || !Number.isSafeInteger(command.expectedOperationalRevision) || !Number.isSafeInteger(command.expectedStateVersion)
+            || !["commandId", "targetMode", "reason", "publicMessageCode"].every((key) => typeof command[key] === "string")
+            || (command.sourceIncidentId !== undefined && typeof command.sourceIncidentId !== "string")
+            || (command.nextUpdateAt !== undefined && typeof command.nextUpdateAt !== "string")
+            || !scope || Array.isArray(scope) || Object.keys(scope).some((key) => !["kind", "ids"].includes(key))
+            || !["VENUE", "RESOURCE", "CONTEST", "PARTICIPANT"].includes(String(scope.kind))
+            || !Array.isArray(scope.ids) || !scope.ids.every((value) => typeof value === "string"))
+            throw new Error("invalid_journey_command");
+          const snapshot = competitionJourney.read(competitionId);
+          if (!snapshot?.live) throw new Error("journey_revision_conflict");
+          const target = command.targetMode as "NORMAL" | "DEGRADED" | "PAUSED" | "STOPPED" | "CANCELLED" | "RECOVERING";
+          const functionName = target === "STOPPED" ? "SAFETY_LEAD" as const
+            : target === "CANCELLED" || target === "RECOVERING"
+              || (target === "NORMAL" && snapshot.live.operations.mode === "RECOVERING") ? "INCIDENT_LEAD" as const
+              : "COMPETITION_LEAD" as const;
+          const actorKey = functionName === "SAFETY_LEAD" ? "safetyLead"
+            : functionName === "INCIDENT_LEAD" ? "incidentLead" : "competitionLead";
+          json(response, 200, competitionJourney.submitOperationalCommand(competitionId,
+            command.expectedOperationalRevision as number, { kind: "TRANSITION_MODE",
+              commandId: command.commandId as string, expectedVersion: command.expectedStateVersion as number,
+              actorId: snapshot.live.operations.authorityAssignments[actorKey], authorityFunction: functionName,
+              occurredAt: serverNow(), targetMode: target, reason: command.reason as string,
+              ...(command.sourceIncidentId ? { sourceIncidentId: command.sourceIncidentId as string } : {}),
+              publicMessageCode: command.publicMessageCode as never,
+              ...(command.nextUpdateAt ? { nextUpdateAt: command.nextUpdateAt as string } : {}),
+              scope: { kind: scope.kind as never, ids: scope.ids as string[] } }));
+          return;
+        }
+        if (operation === "operational-clearance") {
+          const allowed = ["expectedOperationalRevision", "expectedStateVersion", "commandId", "clearance", "statement",
+            "evidenceRefs"];
+          if (Object.keys(command).some((key) => !allowed.includes(key))
+            || !Number.isSafeInteger(command.expectedOperationalRevision) || !Number.isSafeInteger(command.expectedStateVersion)
+            || typeof command.commandId !== "string" || !["SAFETY", "COMPETITION"].includes(String(command.clearance))
+            || typeof command.statement !== "string" || !Array.isArray(command.evidenceRefs)
+            || !command.evidenceRefs.every((value) => typeof value === "string")) throw new Error("invalid_journey_command");
+          const snapshot = competitionJourney.read(competitionId);
+          if (!snapshot?.live) throw new Error("journey_revision_conflict");
+          const isSafety = command.clearance === "SAFETY";
+          json(response, 200, competitionJourney.submitOperationalCommand(competitionId,
+            command.expectedOperationalRevision as number, { kind: "RECORD_RESTART_CLEARANCE",
+              commandId: command.commandId, expectedVersion: command.expectedStateVersion as number,
+              actorId: isSafety ? snapshot.live.operations.authorityAssignments.safetyLead
+                : snapshot.live.operations.authorityAssignments.competitionLead,
+              authorityFunction: isSafety ? "SAFETY_LEAD" : "COMPETITION_LEAD", occurredAt: serverNow(),
+              clearance: command.clearance as "SAFETY" | "COMPETITION", statement: command.statement,
+              evidenceRefs: command.evidenceRefs as string[] }));
+          return;
+        }
+        if (operation === "operational-transfer") {
+          const allowed = ["expectedOperationalRevision", "expectedStateVersion", "commandId", "transferredFunction",
+            "newActorId", "reason", "evidenceRefs"];
+          const functions = ["INCIDENT_LEAD", "COMPETITION_LEAD", "SAFETY_LEAD", "COMMUNICATIONS_LEAD", "SCRIBE"];
+          if (Object.keys(command).some((key) => !allowed.includes(key))
+            || !Number.isSafeInteger(command.expectedOperationalRevision) || !Number.isSafeInteger(command.expectedStateVersion)
+            || typeof command.commandId !== "string" || !functions.includes(String(command.transferredFunction))
+            || typeof command.newActorId !== "string" || typeof command.reason !== "string"
+            || !Array.isArray(command.evidenceRefs) || !command.evidenceRefs.every((value) => typeof value === "string"))
+            throw new Error("invalid_journey_command");
+          const snapshot = competitionJourney.read(competitionId);
+          if (!snapshot?.live) throw new Error("journey_revision_conflict");
+          const functionName = command.transferredFunction as "INCIDENT_LEAD" | "COMPETITION_LEAD" | "SAFETY_LEAD"
+            | "COMMUNICATIONS_LEAD" | "SCRIBE";
+          const actorKey = { INCIDENT_LEAD: "incidentLead", COMPETITION_LEAD: "competitionLead",
+            SAFETY_LEAD: "safetyLead", COMMUNICATIONS_LEAD: "communicationsLead", SCRIBE: "scribe" }[functionName] as
+            "incidentLead" | "competitionLead" | "safetyLead" | "communicationsLead" | "scribe";
+          json(response, 200, competitionJourney.submitOperationalCommand(competitionId,
+            command.expectedOperationalRevision as number, { kind: "TRANSFER_AUTHORITY",
+              commandId: command.commandId, expectedVersion: command.expectedStateVersion as number,
+              actorId: snapshot.live.operations.authorityAssignments[actorKey], authorityFunction: functionName,
+              occurredAt: serverNow(), transferredFunction: functionName, newActorId: command.newActorId,
+              reason: command.reason, evidenceRefs: command.evidenceRefs as string[] }));
           return;
         }
         if (operation === "no-show-preview") {

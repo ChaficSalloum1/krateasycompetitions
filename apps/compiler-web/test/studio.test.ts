@@ -50,13 +50,13 @@ test("install-free player view makes the next match the dominant job", () => {
 });
 
 test("participant and public surfaces consume authoritative revision-scoped projections", () => {
-  for (const text of ["Live control room", "Authoritative organiser projection", "deliveryEvidence", "organiser-live", "stateProofHash"]) {
+  for (const text of ["Live control room", "Authoritative organiser projection", "deliveryEvidence", "organiser-live", "stateProofHash", "operation.stateVersion"]) {
     assert.ok(participantOperationsHtml.includes(text), `missing ${text}`);
   }
-  for (const text of ["Live order of play", "public-live", "operationalRevision", "projectionHash"]) {
+  for (const text of ["Live order of play", "public-live", "operationalRevision", "projectionHash", "operation.instruction"]) {
     assert.ok(venueDisplayHtml.includes(text), `missing ${text}`);
   }
-  for (const text of ["Signed participant view", "participant-next", "private link", "No app needed"]) {
+  for (const text of ["Signed participant view", "participant-next", "private link", "No app needed", "operation.stateVersion"]) {
     assert.ok(playerHtml.includes(text), `missing ${text}`);
   }
 });

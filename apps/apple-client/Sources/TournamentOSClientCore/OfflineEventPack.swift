@@ -25,6 +25,25 @@ public struct OfflineEventPackAuthorityDTO: Codable, Equatable, Sendable {
     public let definitionHash: String
     public let guardReportHash: String
     public let stateProofHash: String
+    public let operationalStateProofHash: String
+}
+
+public enum OfflineOperationalModeDTO: String, Codable, Equatable, Sendable, CaseIterable {
+    case normal = "NORMAL"
+    case degraded = "DEGRADED"
+    case paused = "PAUSED"
+    case stopped = "STOPPED"
+    case cancelled = "CANCELLED"
+    case recovering = "RECOVERING"
+}
+
+public struct OfflineOperationalStatusDTO: Codable, Equatable, Sendable {
+    public let mode: OfflineOperationalModeDTO
+    public let stateVersion: Int
+    public let instruction: String
+    public let effectiveAt: String?
+    public let nextUpdateAt: String?
+    public let stateProofHash: String
 }
 
 public struct OfflinePublicContestDTO: Codable, Equatable, Sendable, Identifiable {
@@ -41,6 +60,7 @@ public struct OfflinePublicContestDTO: Codable, Equatable, Sendable, Identifiabl
 public struct OfflinePublicProjectionDTO: Codable, Equatable, Sendable {
     public let publishedRevision: Int
     public let operationalRevision: Int
+    public let operation: OfflineOperationalStatusDTO
     public let contests: [OfflinePublicContestDTO]
     public let projectionHash: String
 }
@@ -60,6 +80,7 @@ public struct OfflineParticipantProjectionDTO: Codable, Equatable, Sendable {
         public let status: String
     }
     public let participant: Participant
+    public let operation: OfflineOperationalStatusDTO
     public let revision: Int
     public let next: OfflineParticipantNextDTO?
     public let projectionHash: String
@@ -90,6 +111,7 @@ public struct OfflineEventPackBodyDTO: Codable, Equatable, Sendable {
     public let expiresAt: String
     public let timezone: String
     public let authority: OfflineEventPackAuthorityDTO
+    public let operation: OfflineOperationalStatusDTO
     public let publicProjection: OfflinePublicProjectionDTO
     public let participantLookup: [OfflineParticipantLookupDTO]
     public let emergencyReadiness: OfflineEmergencyReadinessDTO
@@ -133,6 +155,10 @@ public struct OfflineEventPackVerifier: Sendable {
         guard let body = try? JSONDecoder().decode(OfflineEventPackBodyDTO.self, from: payload),
               body.schemaVersion == "1.0.0", body.publicProjection.publishedRevision == body.publishedRevision,
               body.publicProjection.operationalRevision == body.operationalRevision,
+              body.operation == body.publicProjection.operation,
+              body.participantLookup.allSatisfy({ $0.projection.operation == body.operation }),
+              body.operation.stateVersion >= 0,
+              body.operation.stateProofHash == body.authority.operationalStateProofHash,
               body.emergencyReadiness.status == "BLOCKED_MISSING_AUTHORITY_DATA",
               let generatedAt = Self.date(body.generatedAt), let expiresAt = Self.date(body.expiresAt),
               generatedAt <= now else { throw OfflineEventPackError.invalidPayload }

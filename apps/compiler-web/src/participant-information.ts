@@ -2,6 +2,12 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { canonicalHash } from "@tournament-os/tournament-schema";
 import type { LiveOperationsEvent, LiveOperationsState } from "@tournament-os/competition-engine";
 import type { OperationalAssignment } from "./no-show-journey.js";
+import type {
+  OperationalAuthorityAssignments,
+  OperationalIncident,
+  OperationalPublicStatus,
+  OperationalRestartClearance,
+} from "./operational-safety.js";
 
 export interface ParticipantAccessGrant {
   readonly tokenHash: string;
@@ -26,6 +32,7 @@ export interface ParticipantNextProjection {
     readonly displayName: string;
     readonly status: "EXPECTED" | "CHECKED_IN" | "LATE" | "WITHDRAWN";
   };
+  readonly operation: OperationalPublicStatus;
   readonly revision: number;
   readonly next: null | {
     readonly contestId: string;
@@ -58,6 +65,7 @@ export interface PublicLiveProjection {
   readonly competition: { readonly id: string; readonly name: string };
   readonly publishedRevision: number;
   readonly operationalRevision: number;
+  readonly operation: OperationalPublicStatus;
   readonly contests: readonly PublicLiveContestProjection[];
   readonly projectionHash: string;
 }
@@ -68,6 +76,12 @@ export interface OrganiserLiveProjection {
   readonly public: PublicLiveProjection;
   readonly liveVersion: number;
   readonly stateProofHash: string;
+  readonly authorityAssignments: OperationalAuthorityAssignments;
+  readonly incidents: readonly OperationalIncident[];
+  readonly restartClearances: {
+    readonly safety?: OperationalRestartClearance;
+    readonly competition?: OperationalRestartClearance;
+  };
   readonly participants: readonly {
     readonly participantId: string;
     readonly displayName: string;
@@ -146,6 +160,7 @@ export function deriveParticipantNext(input: {
   readonly participantNames: Readonly<Record<string, string>>;
   readonly state: LiveOperationsState;
   readonly assignments: readonly OperationalAssignment[];
+  readonly operation: OperationalPublicStatus;
 }): ParticipantNextProjection {
   const entrantsFor = (definition: LiveOperationsState["definition"]["contests"][number]): readonly string[] | null =>
     input.state.resolvedEntrants[definition.contestId] ?? null;
@@ -176,6 +191,7 @@ export function deriveParticipantNext(input: {
     competition: { id: input.competitionId, name: input.competitionName },
     participant: { displayName: input.participantNames[input.participantId] ?? input.participantId,
       status: participantStatus },
+    operation: input.operation,
     revision,
     next: selected ? {
       contestId: selected.definition.contestId,
@@ -204,6 +220,7 @@ export function derivePublicLive(input: {
   readonly participantNames: Readonly<Record<string, string>>;
   readonly state: LiveOperationsState;
   readonly assignments: readonly OperationalAssignment[];
+  readonly operation: OperationalPublicStatus;
 }): PublicLiveProjection {
   const assignments = new Map(input.assignments.map((assignment) => [assignment.contestId, assignment]));
   const contests = input.state.definition.contests.flatMap((definition) => {
@@ -234,6 +251,7 @@ export function derivePublicLive(input: {
     return [{ ...body, projectionHash: canonicalHash(body) }];
   }).sort((left, right) => left.startsAt.localeCompare(right.startsAt) || left.contestId.localeCompare(right.contestId));
   const body = { apiVersion: "1.0" as const, competition: { id: input.competitionId, name: input.competitionName },
-    publishedRevision: input.publishedRevision, operationalRevision: input.operationalRevision, contests };
+    publishedRevision: input.publishedRevision, operationalRevision: input.operationalRevision,
+    operation: input.operation, contests };
   return { ...body, projectionHash: canonicalHash(body) };
 }

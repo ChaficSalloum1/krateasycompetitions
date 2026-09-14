@@ -1,5 +1,7 @@
 import { createHash, createPrivateKey, createPublicKey, sign, timingSafeEqual, verify } from "node:crypto";
+import { canonicalHash } from "@tournament-os/tournament-schema";
 import type { ParticipantNextProjection, PublicLiveProjection } from "./participant-information.js";
+import type { OperationalPublicStatus } from "./operational-safety.js";
 
 export interface OfflineEventPackBody {
   readonly schemaVersion: "1.0.0";
@@ -17,7 +19,9 @@ export interface OfflineEventPackBody {
     readonly definitionHash: string;
     readonly guardReportHash: string;
     readonly stateProofHash: string;
+    readonly operationalStateProofHash: string;
   };
+  readonly operation: OperationalPublicStatus;
   readonly publicProjection: PublicLiveProjection;
   readonly participantLookup: readonly {
     readonly participantId: string;
@@ -92,5 +96,11 @@ export function verifyOfflineEventPack(pack: SignedOfflineEventPack, trustedPubl
   if (body.schemaVersion !== "1.0.0" || !timestamp(body.generatedAt) || !timestamp(body.expiresAt)
     || Date.parse(body.generatedAt) > Date.parse(at) || Date.parse(body.expiresAt) <= Date.parse(at))
     throw new Error(Date.parse(body.expiresAt) <= Date.parse(at) ? "offline_pack_expired" : "offline_pack_invalid");
+  if (!Number.isSafeInteger(body.operation?.stateVersion) || body.operation.stateVersion < 0
+    || !["NORMAL", "DEGRADED", "PAUSED", "STOPPED", "CANCELLED", "RECOVERING"].includes(body.operation.mode)
+    || body.authority.operationalStateProofHash !== body.operation.stateProofHash
+    || canonicalHash(body.publicProjection.operation) !== canonicalHash(body.operation)
+    || body.participantLookup.some(({ projection }) => canonicalHash(projection.operation) !== canonicalHash(body.operation)))
+    throw new Error("offline_pack_invalid");
   return body;
 }

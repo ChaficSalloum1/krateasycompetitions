@@ -3,7 +3,7 @@
 **Date:** 14 September 2026
 **Authority:** [`PRD-Krateasy-Competitions-Execution-Control.md`](./PRD-Krateasy-Competitions-Execution-Control.md)
 **Starting point:** commit `39c18a0` (`Connect authoritative live participant information`), preserving the separately committed publication, St Albans workbench and guarded no-show slices
-**Programme status:** Sprint 1 is complete. Sprint 2 has a connected first golden JSON workbench but its broader import, duplicate and organisation scope remains open. Sprint 3 has authoritative signed participant/public/organiser projections and durable targeted delivery, while token lifecycle, recovery and an external provider/fallback remain open. Sprint 4 has the connected command set, guarded no-show and court-outage repair, actual-result knockout progression and a server-derived delay/overrun revision. Sprint 5 now has a server-signed, revision-scoped Mac offline event pack and participant lookup plus the durable command journal and explicit retry/conflict/reconciliation. Incident capture, the authorised emergency/manual pack, safety authority states and the full disconnect/restore rehearsal remain open.
+**Programme status:** Sprint 1 is complete. Sprint 2 has a connected first golden JSON workbench but its broader import, duplicate and organisation scope remains open. Sprint 3 has authoritative signed participant/public/organiser projections and durable targeted delivery, while token lifecycle, recovery and an external provider/fallback remain open. Sprint 4 has the connected command set, guarded no-show and court-outage repair, actual-result knockout progression and a server-derived delay/overrun revision. Sprint 5 now has a server-signed, revision-scoped Mac offline event pack and participant lookup, the durable command journal and explicit retry/conflict/reconciliation, plus a replayable Normal/Degraded/Paused/Stopped/Cancelled/Recovering authority state, typed incident log, command transfer and separately cleared restart. Offline incident capture, the authorised emergency/manual pack and the full disconnect/provider/manual restore rehearsal remain open.
 **Outcome:** a controlled live pilot can be created, validated, published, operated, disrupted, repaired, communicated, closed, replayed and repeated without a second source of competition truth.
 
 ## 1. Pilot definition
@@ -195,7 +195,7 @@ Committed outcomes:
 **Dependencies:** Sprints 1–3; live command and repair kernels.
 **Exit:** a deliberate court outage is resolved end to end and only affected participants receive the new authoritative instruction.
 
-### Sprint 5 — Make Mac and manual operation resilient — **In progress (signed offline truth, participant lookup, durable journal and reconciliation connected)**
+### Sprint 5 — Make Mac and manual operation resilient — **In progress (signed offline truth, journal/reconciliation and operational-safety state connected)**
 
 **Sprint goal:** essential event operation remains controlled through connectivity loss and recovery.
 
@@ -207,8 +207,8 @@ Committed outcomes:
 4. Support offline participant lookup, essential live commands and incident capture within the declared envelope. **Partial:** lookup and the command envelope are connected; incident capture remains.
 5. Keep on-device AI optional and advisory; deterministic creation, Guard and operation work without it. **Connected for the implemented journey.**
 6. Produce the emergency pack: signed schedule, court sheets, contacts by permitted role, QR index, manual scores and restoration steps.
-7. Add Normal, Degraded, Paused, Stopped, Cancelled and Recovering operational states with separate safety and competition authority.
-8. Rehearse disconnect, conflicting device commands, provider failure, manual fallback and authorised restart.
+7. Add Normal, Degraded, Paused, Stopped, Cancelled and Recovering operational states with separate safety and competition authority. **Connected:** typed incidents, fixed message codes, authority transfer, stop precedence and separate restart clearances share one replayable history.
+8. Rehearse disconnect, conflicting device commands, provider failure, manual fallback and authorised restart. **Partial:** conflict/reconciliation and the authorised two-clearance restart are executable; provider failure and the practised manual fallback remain.
 
 **Dependencies:** authoritative operation commands and projections from Sprint 4.
 **Exit:** the event continues in the declared offline envelope and reconciles without lost or duplicated acknowledged commands.

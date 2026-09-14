@@ -1298,6 +1298,8 @@ private struct OfflineEventPackView: View {
                     if let body = model.offlineEventPack?.body {
                         Text("Published \(body.publishedRevision) · Operational \(body.operationalRevision) · Live \(body.liveVersion)")
                             .font(.caption).foregroundStyle(.secondary)
+                        Text("\(body.operation.mode.rawValue.capitalized) · safety state \(body.operation.stateVersion)")
+                            .font(.caption).foregroundStyle(body.operation.mode == .stopped ? Color.red : Color.secondary)
                     } else {
                         Text("No trusted cached truth available").font(.caption).foregroundStyle(.secondary)
                     }
@@ -1308,6 +1310,7 @@ private struct OfflineEventPackView: View {
                     .disabled(model.isRefreshingOfflineEventPack)
             }
             if let body = model.offlineEventPack?.body {
+                Text(body.operation.instruction).font(.subheadline).fontWeight(.semibold)
                 Text("\(body.publicProjection.contests.count) fixtures · \(body.participantLookup.count) participant lookups · expires \(displayTime(body.expiresAt))")
                     .font(.caption)
                 if body.emergencyReadiness.status != "READY" {
