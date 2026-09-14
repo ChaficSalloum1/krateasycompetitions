@@ -155,6 +155,9 @@ test("the printable St Albans fallback is generated only from the signed exact-r
   assert.equal(response.body.match(/class="qr-card page"/g)?.length, 48);
   assert.equal(response.body.match(/<section class="page score">/g)?.length, 108);
   assert.match(response.body, /Operational materials are ready; emergency authority data is blocked/);
+  for (const evidence of ['href="#main"', 'id="main"', ':focus-visible', 'prefers-reduced-motion:reduce',
+    'prefers-contrast:more', 'forced-colors:active', '@media print', '<caption>Order of play<\/caption>',
+    '<th scope="col">Time<\/th>', 'role="img"']) assert.match(response.body, new RegExp(evidence));
   assert.doesNotMatch(response.body, /emergencyContacts.*READY/);
   const rejected = await get(server, `/v1/competition-journey/${encodeURIComponent(base.id)}`
     + "/manual-pack?published=2&operational=1");

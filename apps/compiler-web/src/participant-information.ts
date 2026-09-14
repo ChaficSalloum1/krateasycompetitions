@@ -111,15 +111,18 @@ function tokenFor(grant: Omit<ParticipantAccessGrant, "tokenHash">, secret: stri
 }
 
 export function createParticipantAccessGrant(input: Omit<ParticipantAccessGrant, "tokenHash">,
-  secret: string): { readonly grant: ParticipantAccessGrant; readonly access: ParticipantAccess } {
+  secret: string, projectionRevision = input.publishedRevision): {
+    readonly grant: ParticipantAccessGrant; readonly access: ParticipantAccess;
+  } {
   if (secret.length < 32) throw new Error("participant_signing_not_configured");
   if (!input.organizationId.trim() || !input.competitionId.trim() || !input.participantId.trim()
     || !input.keyVersion.trim() || !Number.isSafeInteger(input.publishedRevision) || input.publishedRevision < 1
+    || !Number.isSafeInteger(projectionRevision) || projectionRevision < input.publishedRevision
     || !canonicalTimestamp(input.expiresAt)) throw new Error("invalid_participant_access_grant");
   const token = tokenFor(input, secret);
   const grant = { ...input, tokenHash: canonicalHash(token) };
   return { grant, access: { token,
-    path: `/next?competition=${encodeURIComponent(input.competitionId)}&revision=${input.publishedRevision}&token=${encodeURIComponent(token)}`,
+    path: `/next?competition=${encodeURIComponent(input.competitionId)}&revision=${projectionRevision}&token=${encodeURIComponent(token)}`,
     expiresAt: input.expiresAt } };
 }
 

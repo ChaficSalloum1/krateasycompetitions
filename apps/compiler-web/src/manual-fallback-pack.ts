@@ -65,7 +65,7 @@ export interface ManualParticipantAccess {
 }
 
 function validParticipantAccess(access: ManualParticipantAccess, input: {
-  readonly competitionId: string; readonly publishedRevision: number; readonly expiresAt: string;
+  readonly competitionId: string; readonly operationalRevision: number; readonly expiresAt: string;
 }): boolean {
   try {
     const parsed = new URL(access.accessPath, "https://offline.invalid");
@@ -73,7 +73,7 @@ function validParticipantAccess(access: ManualParticipantAccess, input: {
       && parsed.pathname === "/next" && parsed.hash === ""
       && [...parsed.searchParams.keys()].sort().join(",") === "competition,revision,token"
       && parsed.searchParams.get("competition") === input.competitionId
-      && parsed.searchParams.get("revision") === String(input.publishedRevision)
+      && parsed.searchParams.get("revision") === String(input.operationalRevision)
       && /^kp1_[a-f0-9]{64}$/.test(parsed.searchParams.get("token") ?? "");
   } catch { return false; }
 }

@@ -6,6 +6,7 @@ import test from "node:test";
 import { createOutboxDeliveryWorker, OutboxProviderError } from "@tournament-os/competition-engine";
 import { canonicalHash } from "@tournament-os/tournament-schema";
 import { CompetitionJourney } from "../src/competition-journey.js";
+import { verifyOfflineEventPack } from "../src/offline-event-pack.js";
 import { createCompilerServer } from "../src/server.js";
 import { Readable } from "node:stream";
 
@@ -22,6 +23,7 @@ const decisions = [
 ] as const;
 const timestamp = "2026-09-20T13:00:00.000Z";
 const secret = "participant-access-signing-secret-for-tests-only-2026";
+const offlineSeed = "9f4f6abf4f1433ccb52966db4b69e85f71bc78b39bece0413e2ef56ef34a6dd8";
 
 function published(journey: CompetitionJourney) {
   const draft = journey.create({ mode: "json", text: fixture }, "organiser.author");
@@ -54,7 +56,7 @@ test("signed participant and public projections change only where an approved no
   const storagePath = join(directory, "journey.json");
   try {
     const journey = new CompetitionJourney({ storagePath, organizationId: "org.st-albans",
-      participantTokenSecret: secret, now: () => timestamp });
+      participantTokenSecret: secret, offlinePackSigningSeedHex: offlineSeed, now: () => timestamp });
     const base = published(journey);
     const active = journey.activateLive(base.id, 1, "operator.lead");
     const groupContests = active.live!.state.definition.contests.filter(({ contestId }) => contestId.includes(".pools."));
@@ -118,6 +120,16 @@ test("signed participant and public projections change only where an approved no
     assert.equal(after.get(absentParticipantId)!.revision, 2);
     assert.equal(after.get(participantIds.find((id) => !changedParticipantIds.includes(id))!)!.revision, 1);
     assert.equal(repaired.live!.state.contests[completedContest.contestId]?.status, "COMPLETED");
+    const refreshedAccess = journey.issueParticipantAccess({ organizationId: "org.st-albans", competitionId: base.id,
+      expectedPublishedRevision: 1, participantId: absentParticipantId,
+      expiresAt: "2026-09-21T00:00:00.000Z" });
+    assert.equal(new URL(refreshedAccess.path, "http://local.invalid").searchParams.get("revision"), "2");
+    const repairedPack = journey.issueOfflineEventPack({ organizationId: "org.st-albans", competitionId: base.id,
+      expectedPublishedRevision: 1, expectedOperationalRevision: 2, expiresAt: "2026-09-20T21:00:00.000Z" });
+    const repairedPackBody = verifyOfflineEventPack(repairedPack, repairedPack.publicKeyBase64, timestamp);
+    assert.equal(repairedPackBody.manualFallback.participantQrIndex.entries.length, 48);
+    assert.equal(repairedPackBody.manualFallback.participantQrIndex.entries.every(({ accessPath }) =>
+      new URL(accessPath, "http://local.invalid").searchParams.get("revision") === "2"), true);
     assert.equal(repaired.live!.state.contests[inProgressContest.contestId]?.status, "IN_PROGRESS");
 
     const publicAfter = journey.readPublicLive({ organizationId: "org.st-albans", competitionId: base.id,
@@ -141,7 +153,7 @@ test("signed participant and public projections change only where an approved no
     /participant_access_denied/);
 
     const restarted = new CompetitionJourney({ storagePath, organizationId: "org.st-albans",
-      participantTokenSecret: secret, now: () => timestamp });
+      participantTokenSecret: secret, offlinePackSigningSeedHex: offlineSeed, now: () => timestamp });
     assert.deepEqual(restarted.readParticipantNext({ organizationId: "org.st-albans", competitionId: base.id,
       expectedOperationalRevision: 2, token: grants.get(absentParticipantId)!.token, at: timestamp }),
     after.get(absentParticipantId));
