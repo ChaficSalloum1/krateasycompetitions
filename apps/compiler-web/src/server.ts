@@ -643,7 +643,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         json(response, 201, competitionJourney.create(parseCreationSource((body as { source: unknown }).source)));
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|compile|approve))?$/.exec(request.url ?? "");
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve))?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
@@ -663,6 +663,31 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           if (Object.keys(command).some((key) => !["expectedDraftVersion", "source"].includes(key))
             || !Number.isSafeInteger(command.expectedDraftVersion)) throw new Error("invalid_journey_command");
           json(response, 200, competitionJourney.revise(competitionId, command.expectedDraftVersion as number, parseCreationSource(command.source)));
+          return;
+        }
+        if (operation === "sources") {
+          if (Object.keys(command).some((key) => !["expectedDraftVersion", "source"].includes(key))
+            || !Number.isSafeInteger(command.expectedDraftVersion)) throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.addSource(competitionId, command.expectedDraftVersion as number,
+            parseCreationSource(command.source)));
+          return;
+        }
+        if (operation === "edit-preview" || operation === "edit-apply") {
+          const allowed = operation === "edit-preview" ? ["expectedDraftVersion", "edits"]
+            : ["expectedDraftVersion", "edits", "expectedPreviewHash"];
+          if (Object.keys(command).some((key) => !allowed.includes(key)) || !Number.isSafeInteger(command.expectedDraftVersion)
+            || !Array.isArray(command.edits) || !command.edits.every((edit) => edit && typeof edit === "object"
+              && !Array.isArray(edit) && Object.keys(edit as Record<string, unknown>).every((key) => ["id", "value"].includes(key))
+              && typeof (edit as Record<string, unknown>).id === "string" && typeof (edit as Record<string, unknown>).value === "string"))
+            throw new Error("invalid_journey_command");
+          if (operation === "edit-preview") {
+            json(response, 200, competitionJourney.planStructuredEdit(competitionId, command.expectedDraftVersion as number,
+              command.edits as Array<{ id: string; value: string }>, "local.organiser"));
+          } else {
+            if (typeof command.expectedPreviewHash !== "string") throw new Error("invalid_journey_command");
+            json(response, 200, competitionJourney.applyStructuredEdit(competitionId, command.expectedDraftVersion as number,
+              command.edits as Array<{ id: string; value: string }>, command.expectedPreviewHash, "local.organiser"));
+          }
           return;
         }
         if (operation === "compile") {

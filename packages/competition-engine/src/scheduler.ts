@@ -91,6 +91,80 @@ function lockedStarts(spec: TournamentSpec): Map<string, number> {
     .map(({ id, value }) => [id.slice("lock.".length), Date.parse(value as string)]));
 }
 
+interface RequiredResourceRule { readonly stageId: string; readonly round: string; readonly resourceId: string; }
+
+function requiredResourceRules(spec: TournamentSpec): RequiredResourceRule[] {
+  return spec.scheduling.constraints.filter(({ rule, strength, value }) =>
+    rule === "required_resource" && strength === "HARD" && typeof value === "string").flatMap(({ value }) => {
+    try {
+      const parsed = JSON.parse(value as string) as Partial<RequiredResourceRule>;
+      return typeof parsed.stageId === "string" && typeof parsed.round === "string" && typeof parsed.resourceId === "string"
+        ? [{ stageId: parsed.stageId, round: parsed.round, resourceId: parsed.resourceId }] : [];
+    } catch { return []; }
+  });
+}
+
+function requiredResourceId(spec: TournamentSpec, node: ContestNode): string | undefined {
+  return requiredResourceRules(spec).find(({ stageId, round }) => stageId === node.stageId && round === node.round)?.resourceId;
+}
+
+function requiredResourceConstraintFindings(spec: TournamentSpec, graph: CompetitionGraph): ValidationFinding[] {
+  const findings: ValidationFinding[] = [];
+  const seen = new Map<string, string>(); const resourceIds = new Set(units(spec).map(({ id }) => id));
+  for (const constraint of spec.scheduling.constraints.filter(({ rule }) => rule === "required_resource")) {
+    let parsed: Partial<RequiredResourceRule> | null = null;
+    try { parsed = typeof constraint.value === "string" ? JSON.parse(constraint.value) as Partial<RequiredResourceRule> : null; }
+    catch { parsed = null; }
+    const valid = constraint.strength === "HARD" && typeof parsed?.stageId === "string" && typeof parsed.round === "string"
+      && typeof parsed.resourceId === "string" && resourceIds.has(parsed.resourceId)
+      && graph.nodes.some(({ kind, stageId, round }) => kind === "contest" && stageId === parsed!.stageId && round === parsed!.round);
+    if (!valid) {
+      findings.push({ code: "TSV411", severity: "ERROR", path: `/scheduling/constraints/${constraint.id}`,
+        message: "A required_resource constraint must be HARD JSON naming an existing contest stage/round and resource unit." });
+      continue;
+    }
+    const key = `${parsed!.stageId}:${parsed!.round}`; const previous = seen.get(key);
+    if (previous && previous !== parsed!.resourceId) findings.push({ code: "TSV411", severity: "ERROR",
+      path: `/scheduling/constraints/${constraint.id}`, message: "A contest stage/round cannot require conflicting resource units." });
+    seen.set(key, parsed!.resourceId!);
+  }
+  return findings;
+}
+
+function enforceRequiredResources(spec: TournamentSpec, graph: CompetitionGraph, scheduled: ScheduledContest[],
+  resources: readonly ResourceUnit[]): void {
+  const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
+  for (const entry of [...scheduled].sort((left, right) => left.contestId.localeCompare(right.contestId))) {
+    const node = nodes.get(entry.contestId); if (!node) continue;
+    const requiredId = requiredResourceId(spec, node); if (!requiredId || entry.resourceId === requiredId) continue;
+    const required = resources.find(({ id }) => id === requiredId); if (!required) continue;
+    const start = Date.parse(entry.start); const end = Date.parse(entry.end);
+    const others = scheduled.filter(({ contestId }) => contestId !== entry.contestId);
+    if (fits(start, end, required, others)) { entry.resourceId = requiredId; continue; }
+    const conflicts = others.filter(({ resourceId, start: otherStart, end: otherEnd }) => resourceId === requiredId
+      && start < Date.parse(otherEnd) && end > Date.parse(otherStart));
+    const working = others.filter(({ contestId }) => !conflicts.some((conflict) => conflict.contestId === contestId));
+    const moved: ScheduledContest[] = [];
+    let possible = true;
+    for (const conflict of conflicts.sort((left, right) => left.start.localeCompare(right.start) || left.contestId.localeCompare(right.contestId))) {
+      const conflictNode = nodes.get(conflict.contestId);
+      if (!conflictNode || requiredResourceId(spec, conflictNode)) { possible = false; break; }
+      const conflictStart = Date.parse(conflict.start); const conflictEnd = Date.parse(conflict.end);
+      const replacement = resources.filter(({ type, id }) => type === conflictNode.requiredResourceType && id !== requiredId)
+        .sort((left, right) => left.id === entry.resourceId ? -1 : right.id === entry.resourceId ? 1 : left.id.localeCompare(right.id))
+        .find((resource) => fits(conflictStart, conflictEnd, resource, [...working, ...moved]));
+      if (!replacement) { possible = false; break; }
+      moved.push({ ...conflict, resourceId: replacement.id });
+    }
+    if (!possible || !fits(start, end, required, [...working, ...moved])) continue;
+    for (const replacement of moved) {
+      const index = scheduled.findIndex(({ contestId }) => contestId === replacement.contestId);
+      scheduled[index] = replacement;
+    }
+    entry.resourceId = requiredId;
+  }
+}
+
 function headlineFinalStageIds(spec: TournamentSpec): Set<string> {
   const value = spec.scheduling.constraints.find(({ rule, strength }) => rule === "headline_final_climax" && strength === "SOFT")?.value;
   return new Set(typeof value === "string" ? value.split(",").map((entry) => entry.trim()).filter(Boolean) : []);
@@ -150,7 +224,8 @@ export function solveSchedule(spec: TournamentSpec, graph: CompetitionGraph): Sc
       continue;
     }
     while (cursor + duration <= hardLimit) {
-      chosen = resourceUnits.filter(({ type }) => type === node.requiredResourceType).find((resource) => fits(cursor, cursor + duration, resource, scheduled));
+      chosen = resourceUnits.filter(({ type }) => type === node.requiredResourceType)
+        .find((resource) => fits(cursor, cursor + duration, resource, scheduled));
       if (chosen || lockedStart !== undefined) break;
       cursor += minutes(5);
     }
@@ -165,6 +240,7 @@ export function solveSchedule(spec: TournamentSpec, graph: CompetitionGraph): Sc
     for (const id of entry.possibleEntrantIds) participantLastEnd.set(id, cursor + duration);
   }
   alignHeadlineFinals(spec, graph, scheduled, resourceUnits, dependencies);
+  enforceRequiredResources(spec, graph, scheduled, resourceUnits);
   const lowerBoundMinutes = calculateSchedulingLowerBounds(spec, graph).verifiedLowerBoundMinutes;
   const finish = scheduled.length ? Math.max(...scheduled.map(({ end }) => Date.parse(end))) : startFloor;
   if (spec.scheduling.finishBy && finish > Date.parse(spec.scheduling.finishBy)) findings.push({ code: "TSC404", severity: "ERROR", path: "/scheduling/finishBy", message: "Schedule exceeds the hard finish deadline.", evidence: { finish: iso(finish), finishBy: spec.scheduling.finishBy } });
@@ -184,7 +260,7 @@ function ancestorReady(id: string, scheduled: Map<string, ScheduledContest>, dep
 }
 
 export function validateSchedule(spec: TournamentSpec, graph: CompetitionGraph, solution: ScheduleSolution): ValidationFinding[] {
-  const findings: ValidationFinding[] = [];
+  const findings: ValidationFinding[] = [...requiredResourceConstraintFindings(spec, graph)];
   const actualNodes = graph.nodes.filter(({ kind }) => kind === "contest");
   const nodeMap = new Map(graph.nodes.map((node) => [node.id, node]));
   const scheduledMap = new Map(solution.contests.map((entry) => [entry.contestId, entry]));
@@ -209,6 +285,9 @@ export function validateSchedule(spec: TournamentSpec, graph: CompetitionGraph, 
     if (start < dependencyEnd) findings.push({ code: "TSV405", severity: "ERROR", path: `/schedule/${entry.contestId}`, message: "Contest starts before a dependency can complete." });
     const lockedStart = locks.get(entry.contestId);
     if (lockedStart !== undefined && start !== lockedStart) findings.push({ code: "TSV407", severity: "ERROR", path: `/schedule/${entry.contestId}`, message: "Contest does not start at its declared hard lock.", evidence: { expectedStart: iso(lockedStart), actualStart: entry.start } });
+    const requiredId = requiredResourceId(spec, node);
+    if (requiredId && entry.resourceId !== requiredId) findings.push({ code: "TSV410", severity: "ERROR", path: `/schedule/${entry.contestId}`,
+      message: "Contest is not assigned to its declared hard resource.", evidence: { expectedResourceId: requiredId, actualResourceId: entry.resourceId } });
   }
   const minimumRest = Number(spec.scheduling.constraints.find(({ rule, strength }) => rule === "minimum_rest" && strength === "HARD")?.value ?? 0);
   const byEntrant = new Map<string, ScheduledContest[]>();

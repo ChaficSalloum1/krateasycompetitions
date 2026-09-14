@@ -176,6 +176,23 @@ test("hard match-start locks are honored and independently revalidated", () => {
   assert.ok(validateSchedule(spec, graph, moved).some(({ code }) => code === "TSV407"));
 });
 
+test("hard final-resource requirements are assigned, independently verified, and malformed rules fail closed", () => {
+  const value = JSON.stringify({ stageId: "stage", round: "final", resourceId: "court.2" });
+  const spec = schedulerSpec("required-resource", { resourceQuantity: 2,
+    constraints: [{ id: "required.final", rule: "required_resource", strength: "HARD", value }] });
+  const graph = graphOf([contest("F", 1, "A", "B", { round: "final" })]);
+  const solution = solveSchedule(spec, graph);
+  assert.equal(solution.contests[0]?.resourceId, "court.2");
+  assertValid(spec, graph, solution);
+
+  const forged = structuredClone(solution); forged.contests[0]!.resourceId = "court.1";
+  assert.ok(validateSchedule(spec, graph, forged).some(({ code }) => code === "TSV410"));
+
+  const malformed = schedulerSpec("malformed-required-resource", { resourceQuantity: 2,
+    constraints: [{ id: "required.final", rule: "required_resource", strength: "HARD", value: "client-defined-garbage" }] });
+  assert.ok(validateSchedule(malformed, graph, solveSchedule(malformed, graph)).some(({ code }) => code === "TSV411"));
+});
+
 test("dependencies and hard rest both delay the final beyond feeder completion", () => {
   const spec = schedulerSpec("dependency-rest", { resourceQuantity: 2, minimumRestMinutes: 20 });
   const nodes = [

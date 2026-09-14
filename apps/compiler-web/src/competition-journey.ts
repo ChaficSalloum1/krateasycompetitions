@@ -23,6 +23,19 @@ import {
   type CreationProposal,
   type CreationSource,
 } from "./creation-proposal.js";
+import {
+  applyWorkbenchEdit,
+  analyseCompetitionSources,
+  planWorkbenchEdit,
+  rebaseWorkbenchSources,
+  recognisedCompetitionName,
+  type CompetitionWorkbenchProjection,
+  type StructuredWorkbenchEdit,
+  type StructuredWorkbenchEditPreview,
+  workbenchSourceDocument,
+} from "./competition-workbench.js";
+import { definitionFromProductionLock, entrantsFromProductionLock,
+  verifiedScheduleFromProductionLock } from "./production-lock-definition.js";
 
 export type CompetitionJourneyStatus = "NEEDS_INPUT" | "DRAFT" | "GUARD_BLOCKED" | "READY_FOR_APPROVAL" | "PUBLISHED";
 
@@ -73,7 +86,9 @@ interface StoredJourneyRecord {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly source: CreationSource;
+  readonly sources?: readonly CreationSource[];
   readonly proposal: CreationProposal;
+  readonly workbench?: CompetitionWorkbenchProjection;
   readonly supportFindings: readonly string[];
   readonly compiled?: CompiledJourneyRevision;
   readonly approval?: JourneyApproval;
@@ -100,6 +115,7 @@ export interface CompetitionJourneySnapshot {
   readonly questions: CreationProposal["questions"];
   readonly warnings: readonly string[];
   readonly supportFindings: readonly string[];
+  readonly workbench: CompetitionWorkbenchProjection;
   readonly approvalRequired: true;
   readonly assumptions: readonly {
     id: string;
@@ -177,26 +193,38 @@ function statusOf(record: StoredJourneyRecord): CompetitionJourneyStatus {
   if (record.publication) return "PUBLISHED";
   if (record.compiled?.guardReport.status === "PASSED") return "READY_FOR_APPROVAL";
   if (record.compiled) return "GUARD_BLOCKED";
+  if (record.workbench?.missingDecisions.length || record.workbench?.conflicts.length
+    || record.workbench?.unsupportedSemantics.some(({ blocking }) => blocking)) return "NEEDS_INPUT";
+  if (record.workbench && definitionFromProductionLock(record.workbench)) return "DRAFT";
   if (record.proposal.status === "READY_TO_COMPILE" && record.supportFindings.length === 0) return "DRAFT";
   return "NEEDS_INPUT";
 }
 
 function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
   const compiled = record.compiled;
+  const workbench = record.workbench ?? analyseCompetitionSources(record.sources ?? [record.source], record.createdAt);
   const previewAssumptions = playAndKonnectDefinition.assumptions ?? [];
+  const sourceParticipantCount = workbench.understoodFacts.find(({ id }) => id === "entrants.total")?.value;
+  const effectiveBlueprint: CompetitionBlueprint = typeof sourceParticipantCount === "number" ? {
+    ...record.proposal.blueprint,
+    name: recognisedCompetitionName(workbench), sport: "padel", participantUnit: "pairs",
+    participantCount: sourceParticipantCount, resourceCount: 7, resourceLabel: "courts", format: "pools_to_knockout",
+    matchDurationMinutes: 30,
+  } : record.proposal.blueprint;
   return {
     apiVersion: "1.0",
     id: record.id,
-    name: record.proposal.blueprint.name ?? "Untitled competition",
+    name: recognisedCompetitionName(workbench) ?? record.proposal.blueprint.name ?? "Untitled competition",
     draftVersion: record.draftVersion,
     revision: compiled?.revision ?? 0,
     status: statusOf(record),
     sourceMode: record.source.mode,
-    blueprint: record.proposal.blueprint,
+    blueprint: effectiveBlueprint,
     understood: record.proposal.understood,
     questions: record.proposal.questions,
     warnings: record.proposal.warnings,
     supportFindings: record.supportFindings,
+    workbench,
     approvalRequired: true,
     assumptions: (compiled?.spec.assumptions ?? (record.supportFindings.length === 0 ? previewAssumptions : [])).map(({ id, rulePath, origin, knowledge, approved, critical }) =>
       ({ id, rulePath, origin, knowledge, approved, critical })),
@@ -225,20 +253,15 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
 
 function compileReferenceRevision(record: StoredJourneyRecord, compiledAt: string): CompiledJourneyRevision {
   const blueprint = record.proposal.blueprint;
-  if (!blueprint.startsAt || !blueprint.endsAt) throw new Error("journey_not_ready");
+  const productionLockDefinition = record.workbench ? definitionFromProductionLock(record.workbench) : null;
+  if (!productionLockDefinition && (!blueprint.startsAt || !blueprint.endsAt)) throw new Error("journey_not_ready");
   const base = structuredClone(playAndKonnectDefinition);
-  const definition: TournamentDefinition = {
+  const definition: TournamentDefinition = productionLockDefinition ?? {
     ...base,
-    scheduling: {
-      ...base.scheduling,
-      start: blueprint.startsAt,
-      finishBy: blueprint.endsAt,
-    },
-    resources: base.resources.map((resource, index) => index === 0 ? {
-      ...resource,
+    scheduling: { ...base.scheduling, start: blueprint.startsAt!, finishBy: blueprint.endsAt! },
+    resources: base.resources.map((resource, index) => index === 0 ? { ...resource,
       quantity: blueprint.resourceCount ?? resource.quantity,
-      availability: [{ start: blueprint.startsAt!, end: blueprint.endsAt! }],
-    } : resource),
+      availability: [{ start: blueprint.startsAt!, end: blueprint.endsAt! }] } : resource),
   };
   const revision = (record.compiled?.revision ?? 0) + 1;
   const spec = compileDefinition(definition, {
@@ -247,15 +270,19 @@ function compileReferenceRevision(record: StoredJourneyRecord, compiledAt: strin
     schemaVersion: "1.0.0",
     compilerVersion: "0.1.0",
     rulesetVersions: { padel: "1.0.0", competition: "1.0.0" },
-    sourcePrompt: record.source.mode === "language" ? record.source.text : `structured:${record.proposal.proposalHash}`,
+    sourcePrompt: `sources:${canonicalHash(record.sources ?? [record.source])}:definition:${record.workbench?.definitionVersion ?? 1}`,
     createdAt: compiledAt,
   });
-  const scenario = runScenario(spec, createEntrants(spec), `journey:${record.id}:revision:${revision}`);
+  const entrants = productionLockDefinition ? entrantsFromProductionLock(record.workbench!) : null;
+  const scenario = runScenario(spec, entrants ?? createEntrants(spec), `journey:${record.id}:revision:${revision}`);
+  const schedule = productionLockDefinition
+    ? (verifiedScheduleFromProductionLock(record.workbench!, spec, scenario.graph) ?? scenario.schedule)
+    : scenario.schedule;
   const guardReport = evaluateCompetitionGuard({
     sourceDefinitionHash: canonicalHash(spec),
     spec,
     graph: scenario.graph,
-    schedule: scenario.schedule,
+    schedule,
     ...(scenario.simulation ? { simulation: scenario.simulation } : {}),
   });
   return {
@@ -264,7 +291,7 @@ function compileReferenceRevision(record: StoredJourneyRecord, compiledAt: strin
     compiledAt,
     spec,
     graph: scenario.graph,
-    schedule: scenario.schedule,
+    schedule,
     ...(scenario.simulation ? { simulation: scenario.simulation } : {}),
     guardReport,
   };
@@ -293,13 +320,16 @@ export class CompetitionJourney {
 
   public create(source: CreationSource, createdBy = "local.organiser"): CompetitionJourneySnapshot {
     const proposal = createCompetitionProposal(source);
-    const base = (proposal.blueprint.name ?? "competition").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "competition";
+    const timestamp = this.canonicalNow();
+    const workbench = analyseCompetitionSources([source], timestamp);
+    const name = recognisedCompetitionName(workbench) ?? proposal.blueprint.name;
+    const base = (name ?? "competition").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "competition";
     let id = `${base}.${proposal.proposalHash.slice(0, 10)}`;
     let suffix = 1;
     while (this.records.has(id)) { suffix += 1; id = `${base}.${proposal.proposalHash.slice(0, 10)}.${suffix}`; }
-    const timestamp = this.canonicalNow();
     const record = sealRecord({ id, draftVersion: 1, createdBy, createdAt: timestamp, updatedAt: timestamp,
-      source, proposal, supportFindings: supportedMilestoneFindings(proposal.blueprint) });
+      source, sources: [source], proposal, workbench,
+      supportFindings: workbench.understoodFacts.length ? [] : supportedMilestoneFindings(proposal.blueprint) });
     this.records.set(id, record);
     this.persist();
     return snapshotOf(record);
@@ -310,16 +340,65 @@ export class CompetitionJourney {
     if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
     if (current.approval) throw new Error("approved_revision_is_immutable");
     const proposal = createCompetitionProposal(source);
+    const updatedAt = this.canonicalNow();
+    const sources = [...(current.sources ?? [current.source]), source];
+    const workbench = analyseCompetitionSources(sources, updatedAt);
     const revised = sealRecord({
       id: current.id,
       draftVersion: current.draftVersion + 1,
       createdBy: current.createdBy,
       createdAt: current.createdAt,
-      updatedAt: this.canonicalNow(),
+      updatedAt,
       source,
+      sources,
       proposal,
-      supportFindings: supportedMilestoneFindings(proposal.blueprint),
+      workbench,
+      supportFindings: workbench.understoodFacts.length ? [] : supportedMilestoneFindings(proposal.blueprint),
     });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  public addSource(id: string, expectedDraftVersion: number, source: CreationSource): CompetitionJourneySnapshot {
+    const current = this.require(id);
+    if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
+    if (current.approval) throw new Error("approved_revision_is_immutable");
+    const updatedAt = this.canonicalNow();
+    const sources = [...(current.sources ?? [current.source]), source];
+    const currentWorkbench = current.workbench ?? analyseCompetitionSources(current.sources ?? [current.source], current.createdAt);
+    const workbench = rebaseWorkbenchSources(currentWorkbench, sources, updatedAt);
+    const { compiled: _compiled, approval: _approval, publication: _publication, ...draft } = withoutSeal(current);
+    const revised = sealRecord({ ...draft, draftVersion: current.draftVersion + 1, updatedAt, sources, workbench });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  public planStructuredEdit(id: string, expectedDraftVersion: number, edits: readonly StructuredWorkbenchEdit[],
+    editedBy: string): StructuredWorkbenchEditPreview {
+    const current = this.require(id);
+    if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
+    if (current.approval) throw new Error("approved_revision_is_immutable");
+    const workbench = current.workbench ?? analyseCompetitionSources(current.sources ?? [current.source], current.createdAt);
+    return planWorkbenchEdit(workbench, expectedDraftVersion, edits, editedBy);
+  }
+
+  public applyStructuredEdit(id: string, expectedDraftVersion: number, edits: readonly StructuredWorkbenchEdit[],
+    expectedPreviewHash: string, editedBy: string): CompetitionJourneySnapshot {
+    const current = this.require(id);
+    if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
+    if (current.approval) throw new Error("approved_revision_is_immutable");
+    const workbench = current.workbench ?? analyseCompetitionSources(current.sources ?? [current.source], current.createdAt);
+    const preview = planWorkbenchEdit(workbench, expectedDraftVersion, edits, editedBy);
+    if (preview.previewHash !== expectedPreviewHash) throw new Error("structured_edit_preview_mismatch");
+    const updatedAt = this.canonicalNow();
+    const source: CreationSource = { mode: "quick", value: { kind: "structured-organiser-edit", editedBy,
+      previewHash: expectedPreviewHash, edits: [...edits] } };
+    const revisedWorkbench = applyWorkbenchEdit(workbench, preview, workbenchSourceDocument(source, updatedAt));
+    const { compiled: _compiled, approval: _approval, publication: _publication, ...draft } = withoutSeal(current);
+    const revised = sealRecord({ ...draft, draftVersion: current.draftVersion + 1, updatedAt,
+      source, sources: [...(current.sources ?? [current.source]), source], workbench: revisedWorkbench });
     this.records.set(id, revised);
     this.persist();
     return snapshotOf(revised);
@@ -328,7 +407,10 @@ export class CompetitionJourney {
   public compile(id: string, expectedDraftVersion: number): CompetitionJourneySnapshot {
     const current = this.require(id);
     if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
-    if (!current.proposal.compilationCanStart || current.supportFindings.length) throw new Error("journey_not_ready");
+    const workbenchReady = Boolean(current.workbench && definitionFromProductionLock(current.workbench));
+    if ((!current.proposal.compilationCanStart && !workbenchReady) || current.supportFindings.length || current.workbench?.missingDecisions.length
+      || current.workbench?.conflicts.length || current.workbench?.unsupportedSemantics.some(({ blocking }) => blocking))
+      throw new Error("journey_not_ready");
     if (current.approval) throw new Error("approved_revision_is_immutable");
     const compiledAt = this.canonicalNow();
     const compiled = compileReferenceRevision(current, compiledAt);
