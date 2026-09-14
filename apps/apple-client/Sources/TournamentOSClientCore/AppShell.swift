@@ -221,6 +221,7 @@ public final class TournamentOSAppModel {
     public private(set) var offlineEventPack: VerifiedOfflineEventPack?
     public private(set) var offlineEventPackMessage: String?
     public private(set) var isRefreshingOfflineEventPack = false
+    public private(set) var manualFallbackURL: URL?
 
     private let sessionsByWorkspaceID: [String: TournamentWorkspaceSession]
     private let draftStorage: UserDefaults?
@@ -508,9 +509,13 @@ public final class TournamentOSAppModel {
             offlineEventPack = try packClient.verifyOfflineEventPack(envelope, organizationID: selectedWorkspaceID,
                 competitionID: competitionID, expectedPublishedRevision: blueprint.revision,
                 expectedOperationalRevision: operationalRevision, now: now)
+            manualFallbackURL = try? (activeClient as? any ManualFallbackClient)?.manualFallbackURL(
+                competitionID: competitionID, publishedRevision: blueprint.revision,
+                operationalRevision: operationalRevision)
             offlineEventPackMessage = "Verified cached truth is available offline."
         } catch {
             offlineEventPack = nil
+            manualFallbackURL = nil
             offlineEventPackMessage = "The cached event pack is expired, stale, untrusted, or damaged."
         }
     }
@@ -535,9 +540,13 @@ public final class TournamentOSAppModel {
                 expectedOperationalRevision: operationalRevision, expiresAt: expiresAt, now: now)
             try offlineEventPackStore(for: competitionID).save(verified.envelope)
             offlineEventPack = verified
+            manualFallbackURL = try? (activeClient as? any ManualFallbackClient)?.manualFallbackURL(
+                competitionID: competitionID, publishedRevision: blueprint.revision,
+                operationalRevision: operationalRevision)
             offlineEventPackMessage = "Signed offline truth refreshed for operational revision \(operationalRevision)."
         } catch OfflineEventPackError.trustNotConfigured {
             offlineEventPack = nil
+            manualFallbackURL = nil
             offlineEventPackMessage = "Offline-pack trust is not configured. Install the organiser-approved public key."
         } catch {
             offlineEventPackMessage = "Offline truth was not replaced because the server response failed trust, scope, revision, or freshness checks."
@@ -720,6 +729,7 @@ public final class TournamentOSAppModel {
         operationsState = .idle
         findingsState = .idle
         certificationState = .idle
+        manualFallbackURL = nil
     }
 
     private func offlineQueue(for competitionID: String) throws -> OfflineCommandQueue {

@@ -49,9 +49,20 @@ async function post(server: ReturnType<typeof createCompilerServer>, url: string
   });
 }
 
+async function get(server: ReturnType<typeof createCompilerServer>, url: string) {
+  const request = Readable.from([]) as never;
+  Object.assign(request, { method: "GET", url, headers: { host: "127.0.0.1:4173" } });
+  return new Promise<{ status: number; body: string; headers: Record<string, string> }>((resolve) => {
+    let status = 0; let headers: Record<string, string> = {};
+    server.emit("request", request, { writeHead(next: number, nextHeaders: Record<string, string>) {
+      status = next; headers = nextHeaders ?? {};
+    }, end(encoded = "") { resolve({ status, body: String(encoded), headers }); } } as never);
+  });
+}
+
 test("server signs one scoped offline pack from the exact published revision and operational head", () => {
   const journey = new CompetitionJourney({ organizationId: "org.st-albans", offlinePackSigningSeedHex: signingSeedHex,
-    now: () => timestamp });
+    participantTokenSecret: "participant-secret-at-least-thirty-two-bytes", now: () => timestamp });
   const base = published(journey);
   const active = journey.activateLive(base.id, 1, "operator.lead");
   const contest = active.live!.state.definition.contests.find(({ contestId }) => contestId.includes(".pools."))!;
@@ -71,6 +82,19 @@ test("server signs one scoped offline pack from the exact published revision and
   assert.equal(verified.authority.stateProofHash, live.live!.state.proofHash);
   assert.equal(verified.publicProjection.contests.length, 108);
   assert.equal(verified.participantLookup.length, 48);
+  assert.equal(verified.schemaVersion, "1.1.0");
+  assert.equal(verified.manualFallback.schedule.fixtureCount, 108);
+  assert.equal(verified.manualFallback.courtSheets.flatMap(({ fixtures }) => fixtures).length, 108);
+  assert.equal(verified.manualFallback.scoreSheets.length, 108);
+  assert.equal(verified.manualFallback.participantQrIndex.status, "READY");
+  assert.equal(verified.manualFallback.participantQrIndex.entries.length, 48);
+  assert.equal(verified.authority.manualFallbackHash, verified.manualFallback.packHash);
+  assert.equal(verified.manualFallback.restoration.steps.length, 7);
+  const firstAccess = verified.manualFallback.participantQrIndex.entries[0]!;
+  const accessUrl = new URL(firstAccess.accessPath, "http://local.invalid");
+  const privateProjection = journey.readParticipantNext({ organizationId: "org.st-albans", competitionId: base.id,
+    expectedOperationalRevision: 1, token: accessUrl.searchParams.get("token")!, at: timestamp });
+  assert.equal(privateProjection.participant.displayName, firstAccess.displayName);
   assert.equal(verified.publicProjection.contests.find(({ contestId }) => contestId === contest.contestId)?.status, "CALLED");
   assert.equal(verified.emergencyReadiness.status, "BLOCKED_MISSING_AUTHORITY_DATA");
   assert.deepEqual(verified.emergencyReadiness.missingDecisionCodes, [
@@ -102,12 +126,44 @@ test("offline packs fail closed for stale, cross-organisation, unpublished, expi
   const inconsistent = signOfflineEventPack({ ...body, publicProjection: { ...body.publicProjection,
     operation: { ...body.operation, stateVersion: body.operation.stateVersion + 1 } } }, signingSeedHex);
   assert.throws(() => verifyOfflineEventPack(inconsistent, pack.publicKeyBase64, timestamp), /offline_pack_invalid/);
+  const missingScoreSheet = signOfflineEventPack({ ...body, manualFallback: { ...body.manualFallback,
+    scoreSheets: body.manualFallback.scoreSheets.slice(1) } }, signingSeedHex);
+  assert.throws(() => verifyOfflineEventPack(missingScoreSheet, pack.publicKeyBase64, timestamp), /offline_pack_invalid/);
 
   const draftJourney = new CompetitionJourney({ organizationId: "org.st-albans", offlinePackSigningSeedHex: signingSeedHex,
     now: () => timestamp });
   const draft = draftJourney.create({ mode: "json", text: fixture }, "organiser.author");
   assert.throws(() => draftJourney.issueOfflineEventPack({ organizationId: "org.st-albans", competitionId: draft.id,
     expectedPublishedRevision: 1, expectedOperationalRevision: 1, expiresAt }), /journey_revision_conflict/);
+});
+
+test("the printable St Albans fallback is generated only from the signed exact-revision pack", async () => {
+  const journey = new CompetitionJourney({ organizationId: "org.st-albans", offlinePackSigningSeedHex: signingSeedHex,
+    participantTokenSecret: "participant-secret-at-least-thirty-two-bytes", now: () => timestamp });
+  const base = published(journey);
+  journey.activateLive(base.id, 1, "operator.lead");
+  const server = createCompilerServer({ production: false, competitionJourney: journey,
+    organizationId: "org.st-albans", now: () => timestamp });
+
+  const response = await get(server, `/v1/competition-journey/${encodeURIComponent(base.id)}`
+    + "/manual-pack?published=1&operational=1");
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers["content-type"] ?? "", /^text\/html/);
+  assert.match(response.headers["cache-control"] ?? "", /no-store/);
+  assert.match(response.body, /Order of play · 108 fixtures/);
+  assert.equal(response.body.match(/class="qr-card page"/g)?.length, 48);
+  assert.equal(response.body.match(/<section class="page score">/g)?.length, 108);
+  assert.match(response.body, /Operational materials are ready; emergency authority data is blocked/);
+  assert.doesNotMatch(response.body, /emergencyContacts.*READY/);
+  const rejected = await get(server, `/v1/competition-journey/${encodeURIComponent(base.id)}`
+    + "/manual-pack?published=2&operational=1");
+  assert.equal(rejected.status, 400);
+  assert.match(rejected.body, /journey_revision_conflict/);
+  const injected = await get(server, `/v1/competition-journey/${encodeURIComponent(base.id)}`
+    + "/manual-pack?published=1&operational=1&scheduleHash=forged");
+  assert.equal(injected.status, 400);
+  assert.match(injected.body, /invalid_journey_command/);
 });
 
 test("offline pack replay is deterministic across restart and HTTP accepts revision identity plus expiry only", async () => {

@@ -26,6 +26,7 @@ public struct OfflineEventPackAuthorityDTO: Codable, Equatable, Sendable {
     public let guardReportHash: String
     public let stateProofHash: String
     public let operationalStateProofHash: String
+    public let manualFallbackHash: String?
 }
 
 public enum OfflineOperationalModeDTO: String, Codable, Equatable, Sendable, CaseIterable {
@@ -99,6 +100,65 @@ public struct OfflineEmergencyReadinessDTO: Codable, Equatable, Sendable {
     public let instructions: [String]
 }
 
+public struct OfflineManualCourtSheetDTO: Codable, Equatable, Sendable {
+    public let court: String
+    public let fixtures: [OfflinePublicContestDTO]
+    public let sheetHash: String
+}
+
+public struct OfflineManualScoreSheetDTO: Codable, Equatable, Sendable, Identifiable {
+    public var id: String { contestId }
+    public let contestId: String
+    public let participantNames: [String]
+    public let court: String
+    public let startsAt: String
+    public let fields: [String]
+    public let sheetHash: String
+}
+
+public struct OfflineParticipantQRIndexDTO: Codable, Equatable, Sendable {
+    public struct Entry: Codable, Equatable, Sendable, Identifiable {
+        public var id: String { participantId }
+        public let participantId: String
+        public let displayName: String
+        public let accessPath: String
+        public let expiresAt: String
+        public let entryHash: String
+    }
+    public let status: String
+    public let classification: String
+    public let entries: [Entry]
+    public let indexHash: String
+}
+
+public struct OfflineManualRestorationDTO: Codable, Equatable, Sendable {
+    public let steps: [String]
+    public let evidenceFields: [String]
+    public let truthReferenceHash: String
+}
+
+public struct OfflineManualFallbackDTO: Codable, Equatable, Sendable {
+    public struct Schedule: Codable, Equatable, Sendable {
+        public let fixtureCount: Int
+        public let fixtures: [OfflinePublicContestDTO]
+        public let scheduleProjectionHash: String
+    }
+    public let schemaVersion: String
+    public let status: String
+    public let classification: String
+    public let competitionId: String
+    public let publishedRevision: Int
+    public let operationalRevision: Int
+    public let generatedAt: String
+    public let expiresAt: String
+    public let schedule: Schedule
+    public let courtSheets: [OfflineManualCourtSheetDTO]
+    public let scoreSheets: [OfflineManualScoreSheetDTO]
+    public let participantQrIndex: OfflineParticipantQRIndexDTO
+    public let restoration: OfflineManualRestorationDTO
+    public let packHash: String
+}
+
 public struct OfflineEventPackBodyDTO: Codable, Equatable, Sendable {
     public let schemaVersion: String
     public let organizationId: String
@@ -114,6 +174,7 @@ public struct OfflineEventPackBodyDTO: Codable, Equatable, Sendable {
     public let operation: OfflineOperationalStatusDTO
     public let publicProjection: OfflinePublicProjectionDTO
     public let participantLookup: [OfflineParticipantLookupDTO]
+    public let manualFallback: OfflineManualFallbackDTO?
     public let emergencyReadiness: OfflineEmergencyReadinessDTO
 }
 
@@ -153,7 +214,8 @@ public struct OfflineEventPackVerifier: Sendable {
               let publicKey = try? Curve25519.Signing.PublicKey(rawRepresentation: trustedPublicKey),
               publicKey.isValidSignature(signature, for: payload) else { throw OfflineEventPackError.signatureInvalid }
         guard let body = try? JSONDecoder().decode(OfflineEventPackBodyDTO.self, from: payload),
-              body.schemaVersion == "1.0.0", body.publicProjection.publishedRevision == body.publishedRevision,
+              ["1.0.0", "1.1.0"].contains(body.schemaVersion),
+              body.publicProjection.publishedRevision == body.publishedRevision,
               body.publicProjection.operationalRevision == body.operationalRevision,
               body.operation == body.publicProjection.operation,
               body.participantLookup.allSatisfy({ $0.projection.operation == body.operation }),
@@ -162,6 +224,32 @@ public struct OfflineEventPackVerifier: Sendable {
               body.emergencyReadiness.status == "BLOCKED_MISSING_AUTHORITY_DATA",
               let generatedAt = Self.date(body.generatedAt), let expiresAt = Self.date(body.expiresAt),
               generatedAt <= now else { throw OfflineEventPackError.invalidPayload }
+        if body.schemaVersion == "1.1.0" {
+            guard let manual = body.manualFallback, body.authority.manualFallbackHash == manual.packHash,
+                  manual.schemaVersion == "1.0.0", manual.competitionId == body.competitionId,
+                  manual.publishedRevision == body.publishedRevision,
+                  manual.operationalRevision == body.operationalRevision,
+                  manual.generatedAt == body.generatedAt, manual.expiresAt == body.expiresAt,
+                  manual.schedule.fixtureCount == body.publicProjection.contests.count,
+                  Set(manual.schedule.fixtures.map(\.contestId)) == Set(body.publicProjection.contests.map(\.contestId)),
+                  manual.courtSheets.flatMap(\.fixtures).map(\.contestId).sorted()
+                    == body.publicProjection.contests.map(\.contestId).sorted(),
+                  manual.scoreSheets.map(\.contestId).sorted()
+                    == body.publicProjection.contests.map(\.contestId).sorted(),
+                  manual.restoration.steps.count == 7 else { throw OfflineEventPackError.invalidPayload }
+            if manual.participantQrIndex.status == "READY" {
+                guard manual.participantQrIndex.entries.map(\.participantId).sorted()
+                    == body.participantLookup.map(\.participantId).sorted(),
+                      manual.participantQrIndex.entries.allSatisfy({ entry in
+                          entry.expiresAt == body.expiresAt && entry.accessPath.hasPrefix("/next?")
+                      }) else { throw OfflineEventPackError.invalidPayload }
+            } else if manual.participantQrIndex.status != "BLOCKED_PARTICIPANT_SIGNING_NOT_CONFIGURED"
+                        || !manual.participantQrIndex.entries.isEmpty {
+                throw OfflineEventPackError.invalidPayload
+            }
+        } else if body.manualFallback != nil || body.authority.manualFallbackHash != nil {
+            throw OfflineEventPackError.invalidPayload
+        }
         guard body.organizationId == organizationID, body.competitionId == competitionID else {
             throw OfflineEventPackError.scopeMismatch
         }

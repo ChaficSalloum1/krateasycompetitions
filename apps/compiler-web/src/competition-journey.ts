@@ -76,6 +76,7 @@ import {
   type DelayOverrunProposalRequest,
 } from "./court-outage-journey.js";
 import { signOfflineEventPack, type SignedOfflineEventPack } from "./offline-event-pack.js";
+import { deriveManualFallbackPack, type ManualParticipantAccess } from "./manual-fallback-pack.js";
 import {
   createOperationalSafetyState,
   submitOperationalSafetyCommand,
@@ -1132,19 +1133,42 @@ export class CompetitionJourney {
         publishedRevision: current.publication!.revision, operationalRevision: input.expectedOperationalRevision,
         affectedParticipantIds: live.publication?.affectedEntrantIds ?? [], participantRevisions: live.participantRevisions,
         participantId, participantNames, state: live.state, assignments, operation: live.operations.publicStatus }) }));
-    return signOfflineEventPack({ schemaVersion: "1.0.0", organizationId: input.organizationId,
+    const participantAccess: ManualParticipantAccess[] = [];
+    const grants = [...(current.participantAccess ?? [])];
+    if (this.participantTokenSecret.length > 0) {
+      for (const participantId of participantIds) {
+        const created = createParticipantAccessGrant({ organizationId: input.organizationId,
+          competitionId: current.id, publishedRevision: current.publication!.revision, participantId,
+          expiresAt: input.expiresAt, keyVersion: this.participantTokenKeyVersion }, this.participantTokenSecret);
+        participantAccess.push({ participantId, accessPath: created.access.path, expiresAt: created.access.expiresAt });
+        if (!grants.some(({ tokenHash }) => tokenHash === created.grant.tokenHash)) grants.push(created.grant);
+      }
+    }
+    const truthReferences = { publicationCertificateHash: current.publication!.certificateHash,
+      definitionHash: current.publication!.definitionHash, guardReportHash: current.publication!.guardReportHash,
+      stateProofHash: live.state.proofHash, operationalStateProofHash: live.operations.proofHash };
+    const manualFallback = deriveManualFallbackPack({ competitionId: current.id,
+      publishedRevision: current.publication!.revision, operationalRevision: input.expectedOperationalRevision,
+      generatedAt, expiresAt: input.expiresAt, publicProjection, participantLookup, participantAccess, truthReferences });
+    const signed = signOfflineEventPack({ schemaVersion: "1.1.0", organizationId: input.organizationId,
       competitionId: current.id, competitionName, publishedRevision: current.publication!.revision,
       operationalRevision: input.expectedOperationalRevision, liveVersion: live.state.version,
       generatedAt, expiresAt: input.expiresAt, timezone: current.compiled!.spec.scheduling.timezone,
-      authority: { publicationCertificateHash: current.publication!.certificateHash,
-        definitionHash: current.publication!.definitionHash, guardReportHash: current.publication!.guardReportHash,
-        stateProofHash: live.state.proofHash, operationalStateProofHash: live.operations.proofHash },
-      operation: live.operations.publicStatus, publicProjection, participantLookup,
+      authority: { ...truthReferences, manualFallbackHash: manualFallback.packHash },
+      operation: live.operations.publicStatus, publicProjection, participantLookup, manualFallback,
       emergencyReadiness: { status: "BLOCKED_MISSING_AUTHORITY_DATA",
         missingDecisionCodes: ["AED_AND_FIRST_AID_LOCATION", "AMBULANCE_ACCESS", "EMERGENCY_CONTACT_NUMBER",
           "EVACUATION_AND_ASSEMBLY", "INCIDENT_LIAISON", "NAMED_RESPONDERS_AND_BACKUPS",
           "PRINTED_COPY_REHEARSAL", "VENUE_ADDRESS"], emergencyContacts: [], instructions: [] } },
     this.offlinePackSigningSeedHex);
+    if (grants.length !== (current.participantAccess ?? []).length) {
+      const revised = sealRecord({ ...withoutSeal(current), updatedAt: generatedAt,
+        participantAccess: grants.sort((left, right) => left.participantId.localeCompare(right.participantId)
+          || left.expiresAt.localeCompare(right.expiresAt)) });
+      this.records.set(current.id, revised);
+      this.persist();
+    }
+    return signed;
   }
 
   public participantDeliveryStore(organizationId: string, competitionId: string): OutboxDeliveryStore {

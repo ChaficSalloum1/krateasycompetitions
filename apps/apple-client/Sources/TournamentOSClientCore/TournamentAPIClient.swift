@@ -147,11 +147,17 @@ public protocol OfflineEventPackClient: Sendable {
                                 now: Date) throws -> VerifiedOfflineEventPack
 }
 
+public protocol ManualFallbackClient: Sendable {
+    func manualFallbackURL(competitionID: String, publishedRevision: Int,
+                           operationalRevision: Int) throws -> URL
+}
+
 public extension TournamentAPIClient {
     var workspaceKind: TournamentWorkspaceKind { .connected }
 }
 
-public final class URLSessionTournamentAPIClient: TournamentAPIClient, CompetitionJourneyClient, OfflineCommandTransport, OfflineEventPackClient, @unchecked Sendable {
+public final class URLSessionTournamentAPIClient: TournamentAPIClient, CompetitionJourneyClient, OfflineCommandTransport,
+    OfflineEventPackClient, ManualFallbackClient, @unchecked Sendable {
     private let baseURL: URL
     private let session: URLSession
     private let supportedAPIVersion: String
@@ -229,6 +235,19 @@ public final class URLSessionTournamentAPIClient: TournamentAPIClient, Competiti
             envelope, organizationID: organizationID, competitionID: competitionID,
             publishedRevision: expectedPublishedRevision, operationalRevision: expectedOperationalRevision, now: now
         )
+    }
+
+    public func manualFallbackURL(competitionID: String, publishedRevision: Int,
+                                  operationalRevision: Int) throws -> URL {
+        guard publishedRevision >= 1, operationalRevision >= publishedRevision else {
+            throw TournamentAPIClientError.invalidURL
+        }
+        var components = URLComponents(url: try requestURL(pathComponents: ["v1", "competition-journey",
+            competitionID, "manual-pack"]), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "published", value: String(publishedRevision)),
+                                  URLQueryItem(name: "operational", value: String(operationalRevision))]
+        guard let url = components?.url else { throw TournamentAPIClientError.invalidURL }
+        return url
     }
 
     public func submit(_ envelope: OfflineCommandEnvelope) async throws -> OfflineCommandReceipt {

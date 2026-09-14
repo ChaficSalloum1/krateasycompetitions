@@ -240,6 +240,7 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(first.offlineEventPack?.body.operation.mode, .normal)
         XCTAssertEqual(first.offlineEventPack?.body.operation.stateVersion, 0)
         XCTAssertEqual(first.offlineEventPack?.body.participantLookup.first?.projection.next?.contestId, "M1")
+        XCTAssertEqual(first.manualFallbackURL?.path, "/v1/competition-journey/st-albans/manual-pack")
         let firstFetchCount = await client.packFetchCount()
         XCTAssertEqual(firstFetchCount, 1)
         let safeCompetition = "st-albans".addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
@@ -356,7 +357,7 @@ private struct FailingClient: TournamentAPIClient {
     func fetchCertification(tournamentID: String) async throws -> CertificationDTO { throw TournamentAPIClientError.httpStatus(503) }
 }
 
-private actor OfflineCapableClient: TournamentAPIClient, OfflineCommandTransport, OfflineEventPackClient {
+private actor OfflineCapableClient: TournamentAPIClient, OfflineCommandTransport, OfflineEventPackClient, ManualFallbackClient {
     private var submissions = 0
     private var packFetches = 0
     nonisolated private static let packPrivateKey = try! Curve25519.Signing.PrivateKey(
@@ -365,6 +366,12 @@ private actor OfflineCapableClient: TournamentAPIClient, OfflineCommandTransport
 
     func submissionCount() -> Int { submissions }
     func packFetchCount() -> Int { packFetches }
+
+    nonisolated func manualFallbackURL(competitionID: String, publishedRevision: Int,
+                                       operationalRevision: Int) throws -> URL {
+        URL(string: "http://127.0.0.1:4173/v1/competition-journey/\(competitionID)/manual-pack"
+            + "?published=\(publishedRevision)&operational=\(operationalRevision)")!
+    }
 
     func submit(_ envelope: OfflineCommandEnvelope) throws -> OfflineCommandReceipt {
         submissions += 1

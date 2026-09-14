@@ -1388,6 +1388,25 @@ private struct OfflineEventPackView: View {
                 Text(body.operation.instruction).font(.subheadline).fontWeight(.semibold)
                 Text("\(body.publicProjection.contests.count) fixtures · \(body.participantLookup.count) participant lookups · expires \(displayTime(body.expiresAt))")
                     .font(.caption)
+                if let manual = body.manualFallback {
+                    DisclosureGroup("Manual fallback · \(manual.courtSheets.count) courts · \(manual.scoreSheets.count) score sheets") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(manual.participantQrIndex.status == "READY"
+                                 ? "\(manual.participantQrIndex.entries.count) expiring participant QR paths — distribute individually"
+                                 : "Participant QR index blocked until signing is configured")
+                            ForEach(Array(manual.restoration.steps.enumerated()), id: \.offset) { index, step in
+                                Text("\(index + 1). \(step)")
+                            }
+                        }
+                        .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+                    }
+                    .font(.caption.weight(.semibold))
+                    if let url = model.manualFallbackURL {
+                        Link("Open printable manual pack", destination: url)
+                            .font(.caption.weight(.semibold))
+                            .accessibilityHint("Opens the exact signed revision as printable court, QR, score and restoration sheets")
+                    }
+                }
                 if body.emergencyReadiness.status != "READY" {
                     Text("Emergency pack blocked: \(body.emergencyReadiness.missingDecisionCodes.joined(separator: ", "))")
                         .font(.caption).foregroundStyle(.orange)

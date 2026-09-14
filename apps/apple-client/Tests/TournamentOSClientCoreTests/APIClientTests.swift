@@ -365,6 +365,40 @@ final class APIClientTests: XCTestCase {
         XCTAssertThrowsError(try verifier.verify(envelope, organizationID: "org.alpha", competitionID: "event.1",
             publishedRevision: 1, operationalRevision: 1, now: expired))
     }
+
+    func testOfflinePackVersionOnePointOneRequiresBoundManualFallbackMaterials() throws {
+        let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: Data(repeating: 13, count: 32))
+        let payload = Data(#"{"schemaVersion":"1.1.0","organizationId":"org.alpha","competitionId":"event.1","competitionName":"Event","publishedRevision":1,"operationalRevision":1,"liveVersion":0,"generatedAt":"2026-09-20T13:00:00.000Z","expiresAt":"2026-09-20T14:00:00.000Z","timezone":"UTC","authority":{"publicationCertificateHash":"c","definitionHash":"d","guardReportHash":"g","stateProofHash":"s","operationalStateProofHash":"o","manualFallbackHash":"manual-hash"},"operation":{"mode":"NORMAL","stateVersion":0,"instruction":"Competition operating normally.","effectiveAt":null,"stateProofHash":"o"},"publicProjection":{"publishedRevision":1,"operationalRevision":1,"operation":{"mode":"NORMAL","stateVersion":0,"instruction":"Competition operating normally.","effectiveAt":null,"stateProofHash":"o"},"contests":[],"projectionHash":"p"},"participantLookup":[],"manualFallback":{"schemaVersion":"1.0.0","status":"OPERATIONAL_MATERIALS_READY_SAFETY_AUTHORITY_BLOCKED","classification":"ORGANISER_CONTROLLED_EVENT_DAY_MATERIAL","competitionId":"event.1","publishedRevision":1,"operationalRevision":1,"generatedAt":"2026-09-20T13:00:00.000Z","expiresAt":"2026-09-20T14:00:00.000Z","schedule":{"fixtureCount":0,"fixtures":[],"scheduleProjectionHash":"schedule"},"courtSheets":[],"scoreSheets":[],"participantQrIndex":{"status":"BLOCKED_PARTICIPANT_SIGNING_NOT_CONFIGURED","classification":"INDIVIDUAL_EXPIRING_ACCESS_DISTRIBUTE_SEPARATELY","entries":[],"indexHash":"index"},"restoration":{"steps":["1","2","3","4","5","6","7"],"evidenceFields":["COMMAND_ID"],"truthReferenceHash":"truth"},"packHash":"manual-hash"},"emergencyReadiness":{"status":"BLOCKED_MISSING_AUTHORITY_DATA","missingDecisionCodes":["VENUE_ADDRESS"],"emergencyContacts":[],"instructions":[]}}"#.utf8)
+        let publicKey = privateKey.publicKey.rawRepresentation
+        let envelope = SignedOfflineEventPackDTO(apiVersion: "1.0", algorithm: "Ed25519",
+            keyId: "sha256:\(SHA256.hash(data: publicKey).map { String(format: "%02x", $0) }.joined())",
+            publicKeyBase64: publicKey.base64EncodedString(), payloadBase64: payload.base64EncodedString(),
+            signatureBase64: (try privateKey.signature(for: payload)).base64EncodedString())
+        let verifier = OfflineEventPackVerifier(trustedPublicKey: publicKey)
+
+        let verified = try verifier.verify(envelope, organizationID: "org.alpha", competitionID: "event.1",
+            publishedRevision: 1, operationalRevision: 1,
+            now: ISO8601DateFormatter().date(from: "2026-09-20T13:30:00Z")!)
+
+        XCTAssertEqual(verified.body.manualFallback?.scoreSheets.count, 0)
+        XCTAssertEqual(verified.body.authority.manualFallbackHash, "manual-hash")
+    }
+
+    func testManualFallbackURLContainsOnlyValidatedCompetitionAndRevisionIdentity() throws {
+        let (client, _) = makeClient()
+
+        let url = try client.manualFallbackURL(competitionID: "st-albans", publishedRevision: 1,
+                                               operationalRevision: 2)
+
+        XCTAssertEqual(url.path, "/v1/competition-journey/st-albans/manual-pack")
+        XCTAssertEqual(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+                       [URLQueryItem(name: "published", value: "1"),
+                        URLQueryItem(name: "operational", value: "2")])
+        XCTAssertThrowsError(try client.manualFallbackURL(competitionID: "../other", publishedRevision: 1,
+                                                          operationalRevision: 2))
+        XCTAssertThrowsError(try client.manualFallbackURL(competitionID: "st-albans", publishedRevision: 2,
+                                                          operationalRevision: 1))
+    }
 }
 
 private func XCTAssertThrowsErrorAsync<T>(

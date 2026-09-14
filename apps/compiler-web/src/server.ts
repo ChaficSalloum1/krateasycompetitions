@@ -24,6 +24,8 @@ import { parseCreationProposalPayload } from "./creation-proposal.js";
 import { CompetitionJourney, competitionJourneyHtml, parseConnectedLiveCommand, parseCreationSource } from "./competition-journey.js";
 import { playerHtml } from "./player-view.js";
 import { participantOperationsHtml, venueDisplayHtml } from "./attention-views.js";
+import { verifyOfflineEventPack } from "./offline-event-pack.js";
+import { renderPrintableManualFallback } from "./manual-fallback-view.js";
 import { createPlatformDemo } from "./platform-demo.js";
 import type { ProductionPilotApi } from "./production-pilot-api.js";
 
@@ -673,6 +675,30 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           expectedOperationalRevision };
         json(response, 200, publicProjection[2] === "public-live" ? competitionJourney.readPublicLive(input)
           : competitionJourney.readOrganiserLive({ ...input, at: serverNow() }));
+        return;
+      }
+      const manualPackProjection = !production && /^\/v1\/competition-journey\/([^/]+)\/manual-pack$/.exec(journeyRequestUrl.pathname);
+      if (manualPackProjection && request.method === "GET") {
+        if ([...journeyRequestUrl.searchParams.keys()].sort().join(",") !== "operational,published")
+          throw new Error("invalid_journey_command");
+        const expectedPublishedRevision = Number(journeyRequestUrl.searchParams.get("published"));
+        const expectedOperationalRevision = Number(journeyRequestUrl.searchParams.get("operational"));
+        if (!Number.isSafeInteger(expectedPublishedRevision) || !Number.isSafeInteger(expectedOperationalRevision))
+          throw new Error("invalid_journey_command");
+        const generatedAt = serverNow();
+        const pack = competitionJourney.issueOfflineEventPack({ organizationId,
+          competitionId: decodeURIComponent(manualPackProjection[1]!), expectedPublishedRevision,
+          expectedOperationalRevision, expiresAt: new Date(Date.parse(generatedAt) + 8 * 60 * 60_000).toISOString() });
+        const signedGeneratedAt = String((JSON.parse(Buffer.from(pack.payloadBase64, "base64").toString("utf8")) as
+          Record<string, unknown>).generatedAt ?? "");
+        const body = verifyOfflineEventPack(pack, pack.publicKeyBase64, signedGeneratedAt);
+        const host = String(request.headers.host ?? "127.0.0.1:4173");
+        const safeHost = /^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host) ? host : "127.0.0.1:4173";
+        const html = await renderPrintableManualFallback({ body, envelope: pack, origin: `http://${safeHost}` });
+        response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store",
+          "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; frame-ancestors 'none'",
+          "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" });
+        response.end(html);
         return;
       }
       const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer))?$/.exec(request.url ?? "");
