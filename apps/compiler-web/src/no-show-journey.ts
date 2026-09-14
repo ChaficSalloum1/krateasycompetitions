@@ -106,6 +106,11 @@ export function liveDefinitionFromPublished(tournamentId: string, graph: Competi
   const scheduleByContest = new Map(schedule.contests.map((contest) => [contest.contestId, contest]));
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
   const actualContestIds = new Set(graph.nodes.filter(({ kind }) => kind === "contest").map(({ id }) => id));
+  const possibleByDivision = new Map<string, readonly string[]>();
+  for (const divisionId of new Set(graph.nodes.map(({ divisionId }) => divisionId))) {
+    possibleByDivision.set(divisionId, [...new Set(graph.nodes.filter((node) => node.divisionId === divisionId && node.poolId)
+      .flatMap((node) => node.slots.flatMap((slot) => slot.type === "entrant" ? [slot.entrantId] : [])))].sort());
+  }
   const resolving = new Set<string>();
   const entrantsForNode = (contestId: string): string[] => {
     if (resolving.has(contestId)) throw new Error(`live_activation_cyclic_contest:${contestId}`);
@@ -129,7 +134,12 @@ export function liveDefinitionFromPublished(tournamentId: string, graph: Competi
     if (!assignment) throw new Error(`live_activation_missing_assignment:${node.id}`);
     return {
       contestId: node.id,
-      entrantIds: [...new Set([...assignment.possibleEntrantIds, ...entrantsForNode(node.id)])].sort(),
+      entrantIds: [...new Set([...assignment.possibleEntrantIds, ...entrantsForNode(node.id),
+        ...(!node.poolId ? (possibleByDivision.get(node.divisionId) ?? []) : [])])].sort(),
+      ...(node.poolId && node.slots.every((slot) => slot.type === "entrant")
+        ? { fixedEntrantIds: node.slots.map((slot) => (slot as { type: "entrant"; entrantId: string }).entrantId)
+          .sort() as [string, string] } : {}),
+      ...(!node.poolId ? { requiresEntrantResolution: true } : {}),
       courtId: assignment.resourceId,
       dependencyContestIds: [...(dependencies.get(node.id) ?? [])].sort(),
       scheduledStart: assignment.start,
@@ -151,8 +161,8 @@ function submitRequired(state: LiveOperationsState, command: LiveOperationsComma
 }
 
 function directWalkoverContests(state: LiveOperationsState, entrantId: string): readonly string[] {
-  return state.definition.contests.filter((contest) => contest.entrantIds.length === 2
-    && contest.entrantIds.includes(entrantId) && state.contests[contest.contestId]?.status === "SCHEDULED")
+  return state.definition.contests.filter((contest) => state.resolvedEntrants[contest.contestId]?.length === 2
+    && state.resolvedEntrants[contest.contestId]!.includes(entrantId) && state.contests[contest.contestId]?.status === "SCHEDULED")
     .map(({ contestId }) => contestId).sort();
 }
 
@@ -184,8 +194,7 @@ function proposedState(base: LiveOperationsState, request: NoShowProposalRequest
     actorId: request.proposedBy, occurredAt: request.proposedAt,
   });
   for (const contestId of walkoverContestIds) {
-    const definition = state.definition.contests.find((contest) => contest.contestId === contestId)!;
-    const winnerEntrantId = definition.entrantIds.find((id) => id !== request.entrantId)!;
+    const winnerEntrantId = state.resolvedEntrants[contestId]!.find((id) => id !== request.entrantId)!;
     state = submitRequired(state, {
       kind: "AWARD_WALKOVER", contestId, winnerEntrantId, absentEntrantId: request.entrantId,
       reason: request.reason, commandId: `${request.proposalId}.walkover.${canonicalHash(contestId).slice(0, 16)}`,
@@ -278,7 +287,7 @@ export function proposeNoShowRepair(basePublishedRevision: number, base: LiveOpe
   if (!request.proposalId.trim() || !request.reason.trim() || !request.proposedBy.trim()
     || !canonicalTimestamp(request.proposedAt)) throw new Error("invalid_no_show_request");
   const contest = base.definition.contests.find(({ contestId }) => contestId === request.contestId);
-  if (!contest || !contest.entrantIds.includes(request.entrantId)) throw new Error("invalid_no_show_contest_or_entrant");
+  if (!contest || !base.resolvedEntrants[request.contestId]?.includes(request.entrantId)) throw new Error("invalid_no_show_contest_or_entrant");
   if (base.contests[request.contestId]?.status !== "SCHEDULED") throw new Error("no_show_requires_scheduled_contest");
   if (base.events.at(-1) && base.events.at(-1)!.occurredAt > request.proposedAt)
     throw new Error("stale_no_show_timestamp");

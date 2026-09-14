@@ -407,7 +407,8 @@ test("operators persist live actions and scores while independently approved rep
   assert.deepEqual(state.repairProposals["repair.1"]?.result.diff.map(({ taskId }) => taskId), ["A"]);
   assert.equal(state.liveChangeProposals["change.court-outage"]?.status, "APPROVED");
   assert.deepEqual(state.liveChangeProposals["change.court-outage"]?.proposal.impact.movedContestIds, ["match.2"]);
-  assert.deepEqual(store.outbox.list().map(({ topic }) => topic), ["competition.publication.v1", "competition.live-change.approved.v1"]);
+  assert.deepEqual(store.outbox.list().map(({ topic }) => topic).sort(),
+    ["competition.live-change.approved.v1", "competition.publication.v1"]);
   assert.deepEqual((await platform.dashboard("org.operations", "user.director")).liveChangeProposals.map(({ id, status }) => ({ id, status })),
     [{ id: "change.court-outage", status: "APPROVED" }]);
 });

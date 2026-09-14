@@ -3,6 +3,8 @@ import { canonicalHash, deepFreeze } from "@tournament-os/tournament-schema";
 export interface LiveContestDefinition {
   readonly contestId: string;
   readonly entrantIds: readonly string[];
+  readonly fixedEntrantIds?: readonly [string, string];
+  readonly requiresEntrantResolution?: boolean;
   readonly courtId: string;
   readonly officialId?: string;
   readonly equipmentIds?: readonly string[];
@@ -37,6 +39,7 @@ export type LiveOperationsCommand = CommandAudit & (
   | { readonly kind: "START_CONTEST"; readonly contestId: string; readonly courtId: string; readonly startedAt: string }
   | { readonly kind: "RECORD_SCORE"; readonly contestId: string; readonly scores: readonly ContestScore[] }
   | { readonly kind: "COMPLETE_CONTEST"; readonly contestId: string; readonly endedAt: string }
+  | { readonly kind: "RESOLVE_CONTEST_ENTRANTS"; readonly contestId: string; readonly entrantIds: readonly [string, string]; readonly sourceProofHash: string }
   | { readonly kind: "RECORD_RETIREMENT"; readonly contestId: string; readonly retiredEntrantId: string; readonly winnerEntrantId: string; readonly endedAt: string; readonly reason: string }
   | { readonly kind: "RECORD_RESULT_RECEIPT"; readonly contestId: string; readonly source: string }
   | { readonly kind: "FILE_PROTEST"; readonly protestId: string; readonly contestId: string; readonly filedById: string; readonly reason: string }
@@ -129,6 +132,7 @@ type LiveOperationsEventData =
   | { readonly kind: "CONTEST_STARTED"; readonly contestId: string; readonly courtId: string; readonly startedAt: string }
   | { readonly kind: "SCORE_RECORDED"; readonly contestId: string; readonly scores: readonly ContestScore[] }
   | { readonly kind: "CONTEST_COMPLETED"; readonly contestId: string; readonly endedAt: string }
+  | { readonly kind: "CONTEST_ENTRANTS_RESOLVED"; readonly contestId: string; readonly entrantIds: readonly [string, string]; readonly sourceProofHash: string }
   | { readonly kind: "RETIREMENT_RECORDED"; readonly contestId: string; readonly retiredEntrantId: string; readonly winnerEntrantId: string; readonly endedAt: string; readonly reason: string }
   | { readonly kind: "RESULT_RECEIVED"; readonly contestId: string; readonly source: string }
   | { readonly kind: "PROTEST_FILED"; readonly protestId: string; readonly contestId: string; readonly filedById: string; readonly reason: string }
@@ -154,6 +158,7 @@ export interface LiveOperationsState {
   readonly events: readonly Readonly<LiveOperationsEvent>[];
   readonly entrantPresence: Readonly<Record<string, EntrantPresenceStatus>>;
   readonly contests: Readonly<Record<string, Readonly<LiveContestState>>>;
+  readonly resolvedEntrants: Readonly<Record<string, readonly string[]>>;
   readonly resources: {
     readonly courts: Readonly<Record<string, Readonly<ResourceAvailability>>>;
     readonly officials: Readonly<Record<string, Readonly<ResourceAvailability>>>;
@@ -216,6 +221,8 @@ function validatedDefinition(input: LiveOperationsDefinition): LiveOperationsDef
   const knownEquipment = new Set(input.equipment ?? []);
   for (const contest of input.contests) {
     if (!contest.contestId.trim() || contest.entrantIds.length === 0 || !unique(contest.entrantIds) || contest.entrantIds.some((id) => !id.trim())
+      || (contest.fixedEntrantIds !== undefined && (contest.fixedEntrantIds.length !== 2
+        || !unique(contest.fixedEntrantIds) || contest.fixedEntrantIds.some((id) => !contest.entrantIds.includes(id))))
       || !knownCourts.has(contest.courtId) || (contest.officialId !== undefined && !knownOfficials.has(contest.officialId))
       || (contest.equipmentIds ?? []).some((id) => !knownEquipment.has(id))
       || (contest.dependencyContestIds ?? []).some((id) => !knownContests.has(id) || id === contest.contestId)
@@ -235,6 +242,8 @@ function validatedDefinition(input: LiveOperationsDefinition): LiveOperationsDef
     contests: input.contests.map((contest) => ({
       ...contest,
       entrantIds: [...contest.entrantIds],
+      ...(contest.fixedEntrantIds ? { fixedEntrantIds: [...contest.fixedEntrantIds].sort() as [string, string] } : {}),
+      ...(contest.requiresEntrantResolution ? { requiresEntrantResolution: true } : {}),
       equipmentIds: [...(contest.equipmentIds ?? [])].sort(),
       dependencyContestIds: [...(contest.dependencyContestIds ?? [])].sort(),
     })).sort((left, right) => left.contestId.localeCompare(right.contestId)),
@@ -248,9 +257,15 @@ function freezeState(withoutProof: Omit<LiveOperationsState, "proofHash">): Live
 export function createLiveOperationsState(input: LiveOperationsDefinition): LiveOperationsState {
   const definition = validatedDefinition(input);
   const contests = Object.fromEntries(definition.contests.map(({ contestId }) => [contestId, { status: "SCHEDULED" as const }]));
+  const resolvedEntrants = Object.fromEntries(definition.contests.flatMap(({ contestId, entrantIds, fixedEntrantIds,
+    requiresEntrantResolution }) => {
+    const resolved = fixedEntrantIds ?? (!requiresEntrantResolution ? entrantIds : undefined);
+    return resolved ? [[contestId, [...resolved].sort()]] : [];
+  }));
   const available = (ids: readonly string[]) => Object.fromEntries(ids.map((id) => [id, { available: true, changedAt: null, reason: null }]));
   const resources = { courts: available(definition.courts), officials: available(definition.officials ?? []), equipment: available(definition.equipment ?? []) };
-  return freezeState({ definition, version: 0, lastEventHash: null, events: [], entrantPresence: {}, contests, resources, protests: {}, appeals: {}, commandFingerprints: {} });
+  return freezeState({ definition, version: 0, lastEventHash: null, events: [], entrantPresence: {}, contests,
+    resolvedEntrants, resources, protests: {}, appeals: {}, commandFingerprints: {} });
 }
 
 function eventData(command: LiveOperationsCommand): LiveOperationsEventData {
@@ -264,6 +279,9 @@ function eventData(command: LiveOperationsCommand): LiveOperationsEventData {
   if (command.kind === "RECORD_SCORE") return { kind: "SCORE_RECORDED", contestId: command.contestId,
     scores: [...command.scores].sort((left, right) => left.entrantId.localeCompare(right.entrantId)) };
   if (command.kind === "COMPLETE_CONTEST") return { kind: "CONTEST_COMPLETED", contestId: command.contestId, endedAt: command.endedAt };
+  if (command.kind === "RESOLVE_CONTEST_ENTRANTS") return { kind: "CONTEST_ENTRANTS_RESOLVED",
+    contestId: command.contestId, entrantIds: [...command.entrantIds].sort() as [string, string],
+    sourceProofHash: command.sourceProofHash };
   if (command.kind === "RECORD_RETIREMENT") return { kind: "RETIREMENT_RECORDED", contestId: command.contestId, retiredEntrantId: command.retiredEntrantId, winnerEntrantId: command.winnerEntrantId, endedAt: command.endedAt, reason: command.reason };
   if (command.kind === "RECORD_RESULT_RECEIPT") return { kind: "RESULT_RECEIVED", contestId: command.contestId, source: command.source };
   if (command.kind === "FILE_PROTEST") return { kind: "PROTEST_FILED", protestId: command.protestId, contestId: command.contestId, filedById: command.filedById, reason: command.reason };
@@ -293,6 +311,10 @@ function validScores(scores: readonly ContestScore[], entrantIds: readonly strin
   return scores.length === entrantIds.length && new Set(scores.map(({ entrantId }) => entrantId)).size === scores.length
     && scores.every(({ entrantId, value }) => entrantIds.includes(entrantId)
       && Number.isSafeInteger(value) && value >= 0);
+}
+
+function effectiveContestEntrants(state: LiveOperationsState, contest: LiveContestDefinition): readonly string[] {
+  return state.resolvedEntrants[contest.contestId] ?? [];
 }
 
 function acceptedEvent(state: LiveOperationsState, command: LiveOperationsCommand, commandFingerprint: string): LiveOperationsEvent {
@@ -336,10 +358,21 @@ export function submitLiveOperationsCommand(state: LiveOperationsState, command:
   if ("contestId" in command) {
     const contest = state.definition.contests.find(({ contestId }) => contestId === command.contestId);
     if (!contest) findings.push({ code: "LIVE404", path: "/contestId", message: "Contest is not registered in the operational definition." });
-    else if (command.kind === "DECLARE_NO_SHOW" && !contest.entrantIds.includes(command.entrantId)) findings.push({ code: "LIVE422", path: "/entrantId", message: "No-show entrant is not registered in the contest." });
+    else if (command.kind === "RESOLVE_CONTEST_ENTRANTS") {
+      if (state.contests[command.contestId]?.status !== "SCHEDULED" || state.contests[command.contestId]?.calledAt)
+        findings.push({ code: "LIVE422", path: "/contestId", message: "Entrant identity can only resolve while a contest is untouched and scheduled." });
+      if (command.entrantIds.length !== 2 || new Set(command.entrantIds).size !== 2
+        || command.entrantIds.some((entrantId) => !contest.entrantIds.includes(entrantId)))
+        findings.push({ code: "LIVE422", path: "/entrantIds", message: "Resolved entrants must be two distinct members of the published possible-entrant set." });
+      if (!/^[a-f0-9]{64}$/.test(command.sourceProofHash))
+        findings.push({ code: "LIVE400", path: "/sourceProofHash", message: "Entrant resolution requires a canonical source proof hash." });
+    } else if (contest.requiresEntrantResolution && !state.resolvedEntrants[contest.contestId]) {
+      findings.push({ code: "LIVE425", path: "/contestId", message: "The actual contest entrants are not yet resolved from authoritative results." });
+    } else if (command.kind === "DECLARE_NO_SHOW" && !effectiveContestEntrants(state, contest).includes(command.entrantId)) findings.push({ code: "LIVE422", path: "/entrantId", message: "No-show entrant is not registered in the contest." });
     else if (command.kind === "AWARD_WALKOVER") {
+      const entrantIds = effectiveContestEntrants(state, contest);
       if (state.contests[command.contestId]?.status !== "SCHEDULED") findings.push({ code: "LIVE422", path: "/contestId", message: "Walkover can only settle a scheduled contest." });
-      if (command.winnerEntrantId === command.absentEntrantId || !contest.entrantIds.includes(command.winnerEntrantId) || !contest.entrantIds.includes(command.absentEntrantId)) findings.push({ code: "LIVE422", path: "/winnerEntrantId", message: "Walkover winner and absent entrant must be distinct registered contest entrants." });
+      if (command.winnerEntrantId === command.absentEntrantId || !entrantIds.includes(command.winnerEntrantId) || !entrantIds.includes(command.absentEntrantId)) findings.push({ code: "LIVE422", path: "/winnerEntrantId", message: "Walkover winner and absent entrant must be distinct registered contest entrants." });
       if (state.entrantPresence[command.absentEntrantId] !== "NO_SHOW" && state.entrantPresence[command.absentEntrantId] !== "WITHDRAWN") findings.push({ code: "LIVE422", path: "/absentEntrantId", message: "A walkover requires an established no-show or withdrawal fact." });
     } else if (command.kind === "CALL_CONTEST") {
       const contestState = state.contests[command.contestId];
@@ -347,7 +380,7 @@ export function submitLiveOperationsCommand(state: LiveOperationsState, command:
         findings.push({ code: "LIVE422", path: "/contestId", message: "Only an uncalled scheduled contest can be called." });
     } else if (command.kind === "START_CONTEST") {
       const contestState = state.contests[command.contestId];
-      const missing = contest.entrantIds.filter((id) => state.entrantPresence[id] !== "CHECKED_IN" && state.entrantPresence[id] !== "LATE");
+      const missing = effectiveContestEntrants(state, contest).filter((id) => state.entrantPresence[id] !== "CHECKED_IN" && state.entrantPresence[id] !== "LATE");
       const terminal = new Set<LiveContestStatus>(["COMPLETED", "WALKOVER", "RETIRED"]);
       const pendingDependencies = (contest.dependencyContestIds ?? []).filter((id) => !terminal.has(state.contests[id]?.status ?? "SCHEDULED"));
       if (contestState?.status !== "SCHEDULED") findings.push({ code: "LIVE422", path: "/contestId", message: "Only a scheduled contest can start." });
@@ -356,7 +389,7 @@ export function submitLiveOperationsCommand(state: LiveOperationsState, command:
       if (missing.length) findings.push({ code: "LIVE422", path: "/entrantPresence", message: "All contest entrants must be checked in or marked late before start.", evidence: { entrantIds: missing } });
       if (pendingDependencies.length) findings.push({ code: "LIVE422", path: "/dependencyContestIds", message: "All predecessor contests must be settled before start.", evidence: { contestIds: pendingDependencies } });
     } else if (command.kind === "RECORD_SCORE") {
-      if (state.contests[command.contestId]?.status !== "IN_PROGRESS" || !validScores(command.scores, contest.entrantIds))
+      if (state.contests[command.contestId]?.status !== "IN_PROGRESS" || !validScores(command.scores, effectiveContestEntrants(state, contest)))
         findings.push({ code: "LIVE422", path: "/scores", message: "A score requires an in-progress contest and one non-negative integer value for every entrant." });
     } else if (command.kind === "COMPLETE_CONTEST") {
       const contestState = state.contests[command.contestId];
@@ -366,7 +399,8 @@ export function submitLiveOperationsCommand(state: LiveOperationsState, command:
     } else if (command.kind === "RECORD_RETIREMENT") {
       const contestState = state.contests[command.contestId];
       if (contestState?.status !== "IN_PROGRESS" || !contestState.actualStart || !canonicalTimestamp(command.endedAt) || Date.parse(command.endedAt) < Date.parse(contestState.actualStart)) findings.push({ code: "LIVE422", path: "/endedAt", message: "Retirement requires an in-progress contest and a valid actual end." });
-      if (command.retiredEntrantId === command.winnerEntrantId || !contest.entrantIds.includes(command.retiredEntrantId) || !contest.entrantIds.includes(command.winnerEntrantId)) findings.push({ code: "LIVE422", path: "/retiredEntrantId", message: "Retired entrant and winner must be distinct registered contest entrants." });
+      const entrantIds = effectiveContestEntrants(state, contest);
+      if (command.retiredEntrantId === command.winnerEntrantId || !entrantIds.includes(command.retiredEntrantId) || !entrantIds.includes(command.winnerEntrantId)) findings.push({ code: "LIVE422", path: "/retiredEntrantId", message: "Retired entrant and winner must be distinct registered contest entrants." });
     } else if (command.kind === "RECORD_RESULT_RECEIPT") {
       const contestState = state.contests[command.contestId];
       if (!new Set<LiveContestStatus>(["COMPLETED", "WALKOVER", "RETIRED"]).has(contestState?.status ?? "SCHEDULED") || contestState?.resultRecordedAt) findings.push({ code: "LIVE422", path: "/contestId", message: "A result can be received once for a settled contest." });
@@ -398,7 +432,7 @@ export function submitLiveOperationsCommand(state: LiveOperationsState, command:
     }
     if (replacement.kind === "SET_CONTEST_SCORE") {
       const contest = state.definition.contests.find(({ contestId }) => contestId === replacement.contestId);
-      if (!contest || !validScores(replacement.scores, contest.entrantIds)
+      if (!contest || !validScores(replacement.scores, effectiveContestEntrants(state, contest))
         || target?.kind !== "SCORE_RECORDED" || target.contestId !== replacement.contestId)
         findings.push({ code: "LIVE422", path: "/replacement", message: "A score correction must replace a score event for the same registered contest." });
     }
@@ -418,6 +452,7 @@ function projectLiveOperations(definition: LiveOperationsDefinition, events: rea
   const initial = createLiveOperationsState(definition);
   const entrantPresence: Record<string, EntrantPresenceStatus> = {};
   const contests = { ...initial.contests };
+  const resolvedEntrants: Record<string, readonly string[]> = { ...initial.resolvedEntrants };
   const resources = { courts: { ...initial.resources.courts }, officials: { ...initial.resources.officials }, equipment: { ...initial.resources.equipment } };
   const protests: Record<string, ProtestState> = {};
   const appeals: Record<string, AppealState> = {};
@@ -457,6 +492,8 @@ function projectLiveOperations(definition: LiveOperationsDefinition, events: rea
     else if (event.kind === "CONTEST_COMPLETED") {
       const contest = contests[event.contestId]!;
       contests[event.contestId] = { ...contest, status: "COMPLETED", actualEnd: event.endedAt, actualDurationMinutes: Math.round((Date.parse(event.endedAt) - Date.parse(contest.actualStart!)) / 60_000) };
+    } else if (event.kind === "CONTEST_ENTRANTS_RESOLVED") {
+      resolvedEntrants[event.contestId] = [...event.entrantIds] as [string, string];
     } else if (event.kind === "RETIREMENT_RECORDED") {
       const contest = contests[event.contestId]!;
       contests[event.contestId] = { ...contest, status: "RETIRED", actualEnd: event.endedAt, actualDurationMinutes: Math.round((Date.parse(event.endedAt) - Date.parse(contest.actualStart!)) / 60_000), retiredEntrantId: event.retiredEntrantId, winnerEntrantId: event.winnerEntrantId };
@@ -475,6 +512,7 @@ function projectLiveOperations(definition: LiveOperationsDefinition, events: rea
     events: [...events],
     entrantPresence,
     contests,
+    resolvedEntrants,
     resources,
     protests,
     appeals,
@@ -517,6 +555,7 @@ export function deriveLiveControlRoom(state: LiveOperationsState, generatedAt: s
   const blocked: LiveControlRoomBlockedContest[] = [];
   for (const contest of state.definition.contests) {
     const contestState = state.contests[contest.contestId]!;
+    const entrantIds = effectiveContestEntrants(state, contest);
     const common = { contestId: contest.contestId, scheduledStart: contest.scheduledStart, courtId: contestState.actualCourtId ?? contest.courtId };
     if (contestState.status === "IN_PROGRESS") {
       now.push(common);
@@ -528,11 +567,11 @@ export function deriveLiveControlRoom(state: LiveOperationsState, generatedAt: s
     const reasons: LiveControlRoomBlockedContest["reasons"][number][] = [];
     const pending = (contest.dependencyContestIds ?? []).filter((id) => !completed.has(id));
     if (pending.length) reasons.push({ code: "PENDING_PREDECESSOR", subjectIds: pending });
-    const noShows = contest.entrantIds.filter((id) => state.entrantPresence[id] === "NO_SHOW");
+    const noShows = entrantIds.filter((id) => state.entrantPresence[id] === "NO_SHOW");
     if (noShows.length) reasons.push({ code: "ENTRANT_NO_SHOW", subjectIds: noShows });
-    const withdrawn = contest.entrantIds.filter((id) => state.entrantPresence[id] === "WITHDRAWN");
+    const withdrawn = entrantIds.filter((id) => state.entrantPresence[id] === "WITHDRAWN");
     if (withdrawn.length) reasons.push({ code: "ENTRANT_WITHDRAWN", subjectIds: withdrawn });
-    const absent = contest.entrantIds.filter((id) => state.entrantPresence[id] === undefined);
+    const absent = entrantIds.filter((id) => state.entrantPresence[id] === undefined);
     if (absent.length) reasons.push({ code: "ENTRANT_NOT_CHECKED_IN", subjectIds: absent });
     if (state.resources.courts[contest.courtId]?.available === false) reasons.push({ code: "COURT_CLOSED", subjectIds: [contest.courtId] });
     if (contest.officialId && state.resources.officials[contest.officialId]?.available === false) reasons.push({ code: "OFFICIAL_ABSENT", subjectIds: [contest.officialId] });
@@ -546,7 +585,7 @@ export function deriveLiveControlRoom(state: LiveOperationsState, generatedAt: s
     if (reasons.length) blocked.push({ ...common, reasons });
     else {
       const minutesLate = Math.max(0, Math.floor((Date.parse(generatedAt) - Date.parse(contest.scheduledStart)) / 60_000));
-      if (minutesLate > (state.definition.lateToleranceMinutes ?? 5) || contest.entrantIds.some((id) => state.entrantPresence[id] === "LATE")) late.push({ ...common, minutesLate });
+      if (minutesLate > (state.definition.lateToleranceMinutes ?? 5) || entrantIds.some((id) => state.entrantPresence[id] === "LATE")) late.push({ ...common, minutesLate });
       else next.push(common);
     }
   }

@@ -2,8 +2,8 @@
 
 **Date:** 14 September 2026
 **Authority:** [`PRD-Krateasy-Competitions-Execution-Control.md`](./PRD-Krateasy-Competitions-Execution-Control.md)
-**Starting point:** commit `57d6d4a` (`Connect guarded live no-show repair`), preserving the separately committed authoritative-publication and St Albans-workbench slices
-**Programme status:** Sprint 1 is complete. Sprint 2 has a connected first golden JSON workbench but its broader import and organisation scope remains open. Sprint 4 has a connected guarded no-show/withdrawal slice but its full command and incident scope remains open. Sprint 3 is the next pilot-critical slice.
+**Starting point:** commit `39c18a0` (`Connect authoritative live participant information`), preserving the separately committed publication, St Albans workbench and guarded no-show slices
+**Programme status:** Sprint 1 is complete. Sprint 2 has a connected first golden JSON workbench but its broader import, duplicate and organisation scope remains open. Sprint 3 has authoritative signed participant/public/organiser projections and durable targeted delivery, while token lifecycle, recovery and an external provider/fallback remain open. Sprint 4 has the connected command set, guarded no-show repair and actual-result knockout progression; court-outage and delay repair remain the next pilot-critical slice.
 **Outcome:** a controlled live pilot can be created, validated, published, operated, disrupted, repaired, communicated, closed, replayed and repeated without a second source of competition truth.
 
 ## 1. Pilot definition
@@ -159,7 +159,7 @@ Committed outcomes:
 **Dependencies:** Sprint 1 publication contract; directory and organisation identifiers.
 **Exit:** a historical pilot workbook or description reaches a resumable, explicit, Guard-eligible draft without a demo handoff.
 
-### Sprint 3 — Make the published promise useful to participants — **Next pilot-critical slice**
+### Sprint 3 — Make the published promise useful to participants — **In progress (`39c18a0` connected live information)**
 
 **Sprint goal:** every participant can retrieve the current next action from the authoritative published revision without installing anything.
 
@@ -177,7 +177,7 @@ Committed outcomes:
 **Dependencies:** authoritative publication and durable public projection boundary.
 **Exit:** a published change produces one consistent answer across `/next`, message, staff lookup and venue display.
 
-### Sprint 4 — Operate and recover the live event — **In progress (`57d6d4a` guarded no-show/withdrawal)**
+### Sprint 4 — Operate and recover the live event — **In progress (guarded no-show, commands and actual-result progression connected)**
 
 **Sprint goal:** staff can run the event and recover from common disruption without corrupting competition truth.
 
@@ -273,7 +273,7 @@ The event may proceed only when all statements are true:
 - [x] Every required contest is independently accounted for exactly once in the named St Albans pilot fixture.
 - [x] Zero hard structure, dependency, participant or resource violations remain in the named St Albans pilot fixture.
 - [x] The exact approved revision is the exact published and publicly projected revision.
-- [ ] Participant tokens cannot enumerate or expose other participants.
+- [x] Participant tokens cannot enumerate or expose other participants.
 - [ ] Live commands survive retry, reordering and reconnection without duplicate effect.
 - [ ] Court outage, delay, withdrawal and correction rehearsals pass.
 - [ ] Delivery failure visibly triggers the declared fallback.

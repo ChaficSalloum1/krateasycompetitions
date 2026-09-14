@@ -65,6 +65,7 @@ import {
   type OrganiserLiveProjection,
   type PublicLiveProjection,
 } from "./participant-information.js";
+import { advanceLiveProgression, verifyLiveProgression } from "./live-progression.js";
 
 export type CompetitionJourneyStatus = "NEEDS_INPUT" | "DRAFT" | "GUARD_BLOCKED" | "READY_FOR_APPROVAL" | "PUBLISHED";
 
@@ -270,8 +271,11 @@ function verifyRecord(record: StoredJourneyRecord): boolean {
     !== record.participantAccess.length || record.participantAccess.some((grant) => grant.organizationId !== record.organizationId
       || grant.competitionId !== record.id || !/^[a-f0-9]{64}$/.test(grant.tokenHash)))) return false;
   if (!record.live) return true;
-    const replay = replayLiveOperationsEvents(record.live.state.definition, record.live.state.events);
+  const replay = replayLiveOperationsEvents(record.live.state.definition, record.live.state.events);
   if (!replay.valid || replay.state.proofHash !== record.live.state.proofHash) return false;
+  const progressionEntrants = record.workbench ? entrantsFromProductionLock(record.workbench) : null;
+  if (record.compiled && progressionEntrants
+    && !verifyLiveProgression(record.compiled.spec, record.compiled.graph, progressionEntrants, replay.state)) return false;
   if (record.live.proposal && !verifyNoShowProposal(record.live.proposal)) return false;
   if (record.live.publication) {
     const { publicationHash, ...publicationBody } = record.live.publication;
@@ -593,14 +597,21 @@ export class CompetitionJourney {
     command: LiveOperationsCommand): CompetitionJourneySnapshot {
     const current = this.require(id);
     const live = this.requireProjectedLive(current, expectedRevision);
+    if (command.kind === "RESOLVE_CONTEST_ENTRANTS") throw new Error("live_command_is_server_owned");
     const result = submitLiveOperationsCommand(live.state, command);
     if (!result.accepted) throw new Error(`live_command_rejected:${result.findings.map(({ code }) => code).join(",")}`);
     if (result.idempotentReplay) return snapshotOf(current);
+    const progressionEntrants = entrantsFromProductionLock(current.workbench!);
+    if (!progressionEntrants) throw new Error("live_progression_roster_unavailable");
+    const progression = advanceLiveProgression(current.compiled!.spec, current.compiled!.graph,
+      progressionEntrants, result.state, command.occurredAt);
+    const acceptedEvents = [...result.events, ...progression.events];
     const touchedContestIds = new Set<string>();
     const touchedEntrantIds = new Set<string>();
-    for (const event of result.events) {
+    for (const event of acceptedEvents) {
       if ("contestId" in event) touchedContestIds.add(event.contestId);
       if ("entrantId" in event) touchedEntrantIds.add(event.entrantId);
+      if ("entrantIds" in event) event.entrantIds.forEach((entrantId) => touchedEntrantIds.add(entrantId));
       if ("winnerEntrantId" in event) touchedEntrantIds.add(event.winnerEntrantId);
       if ("absentEntrantId" in event) touchedEntrantIds.add(event.absentEntrantId);
       if (event.kind === "OPERATION_CORRECTED") {
@@ -609,8 +620,9 @@ export class CompetitionJourney {
       }
     }
     for (const contestId of touchedContestIds) {
-      const definition = result.state.definition.contests.find((contest) => contest.contestId === contestId);
-      definition?.entrantIds.forEach((entrantId) => touchedEntrantIds.add(entrantId));
+      const definition = progression.state.definition.contests.find((contest) => contest.contestId === contestId);
+      (progression.state.resolvedEntrants[contestId] ?? definition?.entrantIds ?? [])
+        .forEach((entrantId) => touchedEntrantIds.add(entrantId));
     }
     const participantRevisions = { ...live.participantRevisions,
       ...Object.fromEntries([...touchedEntrantIds].map((entrantId) => [entrantId, expectedRevision])) };
@@ -619,22 +631,23 @@ export class CompetitionJourney {
     const outbox = new InMemoryTransactionalOutbox(current.organizationId, live.delivery);
     const participantNames = participantNamesFromProductionLock(current.workbench!);
     const assignments = live.publication?.operationalAssignments ?? current.compiled!.schedule.contests;
-    for (const event of result.events) for (const participantId of [...touchedEntrantIds].sort()) {
+    const committedEvent = acceptedEvents.at(-1)!;
+    for (const participantId of [...touchedEntrantIds].sort()) {
       const projection = deriveParticipantNext({ competitionId: current.id,
         competitionName: recognisedCompetitionName(current.workbench!) ?? current.proposal.blueprint.name ?? "Competition",
         publishedRevision: current.publication!.revision, operationalRevision: expectedRevision,
         affectedParticipantIds: live.publication?.affectedEntrantIds ?? [], participantRevisions,
-        participantId, participantNames, state: result.state, assignments });
-      outbox.enqueueFromCommittedEvent({ id: event.eventId, streamId: current.id,
-        streamVersion: event.sequence, type: event.kind, occurredAt: event.occurredAt,
+        participantId, participantNames, state: progression.state, assignments });
+      outbox.enqueueFromCommittedEvent({ id: committedEvent.eventId, streamId: current.id,
+        streamVersion: committedEvent.sequence, type: committedEvent.kind, occurredAt: committedEvent.occurredAt,
         committedAt: command.occurredAt, payload: projection }, {
         topic: "competition.participant-next.v1",
-        key: `${current.id}:v${expectedRevision}:live-${event.sequence}:${participantId}`,
+        key: `${current.id}:v${expectedRevision}:live-${committedEvent.sequence}:${participantId}`,
         payload: { organizationId: current.organizationId, competitionId: current.id,
           revision: expectedRevision, recipientEntrantId: participantId, projection },
       });
     }
-    const revisedLive: JourneyLiveState = { ...live, state: result.state, participantRevisions,
+    const revisedLive: JourneyLiveState = { ...live, state: progression.state, participantRevisions,
       contestRevisions, delivery: outbox.list() };
     const revised = sealRecord({ ...withoutSeal(current), updatedAt: command.occurredAt, live: revisedLive });
     this.records.set(id, revised);

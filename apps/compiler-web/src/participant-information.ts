@@ -147,7 +147,10 @@ export function deriveParticipantNext(input: {
   readonly state: LiveOperationsState;
   readonly assignments: readonly OperationalAssignment[];
 }): ParticipantNextProjection {
-  const participantContests = input.state.definition.contests.filter(({ entrantIds }) => entrantIds.includes(input.participantId));
+  const entrantsFor = (definition: LiveOperationsState["definition"]["contests"][number]): readonly string[] | null =>
+    input.state.resolvedEntrants[definition.contestId] ?? null;
+  const participantContests = input.state.definition.contests.filter((definition) =>
+    entrantsFor(definition)?.includes(input.participantId));
   const participantContestIds = new Set(participantContests.map(({ contestId }) => contestId));
   const assignmentByContest = new Map(input.assignments.map((assignment) => [assignment.contestId, assignment]));
   const candidates = participantContests.flatMap((definition) => {
@@ -176,9 +179,9 @@ export function deriveParticipantNext(input: {
     revision,
     next: selected ? {
       contestId: selected.definition.contestId,
-      opponent: selected.definition.entrantIds.length === 2
-        ? input.participantNames[selected.definition.entrantIds.find((id) => id !== input.participantId)!]
-          ?? selected.definition.entrantIds.find((id) => id !== input.participantId)! : null,
+      opponent: entrantsFor(selected.definition)?.length === 2
+        ? input.participantNames[entrantsFor(selected.definition)!.find((id) => id !== input.participantId)!]
+          ?? entrantsFor(selected.definition)!.find((id) => id !== input.participantId)! : null,
       court: selected.state.actualCourtId ?? selected.assignment.resourceId,
       reportingTime: new Date(Date.parse(selected.assignment.start) - 10 * 60_000).toISOString(),
       startsAt: selected.assignment.start,
@@ -204,6 +207,7 @@ export function derivePublicLive(input: {
 }): PublicLiveProjection {
   const assignments = new Map(input.assignments.map((assignment) => [assignment.contestId, assignment]));
   const contests = input.state.definition.contests.flatMap((definition) => {
+    const entrantIds = input.state.resolvedEntrants[definition.contestId] ?? [];
     const assignment = assignments.get(definition.contestId);
     if (!assignment) {
       if (!input.affectedContestIds.includes(definition.contestId)) return [];
@@ -211,13 +215,13 @@ export function derivePublicLive(input: {
       const status = input.state.contests[definition.contestId]?.status;
       if (status !== "WALKOVER") return [];
       const body = { contestId: definition.contestId,
-        participantNames: definition.entrantIds.map((id) => input.participantNames[id] ?? id),
+        participantNames: entrantIds.map((id) => input.participantNames[id] ?? id),
         court: original.courtId, startsAt: original.scheduledStart, status,
         revision: input.contestRevisions?.[definition.contestId] ?? input.operationalRevision };
       return [{ ...body, projectionHash: canonicalHash(body) }];
     }
     const body = { contestId: definition.contestId,
-      participantNames: definition.entrantIds.map((id) => input.participantNames[id] ?? id),
+      participantNames: entrantIds.map((id) => input.participantNames[id] ?? id),
       court: input.state.contests[definition.contestId]?.actualCourtId ?? assignment.resourceId,
       startsAt: assignment.start,
       status: input.state.contests[definition.contestId]?.status === "SCHEDULED"
