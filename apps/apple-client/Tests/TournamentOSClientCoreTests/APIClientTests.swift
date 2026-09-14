@@ -147,7 +147,7 @@ final class APIClientTests: XCTestCase {
          "compiled":{"guardStatus":"PASSED","requiredAcknowledgementCodes":["TSW210"]},"webPath":"/competitions/t1"}
         """)
         transport.respond(status: 200, json: """
-        {"apiVersion":"1.0","id":"t1","name":"Open","draftVersion":1,"revision":1,"status":"APPROVED",
+        {"apiVersion":"1.0","id":"t1","name":"Open","draftVersion":1,"revision":1,"status":"PUBLISHED",
          "blueprint":{},"understood":[],"questions":[],"warnings":[],"supportFindings":[],"assumptions":[],
          "compiled":{"guardStatus":"PASSED","requiredAcknowledgementCodes":["TSW210"]},"webPath":"/competitions/t1"}
         """)
@@ -161,7 +161,7 @@ final class APIClientTests: XCTestCase {
 
         let approved = try await client.createApprovedCompetition(.quick(input))
 
-        XCTAssertEqual(approved.status, "APPROVED")
+        XCTAssertEqual(approved.status, "PUBLISHED")
         XCTAssertEqual(transport.allRequests.map { $0.url?.path }, [
             "/v1/competition-journey", "/v1/competition-journey/t1/compile", "/v1/competition-journey/t1/approve",
         ])

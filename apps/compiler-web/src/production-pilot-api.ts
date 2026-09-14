@@ -114,8 +114,7 @@ const jsonContentType = /^application\/json(?:\s*;\s*charset=utf-8)?$/i;
 type CommandRule = { readonly required: readonly string[]; readonly optional?: readonly string[] };
 const commandRules: Readonly<Record<string, CommandRule>> = {
   CHANGE_TOURNAMENT_STATUS: { required: ["kind", "tournamentId", "status"] },
-  PUBLISH_TOURNAMENT: { required: ["kind", "tournamentId", "guardInput", "acknowledgedFindingCodes"] },
-  CERTIFY_TOURNAMENT_PUBLICATION: { required: ["kind", "tournamentId", "guardInput", "acknowledgedFindingCodes"] },
+  PUBLISH_TOURNAMENT: { required: ["kind", "tournamentId", "expectedTournamentRevision", "acknowledgedFindingCodes"] },
   PROPOSE_LIVE_CHANGE: { required: ["kind", "tournamentId", "proposalId", "liveCommand", "repairRequest", "maxSearchNodes"] },
   DECIDE_LIVE_CHANGE: { required: ["kind", "tournamentId", "proposalId", "decision"] },
   APPLY_LIVE_OPERATION: { required: ["kind", "tournamentId", "liveCommand"] },
@@ -183,8 +182,10 @@ function validateCommand(body: Record<string, unknown>): string | undefined {
   if (!identifier(body.tournamentId)) return "tournamentId is invalid.";
   if (body.kind === "CHANGE_TOURNAMENT_STATUS"
     && !["UNDER_REVIEW", "APPROVED", "ARCHIVED", "LIVE", "COMPLETED"].includes(body.status as string)) return "Tournament status is invalid.";
-  if (body.kind === "PUBLISH_TOURNAMENT" || body.kind === "CERTIFY_TOURNAMENT_PUBLICATION") {
-    if (!exactObject(body.guardInput, ["spec", "graph", "schedule"], ["simulation"])) return "guardInput has an invalid schema.";
+  if (body.kind === "PUBLISH_TOURNAMENT") {
+    if (!Number.isSafeInteger(body.expectedTournamentRevision) || (body.expectedTournamentRevision as number) < 1) {
+      return "expectedTournamentRevision is invalid.";
+    }
     if (!Array.isArray(body.acknowledgedFindingCodes) || body.acknowledgedFindingCodes.length > 100
       || body.acknowledgedFindingCodes.some((entry) => typeof entry !== "string" || entry.length < 1 || entry.length > 100)) {
       return "acknowledgedFindingCodes is invalid.";

@@ -50,7 +50,17 @@ test("the operator API atomically publishes only the exact server-bound approved
   const scenario = runScenario(spec, createEntrants(spec), "platform-api-publication");
   const guardReport = evaluateCompetitionGuard({ sourceDefinitionHash: canonicalHash(spec), spec, graph: scenario.graph,
     schedule: scenario.schedule, ...(scenario.simulation ? { simulation: scenario.simulation } : {}) });
-  const platform = createOrganizationPlatform(createInMemoryEventStore());
+  const definitionHash = canonicalHash(spec);
+  const authoritativeArtifacts = {
+    organizationId: "org.publish-api", tournamentId: "tournament.api", tournamentRevision: 1,
+    definitionHash, compiledBy: "server.compiler", compiledAt: at,
+    spec, specHash: canonicalHash(spec), graph: scenario.graph, graphHash: canonicalHash(scenario.graph),
+    schedule: scenario.schedule, scheduleHash: canonicalHash(scenario.schedule),
+    ...(scenario.simulation ? { simulation: scenario.simulation, simulationHash: canonicalHash(scenario.simulation) } : {}),
+  };
+  const platform = createOrganizationPlatform(createInMemoryEventStore(), {
+    publicationArtifacts: { load: async () => authoritativeArtifacts },
+  });
   await platform.execute({ kind: "CREATE_ORGANIZATION", organizationId: "org.publish-api", commandId: "setup.1", occurredAt: at,
     ownerUserId: "user.owner", name: "Publication API", slug: "publication-api" });
   await platform.execute({ kind: "CREATE_CLUB", organizationId: "org.publish-api", commandId: "setup.2", occurredAt: at,
@@ -71,20 +81,19 @@ test("the operator API atomically publishes only the exact server-bound approved
   const invalid = await api.handle({ method: "POST", path: "/v1/organizations/org.publish-api/commands",
     principal: { organizationId: "org.publish-api", userId: "user.owner" }, idempotencyKey: "publish.invalid",
     body: { kind: "PUBLISH_TOURNAMENT", tournamentId: "tournament.api",
-      guardInput: { spec, graph: scenario.graph, schedule: scenario.schedule,
-        ...(scenario.simulation ? { simulation: scenario.simulation } : {}) }, acknowledgedFindingCodes: ["UNREQUIRED"] } });
-  assert.equal(invalid.status, 422);
+      expectedTournamentRevision: 1, guardInput: { spec, graph: scenario.graph, schedule: scenario.schedule },
+      acknowledgedFindingCodes: guardReport.requiredAcknowledgementCodes } });
+  assert.equal(invalid.status, 400);
   assert.equal((await platform.read("org.publish-api")).tournaments["tournament.api"]?.status, "APPROVED");
   const response = await api.handle({ method: "POST", path: "/v1/organizations/org.publish-api/commands",
     principal: { organizationId: "org.publish-api", userId: "user.owner" }, idempotencyKey: "publish.1",
     body: { kind: "PUBLISH_TOURNAMENT", tournamentId: "tournament.api",
-      guardInput: { sourceDefinitionHash: "attacker-controlled", spec, graph: scenario.graph, schedule: scenario.schedule,
-        ...(scenario.simulation ? { simulation: scenario.simulation } : {}) },
+      expectedTournamentRevision: 1,
       acknowledgedFindingCodes: guardReport.requiredAcknowledgementCodes } });
 
   assert.equal(response.status, 200);
   const state = await platform.read("org.publish-api");
   assert.equal(state.tournaments["tournament.api"]?.status, "PUBLISHED");
-  assert.equal(state.publicationRecords["tournament.api"]?.at(-1)?.definitionHash, canonicalHash(spec));
-  assert.equal(state.publicationRecords["tournament.api"]?.at(-1)?.report.binding.sourceDefinitionHash, canonicalHash(spec));
+  assert.equal(state.publicationRecords["tournament.api"]?.at(-1)?.definitionHash, definitionHash);
+  assert.equal(state.publicationRecords["tournament.api"]?.at(-1)?.report.binding.sourceDefinitionHash, definitionHash);
 });

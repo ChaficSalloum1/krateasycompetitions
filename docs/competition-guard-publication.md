@@ -26,23 +26,30 @@ required operational acknowledgements.
 
 ## Transaction boundary
 
-`PUBLISH_TOURNAMENT` is the preferred write interface. The platform:
+`PUBLISH_TOURNAMENT` is the only publication write interface. Its client payload
+contains only competition identity, expected revision and required
+acknowledgements. The platform:
 
 1. loads the latest approved immutable revision;
-2. injects its server-owned definition hash into the Guard request;
-3. independently evaluates the supplied specification, graph and schedule;
-4. rejects critical or integrity findings;
-5. requires every and only operational acknowledgement;
-6. issues the certificate;
-7. appends `PUBLICATION_CERTIFIED` and `TOURNAMENT_STATUS_CHANGED` together.
+2. loads the organisation- and revision-bound authoritative specification, graph,
+   schedule and optional simulation;
+3. recomputes every artefact hash and verifies the exact fresh approval set;
+4. independently runs Competition Guard over those server-owned artefacts;
+5. enforces compiler, approver and publisher separation;
+6. rejects critical or integrity findings and requires every and only operational
+   acknowledgement;
+7. issues the certificate;
+8. appends `PUBLICATION_CERTIFIED`, `TOURNAMENT_STATUS_CHANGED` and the exact-revision
+   publication outbox intent atomically.
 
 Both events share one command identity and one optimistic-concurrency append.
 If any step fails, neither event is stored. Replaying the stream reproduces the
 same publication record and published certificate hash.
 
-The older `CHANGE_TOURNAMENT_STATUS -> PUBLISHED` route is retained for staged
-operator workflows but cannot bypass the invariant: it requires a current stored
-certificate matching the exact latest definition and revision.
+The older standalone certification command and
+`CHANGE_TOURNAMENT_STATUS -> PUBLISHED` route are retired and fail closed. The
+same strict boundary is used by the legacy platform API, production pilot API and
+connected web/Mac journey.
 
 ## Read model
 
@@ -59,10 +66,14 @@ Tenant-scoped dashboards expose one readiness state for each visible tournament:
 - graph built from another specification;
 - missing required contests;
 - altered schedule artefacts;
+- cross-organisation artefact identities;
 - incomplete or additional acknowledgement codes;
 - tampered Guard reports or publication certificates;
-- an approver attempting to publish their own approval;
+- compiler/approver or approver/publisher identity collisions;
 - caller attempts to supply the authoritative definition hash;
+- caller attempts to supply any specification, graph, schedule, simulation or
+  Guard report;
+- duplicate command and restarted-process replay divergence;
 - blocked publication leaving no partial state or event.
 
 ## Remaining production evidence

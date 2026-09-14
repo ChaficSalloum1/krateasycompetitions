@@ -48,11 +48,17 @@ test("one durable journey creates, compiles, Guards, approves, and reopens the s
 
     const approved = journey.approve(draft.id, compiled.revision, "mac.organiser",
       compiled.compiled?.requiredAcknowledgementCodes ?? []);
-    assert.equal(approved.status, "APPROVED");
+    assert.equal(approved.status, "PUBLISHED");
     assert.match(approved.approval?.approvalHash ?? "", /^[a-f0-9]{64}$/);
+    assert.equal(approved.publication?.revision, approved.revision);
+    assert.equal(approved.publication?.guardReportHash, approved.compiled?.guardReportHash);
+    assert.equal(approved.publication?.outboxIntents[0]?.key, `${approved.id}:v${approved.revision}`);
+    assert.match(approved.publication?.certificateHash ?? "", /^[a-f0-9]{64}$/);
 
     const freshProcess = new CompetitionJourney({ storagePath });
     assert.deepEqual(freshProcess.read(draft.id), approved);
+    assert.deepEqual(freshProcess.approve(draft.id, approved.revision, "mac.organiser",
+      approved.compiled?.requiredAcknowledgementCodes ?? []), approved);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

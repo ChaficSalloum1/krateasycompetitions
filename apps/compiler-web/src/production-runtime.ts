@@ -5,6 +5,7 @@ import {
   createPostgresEventStore,
   createLivenessReport,
   POSTGRES_EVENT_STORE_SCHEMA_VERSION,
+  type AuthoritativePublicationArtifactResolver,
   type OrganizationPlatform,
   type OrganizationPlatformApi,
   type PlatformApiPrincipal,
@@ -21,6 +22,7 @@ export interface ProductionRuntimeOptions {
   readonly connectionString?: string;
   readonly applicationName?: string;
   readonly now?: () => string;
+  readonly publicationArtifacts: AuthoritativePublicationArtifactResolver;
   readonly pilotApi: Omit<ProductionPilotApiOptions, "tenantId" | "delegate">;
   readonly readiness: () => Readonly<ProductionReadinessReport> | Promise<Readonly<ProductionReadinessReport>>;
   readonly http?: {
@@ -72,7 +74,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Prod
   };
   const now = options.now ?? (() => new Date().toISOString());
   const startedAt = now();
-  const platform = createOrganizationPlatform(store);
+  const platform = createOrganizationPlatform(store, { publicationArtifacts: options.publicationArtifacts });
   const api = createOrganizationPlatformApi({ platform, now });
   const productionPilotApi = createProductionPilotApi({ ...options.pilotApi, tenantId: options.tenantId, delegate: api,
     requireDistributedStores: true });

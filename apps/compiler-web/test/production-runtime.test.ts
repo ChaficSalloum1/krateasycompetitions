@@ -32,6 +32,8 @@ function distributedPilotSecurity() {
   };
 }
 
+const publicationArtifacts = { load: async () => undefined };
+
 const productionReadiness = () => assessProductionReadiness([
   "database", "event-ledger", "identity-provider", "kms-provider", "outbox-worker", "secret-provider",
 ].map((name) => ({ name, required: true, status: "HEALTHY" as const, observedAt: "2026-09-12T12:00:00.000Z" })), {
@@ -44,6 +46,7 @@ test("production runtime binds PostgreSQL persistence and a verified principal t
     tenantId: "org.production",
     store: postgresShapedStore(),
     authenticate: async (request) => request.headers.authorization === "Bearer verified" ? expected : null,
+    publicationArtifacts,
     pilotApi: distributedPilotSecurity(),
     readiness: productionReadiness,
   });
@@ -53,7 +56,7 @@ test("production runtime binds PostgreSQL persistence and a verified principal t
 
   const wrongTenant = createProductionRuntime({ tenantId: "org.production", store: postgresShapedStore(),
     authenticate: async () => ({ organizationId: "org.other", userId: "user.owner" } satisfies PlatformApiPrincipal),
-    pilotApi: distributedPilotSecurity(), readiness: productionReadiness });
+    publicationArtifacts, pilotApi: distributedPilotSecurity(), readiness: productionReadiness });
   assert.equal(await wrongTenant.authenticate({ headers: {} } as never), null);
   await runtime.close();
   await wrongTenant.close();
@@ -61,15 +64,15 @@ test("production runtime binds PostgreSQL persistence and a verified principal t
 
 test("production runtime refuses an in-memory store and an invalid tenant", () => {
   assert.throws(() => createProductionRuntime({ tenantId: "org.production", authenticate: async () => null,
-    pilotApi: distributedPilotSecurity(), readiness: productionReadiness }), /explicit PostgreSQL/);
+    publicationArtifacts, pilotApi: distributedPilotSecurity(), readiness: productionReadiness }), /explicit PostgreSQL/);
   assert.throws(() => createProductionRuntime({ tenantId: "org.production", store: createInMemoryEventStore() as never,
-    authenticate: async () => null, pilotApi: distributedPilotSecurity(), readiness: productionReadiness }), /transactional PostgreSQL/);
+    authenticate: async () => null, publicationArtifacts, pilotApi: distributedPilotSecurity(), readiness: productionReadiness }), /transactional PostgreSQL/);
   assert.throws(() => createProductionRuntime({ tenantId: "bad tenant", store: postgresShapedStore(),
-    authenticate: async () => null, pilotApi: distributedPilotSecurity(), readiness: productionReadiness }), /tenantId/);
+    authenticate: async () => null, publicationArtifacts, pilotApi: distributedPilotSecurity(), readiness: productionReadiness }), /tenantId/);
   const staleSchema = postgresShapedStore();
   (staleSchema.capabilities as { schemaVersion: string }).schemaVersion = "1.2.0";
   assert.throws(() => createProductionRuntime({ tenantId: "org.production", store: staleSchema,
-    authenticate: async () => null, pilotApi: distributedPilotSecurity(), readiness: productionReadiness }), /schema 1\.3\.0/);
+    authenticate: async () => null, publicationArtifacts, pilotApi: distributedPilotSecurity(), readiness: productionReadiness }), /schema 1\.3\.0/);
 });
 
 test("production runtime refuses process-local rate-limit and webhook replay stores", () => {
@@ -77,6 +80,7 @@ test("production runtime refuses process-local rate-limit and webhook replay sto
     tenantId: "org.production",
     store: postgresShapedStore(),
     authenticate: async () => null,
+    publicationArtifacts,
     readiness: productionReadiness,
     pilotApi: {
       now: () => new Date("2026-09-12T12:00:00.000Z"),
@@ -96,6 +100,7 @@ test("production runtime applies bounded HTTP defaults and closes persistence ex
     tenantId: "org.production",
     store,
     authenticate: async () => null,
+    publicationArtifacts,
     pilotApi: distributedPilotSecurity(),
     readiness: productionReadiness,
   });
@@ -116,6 +121,7 @@ test("production runtime validates and applies explicit HTTP limits", async () =
     tenantId: "org.production",
     store: postgresShapedStore(),
     authenticate: async () => null,
+    publicationArtifacts,
     pilotApi: distributedPilotSecurity(),
     readiness: productionReadiness,
     http: { requestTimeoutMs: 20_000, headersTimeoutMs: 8_000, keepAliveTimeoutMs: 2_000, maxRequestsPerSocket: 250 },
@@ -130,6 +136,7 @@ test("production runtime validates and applies explicit HTTP limits", async () =
     tenantId: "org.production",
     store: postgresShapedStore(),
     authenticate: async () => null,
+    publicationArtifacts,
     pilotApi: distributedPilotSecurity(),
     readiness: productionReadiness,
     http: { requestTimeoutMs: 0 },

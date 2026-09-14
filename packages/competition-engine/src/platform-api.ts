@@ -15,6 +15,11 @@ function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const allowed = new Set(keys);
+  return keys.every((key) => key in value) && Object.keys(value).every((key) => allowed.has(key));
+}
+
 function failure(error: unknown): PlatformApiResponse {
   const message = error instanceof Error ? error.message : "Unknown platform error";
   if (error instanceof IdempotencyConflictError || error instanceof OptimisticConcurrencyError || /stale|already|transition|different active member/.test(message)) {
@@ -52,6 +57,20 @@ export function createOrganizationPlatformApi(options: { readonly platform: Orga
         if (["organizationId", "actorUserId", "commandId", "occurredAt"].some((key) => key in body)
           || ["CREATE_ORGANIZATION", "ACCEPT_INVITATION", "REQUEST_ACCOUNT_RECOVERY", "COMPLETE_ACCOUNT_RECOVERY"].includes(body.kind)) {
           return { status: 400, body: { apiVersion: API_VERSION, error: "authority_injection", message: "Identity and audit fields are server controlled." } };
+        }
+        if (body.kind === "CERTIFY_TOURNAMENT_PUBLICATION") {
+          return { status: 400, body: { apiVersion: API_VERSION, error: "retired_command",
+            message: "Publication certification is server-owned and atomic with PUBLISH_TOURNAMENT." } };
+        }
+        if (body.kind === "PUBLISH_TOURNAMENT" && (!exactKeys(body,
+          ["kind", "tournamentId", "expectedTournamentRevision", "acknowledgedFindingCodes"])
+          || typeof body.tournamentId !== "string"
+          || !Number.isSafeInteger(body.expectedTournamentRevision)
+          || (body.expectedTournamentRevision as number) < 1
+          || !Array.isArray(body.acknowledgedFindingCodes)
+          || body.acknowledgedFindingCodes.some((code) => typeof code !== "string"))) {
+          return { status: 400, body: { apiVersion: API_VERSION, error: "invalid_request",
+            message: "Publication accepts only tournamentId, expectedTournamentRevision, and acknowledgedFindingCodes." } };
         }
         const occurredAt = options.now();
         const supplied = structuredClone(body);

@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import type { IncomingMessage } from "node:http";
-import type { PlatformApiPrincipal, PostgresEventStore, ProductionReadinessReport } from "@tournament-os/competition-engine";
+import type { AuthoritativePublicationArtifactResolver, PlatformApiPrincipal, PostgresEventStore,
+  ProductionReadinessReport } from "@tournament-os/competition-engine";
 import type { ProductionPilotApiOptions } from "./production-pilot-api.js";
 import { createProductionRuntime, type ProductionRuntime } from "./production-runtime.js";
 
@@ -15,6 +16,7 @@ export interface ProductionAdapters {
   readonly store?: PostgresEventStore;
   readonly connectionString?: string;
   readonly authenticate: (request: IncomingMessage) => PlatformApiPrincipal | null | Promise<PlatformApiPrincipal | null>;
+  readonly publicationArtifacts: AuthoritativePublicationArtifactResolver;
   readonly pilotApi: Omit<ProductionPilotApiOptions, "tenantId" | "delegate">;
   readonly readiness: () => Readonly<ProductionReadinessReport> | Promise<Readonly<ProductionReadinessReport>>;
   close?(): Promise<void>;
@@ -64,6 +66,9 @@ export async function loadProductionHost(options: {
   }
   if (typeof adapters.readiness !== "function") throw new Error("Production adapter must provide a readiness function");
   if (!adapters.pilotApi || typeof adapters.pilotApi !== "object") throw new Error("Production adapter must provide pilot API dependencies");
+  if (!adapters.publicationArtifacts || typeof adapters.publicationArtifacts.load !== "function") {
+    throw new Error("Production adapter must provide an authoritative publication artifact resolver");
+  }
   if (adapters.close !== undefined && typeof adapters.close !== "function") throw new Error("Production adapter close hook is invalid");
   if (adapters.connectionString !== undefined && !adapters.connectionString.trim()) {
     throw new Error("Production adapter connection string is invalid");
@@ -72,7 +77,7 @@ export async function loadProductionHost(options: {
     throw new Error("Production adapter must provide an explicit PostgreSQL store or connection string");
   }
   const runtime = createProductionRuntime({ tenantId: configuration.tenantId, authenticate: adapters.authenticate,
-    pilotApi: adapters.pilotApi, readiness: adapters.readiness,
+    pilotApi: adapters.pilotApi, publicationArtifacts: adapters.publicationArtifacts, readiness: adapters.readiness,
     ...(adapters.store ? { store: adapters.store } : { connectionString: adapters.connectionString! }) });
   let closePromise: Promise<void> | undefined;
   const close = (): Promise<void> => closePromise ??= (async () => {

@@ -5,7 +5,7 @@ import { playAndKonnectDefinition } from "@tournament-os/tournament-schema/examp
 import { evaluateCompetitionGuard } from "../src/competition-guard.js";
 import { createInMemoryEventStore, createInMemoryTransactionalOutboxEventStore, type JsonValue } from "../src/event-store.js";
 import { createEntrants } from "../src/graph.js";
-import { createOrganizationPlatform, restoreOrganizationBackup } from "../src/platform.js";
+import { createOrganizationPlatform, restoreOrganizationBackup, type AuthoritativePublicationArtifacts } from "../src/platform.js";
 import { runScenario } from "../src/scenario.js";
 
 const at = "2026-09-07T09:00:00.000Z";
@@ -19,6 +19,19 @@ function publicationEvidence(specId: string) {
   const report = evaluateCompetitionGuard({ sourceDefinitionHash: canonicalHash(spec), spec, graph: scenario.graph,
     schedule: scenario.schedule, ...(scenario.simulation ? { simulation: scenario.simulation } : {}) });
   return { spec, definition: structuredClone(spec) as unknown as JsonValue, scenario, report };
+}
+
+function publicationArtifacts(organizationId: string, tournamentId: string, tournamentRevision: number,
+  evidence: ReturnType<typeof publicationEvidence>): AuthoritativePublicationArtifacts {
+  return {
+    organizationId, tournamentId, tournamentRevision, definitionHash: canonicalHash(evidence.spec),
+    compiledBy: "server.compiler", compiledAt: at,
+    spec: evidence.spec, specHash: canonicalHash(evidence.spec),
+    graph: evidence.scenario.graph, graphHash: canonicalHash(evidence.scenario.graph),
+    schedule: evidence.scenario.schedule, scheduleHash: canonicalHash(evidence.scenario.schedule),
+    ...(evidence.scenario.simulation
+      ? { simulation: evidence.scenario.simulation, simulationHash: canonicalHash(evidence.scenario.simulation) } : {}),
+  };
 }
 
 test("an owner creates an isolated club universe and a replayable scoped membership", async () => {
@@ -91,8 +104,9 @@ test("club directories persist people, teams, places, officials, and equipment w
 
 test("tournaments retain immutable draft revisions, guarded lifecycle transitions, duplication, and archive history", async () => {
   const store = createInMemoryTransactionalOutboxEventStore();
-  const platform = createOrganizationPlatform(store);
   const evidence = publicationEvidence("platform.lifecycle");
+  let authoritative = publicationArtifacts("org.lifecycle", "tournament.autumn", 2, evidence);
+  const platform = createOrganizationPlatform(store, { publicationArtifacts: { load: async () => authoritative } });
   await platform.execute({ kind: "CREATE_ORGANIZATION", organizationId: "org.lifecycle", commandId: "t1", occurredAt: at,
     ownerUserId: "user.owner", name: "Lifecycle Organisation", slug: "lifecycle-organisation" });
   await platform.execute({ kind: "CREATE_CLUB", organizationId: "org.lifecycle", commandId: "t2", occurredAt: at,
@@ -115,21 +129,19 @@ test("tournaments retain immutable draft revisions, guarded lifecycle transition
   await platform.execute({ kind: "CHANGE_TOURNAMENT_STATUS", organizationId: "org.lifecycle", commandId: "t9", occurredAt: at,
     actorUserId: "user.director", tournamentId: "tournament.autumn", status: "APPROVED" });
   await assert.rejects(platform.execute({ kind: "CHANGE_TOURNAMENT_STATUS", organizationId: "org.lifecycle", commandId: "t10", occurredAt: at,
-    actorUserId: "user.owner", tournamentId: "tournament.autumn", status: "PUBLISHED" }), /current Competition Guard publication certificate/);
+    actorUserId: "user.owner", tournamentId: "tournament.autumn", status: "PUBLISHED" }), /Use PUBLISH_TOURNAMENT/);
   const versionBeforeBlockedPublication = (await platform.read("org.lifecycle")).version;
   const foreignGraph = structuredClone(evidence.scenario.graph);
   foreignGraph.specHash = "0".repeat(64);
+  authoritative = { ...authoritative, graph: foreignGraph, graphHash: canonicalHash(foreignGraph) };
   await assert.rejects(platform.execute({ kind: "PUBLISH_TOURNAMENT", organizationId: "org.lifecycle", commandId: "t10.blocked", occurredAt: at,
-    actorUserId: "user.owner", tournamentId: "tournament.autumn",
-    guardInput: { spec: evidence.spec, graph: foreignGraph, schedule: evidence.scenario.schedule,
-      ...(evidence.scenario.simulation ? { simulation: evidence.scenario.simulation } : {}) },
-    acknowledgedFindingCodes: [] }), /Competition Guard blocked publication/);
+    actorUserId: "user.owner", tournamentId: "tournament.autumn", expectedTournamentRevision: 2,
+    acknowledgedFindingCodes: [] }), /exact approved artifact set/);
   assert.equal((await platform.read("org.lifecycle")).version, versionBeforeBlockedPublication);
   assert.equal((await platform.read("org.lifecycle")).tournaments["tournament.autumn"]?.status, "APPROVED");
+  authoritative = publicationArtifacts("org.lifecycle", "tournament.autumn", 2, evidence);
   await platform.execute({ kind: "PUBLISH_TOURNAMENT", organizationId: "org.lifecycle", commandId: "t11", occurredAt: at,
-    actorUserId: "user.owner", tournamentId: "tournament.autumn",
-    guardInput: { spec: evidence.spec, graph: evidence.scenario.graph, schedule: evidence.scenario.schedule,
-      ...(evidence.scenario.simulation ? { simulation: evidence.scenario.simulation } : {}) },
+    actorUserId: "user.owner", tournamentId: "tournament.autumn", expectedTournamentRevision: 2,
     acknowledgedFindingCodes: evidence.report.requiredAcknowledgementCodes });
   await platform.execute({ kind: "DUPLICATE_TOURNAMENT", organizationId: "org.lifecycle", commandId: "t12", occurredAt: at,
     actorUserId: "user.owner", sourceTournamentId: "tournament.autumn", tournamentId: "tournament.spring", name: "Spring Open",
@@ -159,7 +171,7 @@ test("tournaments retain immutable draft revisions, guarded lifecycle transition
   const publicationMessages = store.outbox.list();
   assert.equal(publicationMessages.length, 1);
   assert.equal(publicationMessages[0]?.topic, "competition.publication.v1");
-  assert.equal(publicationMessages[0]?.publicationKey, "tournament.autumn");
+  assert.equal(publicationMessages[0]?.publicationKey, "tournament.autumn:v2");
   assert.equal((publicationMessages[0]?.payload as { certificateHash: string }).certificateHash,
     state.tournaments["tournament.autumn"]?.publishedCertificateHash);
 });
@@ -320,8 +332,10 @@ test("recovery, privacy export and erasure, notifications, and verified backup r
 });
 
 test("operators persist live actions and scores while independently approved repair proposals remain explicit", async () => {
-  const store = createInMemoryTransactionalOutboxEventStore(); const platform = createOrganizationPlatform(store);
+  const store = createInMemoryTransactionalOutboxEventStore();
   const evidence = publicationEvidence("platform.operations");
+  const platform = createOrganizationPlatform(store, { publicationArtifacts: { load: async () =>
+    publicationArtifacts("org.operations", "tournament.live", 1, evidence) } });
   await platform.execute({ kind: "CREATE_ORGANIZATION", organizationId: "org.operations", commandId: "o1", occurredAt: at,
     ownerUserId: "user.owner", name: "Operations Organisation", slug: "operations-organisation" });
   await platform.execute({ kind: "CREATE_CLUB", organizationId: "org.operations", commandId: "o2", occurredAt: at,
@@ -338,13 +352,9 @@ test("operators persist live actions and scores while independently approved rep
     actorUserId: "user.owner", tournamentId: "tournament.live", status: "UNDER_REVIEW" });
   await platform.execute({ kind: "CHANGE_TOURNAMENT_STATUS", organizationId: "org.operations", commandId: "o7", occurredAt: at,
     actorUserId: "user.director", tournamentId: "tournament.live", status: "APPROVED" });
-  await platform.execute({ kind: "CERTIFY_TOURNAMENT_PUBLICATION", organizationId: "org.operations", commandId: "o8", occurredAt: at,
-    actorUserId: "user.owner", tournamentId: "tournament.live",
-    guardInput: { spec: evidence.spec, graph: evidence.scenario.graph, schedule: evidence.scenario.schedule,
-      ...(evidence.scenario.simulation ? { simulation: evidence.scenario.simulation } : {}) },
+  await platform.execute({ kind: "PUBLISH_TOURNAMENT", organizationId: "org.operations", commandId: "o8", occurredAt: at,
+    actorUserId: "user.owner", tournamentId: "tournament.live", expectedTournamentRevision: 1,
     acknowledgedFindingCodes: evidence.report.requiredAcknowledgementCodes });
-  await platform.execute({ kind: "CHANGE_TOURNAMENT_STATUS", organizationId: "org.operations", commandId: "o9", occurredAt: at,
-    actorUserId: "user.owner", tournamentId: "tournament.live", status: "PUBLISHED" });
   await platform.execute({ kind: "INITIALIZE_LIVE_OPERATIONS", organizationId: "org.operations", commandId: "o10", occurredAt: at,
     actorUserId: "user.owner", tournamentId: "tournament.live", definition: { tournamentId: "tournament.live", courts: ["court.1", "court.2"], contests: [
       { contestId: "match.1", entrantIds: ["entrant.1", "entrant.2"], courtId: "court.1",

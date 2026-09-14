@@ -9,6 +9,7 @@ import {
 import { playAndKonnectDefinition } from "@tournament-os/tournament-schema/example";
 import {
   createEntrants,
+  createPublicationCertificate,
   evaluateCompetitionGuard,
   runScenario,
   type CompetitionGraph,
@@ -23,7 +24,7 @@ import {
   type CreationSource,
 } from "./creation-proposal.js";
 
-export type CompetitionJourneyStatus = "NEEDS_INPUT" | "DRAFT" | "GUARD_BLOCKED" | "READY_FOR_APPROVAL" | "APPROVED";
+export type CompetitionJourneyStatus = "NEEDS_INPUT" | "DRAFT" | "GUARD_BLOCKED" | "READY_FOR_APPROVAL" | "PUBLISHED";
 
 interface CompiledJourneyRevision {
   readonly revision: number;
@@ -45,6 +46,26 @@ interface JourneyApproval {
   readonly approvalHash: string;
 }
 
+interface JourneyPublication {
+  readonly revision: number;
+  readonly definitionHash: string;
+  readonly guardReportHash: string;
+  readonly certificateHash: string;
+  readonly publishedBy: "competition-journey.publisher";
+  readonly publishedAt: string;
+  readonly outboxIntents: readonly [{
+    readonly topic: "competition.publication.v1";
+    readonly key: string;
+    readonly payload: {
+      readonly competitionId: string;
+      readonly revision: number;
+      readonly definitionHash: string;
+      readonly guardReportHash: string;
+      readonly certificateHash: string;
+    };
+  }];
+}
+
 interface StoredJourneyRecord {
   readonly id: string;
   readonly draftVersion: number;
@@ -56,6 +77,7 @@ interface StoredJourneyRecord {
   readonly supportFindings: readonly string[];
   readonly compiled?: CompiledJourneyRevision;
   readonly approval?: JourneyApproval;
+  readonly publication?: JourneyPublication;
   readonly recordHash: string;
 }
 
@@ -110,6 +132,7 @@ export interface CompetitionJourneySnapshot {
     }[];
   };
   readonly approval: JourneyApproval | null;
+  readonly publication: JourneyPublication | null;
   readonly webPath: string;
 }
 
@@ -151,7 +174,7 @@ function verifyRecord(record: StoredJourneyRecord): boolean {
 }
 
 function statusOf(record: StoredJourneyRecord): CompetitionJourneyStatus {
-  if (record.approval) return "APPROVED";
+  if (record.publication) return "PUBLISHED";
   if (record.compiled?.guardReport.status === "PASSED") return "READY_FOR_APPROVAL";
   if (record.compiled) return "GUARD_BLOCKED";
   if (record.proposal.status === "READY_TO_COMPILE" && record.supportFindings.length === 0) return "DRAFT";
@@ -195,6 +218,7 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
       schedule: compiled.schedule.contests.map(({ contestId, resourceId, start, end }) => ({ contestId, resourceId, start, end })),
     } : null,
     approval: record.approval ?? null,
+    publication: record.publication ?? null,
     webPath: `/competitions/${encodeURIComponent(record.id)}`,
   };
 }
@@ -318,17 +342,32 @@ export class CompetitionJourney {
     const current = this.require(id);
     const compiled = current.compiled;
     if (!compiled || compiled.revision !== expectedRevision) throw new Error("journey_revision_conflict");
-    if (compiled.guardReport.status !== "PASSED") throw new Error("competition_guard_blocked_approval");
     if (!approvedBy.trim() || approvedBy === compiled.compiledBy) throw new Error("approval_requires_independent_actor");
-    if (!exactAcknowledgements(acknowledgedFindingCodes, compiled.guardReport.requiredAcknowledgementCodes))
+    const definitionHash = canonicalHash(compiled.spec);
+    const independentlyVerifiedReport = evaluateCompetitionGuard({ sourceDefinitionHash: definitionHash, spec: compiled.spec,
+      graph: compiled.graph, schedule: compiled.schedule, ...(compiled.simulation ? { simulation: compiled.simulation } : {}) });
+    if (independentlyVerifiedReport.status !== "PASSED") throw new Error("competition_guard_blocked_approval");
+    if (independentlyVerifiedReport.reportHash !== compiled.guardReport.reportHash) throw new Error("journey_guard_report_mismatch");
+    if (!exactAcknowledgements(acknowledgedFindingCodes, independentlyVerifiedReport.requiredAcknowledgementCodes))
       throw new Error("guard_acknowledgements_mismatch");
-    if (current.approval) return snapshotOf(current);
+    if (current.publication) return snapshotOf(current);
     const approvedAt = this.canonicalNow();
     const approvalBody = { revision: compiled.revision, approvedBy, approvedAt,
-      guardReportHash: compiled.guardReport.reportHash,
+      guardReportHash: independentlyVerifiedReport.reportHash,
       acknowledgedFindingCodes: [...new Set(acknowledgedFindingCodes)].sort() };
     const approval: JourneyApproval = { ...approvalBody, approvalHash: canonicalHash(approvalBody) };
-    const revised = sealRecord({ ...withoutSeal(current), updatedAt: approvedAt, approval });
+    const publishedBy = "competition-journey.publisher" as const;
+    if (publishedBy === approvedBy) throw new Error("publication_requires_independent_actor");
+    const certificate = createPublicationCertificate({ tournamentId: current.id, tournamentRevision: compiled.revision,
+      report: independentlyVerifiedReport, acknowledgedFindingCodes, issuedBy: publishedBy, issuedAt: approvedAt });
+    const publicationBody = { revision: compiled.revision, definitionHash,
+      guardReportHash: independentlyVerifiedReport.reportHash, certificateHash: certificate.certificateHash,
+      publishedBy, publishedAt: approvedAt };
+    const publication: JourneyPublication = { ...publicationBody, outboxIntents: [{
+      topic: "competition.publication.v1", key: `${current.id}:v${compiled.revision}`,
+      payload: { competitionId: current.id, ...publicationBody },
+    }] };
+    const revised = sealRecord({ ...withoutSeal(current), updatedAt: approvedAt, approval, publication });
     this.records.set(id, revised);
     this.persist();
     return snapshotOf(revised);
@@ -395,5 +434,5 @@ export function competitionJourneyHtml(competitionId: string): string {
   :root{color-scheme:light;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#f4f6f2;color:#17201d}body{margin:0}.shell{max-width:1100px;margin:auto;padding:32px 22px 64px}a{color:#315d4b}.eyebrow{font-size:.78rem;text-transform:uppercase;letter-spacing:.12em;color:#577064}.hero,.card{background:#fff;border:1px solid #dce3dc;border-radius:20px;box-shadow:0 10px 30px #1c3a2d0c}.hero{padding:28px;margin:18px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.card{padding:18px}.metric{font-size:2rem;font-weight:720}.ok{color:#19734a}.blocked{color:#a23b28}.schedule{margin-top:18px;overflow:auto}table{width:100%;border-collapse:collapse;background:#fff}th,td{text-align:left;padding:11px;border-bottom:1px solid #e5e9e5;white-space:nowrap}code{font-size:.78rem}.muted{color:#617068}.error{padding:18px;background:#fff1ee;color:#8b2c1f;border-radius:12px}@media(max-width:600px){.shell{padding:20px 14px}.hero{padding:20px}}
   </style></head><body><main class="shell"><a href="/">← Competitions</a><section id="app" aria-live="polite"><p>Loading authoritative revision…</p></section></main>
   <script>const id=${encodedId};const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  fetch('/v1/competition-journey/'+encodeURIComponent(id)).then(async r=>{const v=await r.json();if(!r.ok)throw Error(v.error||'Not found');return v}).then(v=>{const c=v.compiled;document.title=v.name+' · Krateasy';document.querySelector('#app').innerHTML='<div class="hero"><div class="eyebrow">Immutable competition revision</div><h1>'+esc(v.name)+'</h1><p class="muted">'+esc(v.id)+' · revision '+v.revision+' · '+esc(v.status)+'</p></div><div class="grid"><div class="card"><div class="eyebrow">Guard</div><div class="metric '+(c?.guardStatus==='PASSED'?'ok':'blocked')+'">'+esc(c?.guardStatus||'Not run')+'</div><p>'+esc(c?.guardReportHash?.slice(0,16)||'No proof yet')+'</p></div><div class="card"><div class="eyebrow">Contest accounting</div><div class="metric">'+esc(c?.actualContestCount??'—')+'</div><p>'+esc(c?.scheduledContestCount??0)+' scheduled</p></div><div class="card"><div class="eyebrow">Approval</div><div class="metric">'+esc(v.approval?'Bound':'Pending')+'</div><p>'+esc(v.approval?.approvalHash?.slice(0,16)||'Independent approval required')+'</p></div></div>'+(c?'<div class="schedule card"><h2>Certified schedule</h2><table><thead><tr><th>Contest</th><th>Resource</th><th>Start</th><th>End</th></tr></thead><tbody>'+c.schedule.map(x=>'<tr><td><code>'+esc(x.contestId)+'</code></td><td>'+esc(x.resourceId)+'</td><td>'+esc(x.start)+'</td><td>'+esc(x.end)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="card"><h2>Needs input</h2><p>'+esc(v.supportFindings.concat(v.questions.map(q=>q.prompt)).join(' · '))+'</p></div>')}).catch(e=>document.querySelector('#app').innerHTML='<p class="error">'+esc(e.message)+'</p>');</script></body></html>`;
+  fetch('/v1/competition-journey/'+encodeURIComponent(id)).then(async r=>{const v=await r.json();if(!r.ok)throw Error(v.error||'Not found');return v}).then(v=>{const c=v.compiled;document.title=v.name+' · Krateasy';document.querySelector('#app').innerHTML='<div class="hero"><div class="eyebrow">Immutable published competition revision</div><h1>'+esc(v.name)+'</h1><p class="muted">'+esc(v.id)+' · revision '+v.revision+' · '+esc(v.status)+'</p></div><div class="grid"><div class="card"><div class="eyebrow">Guard</div><div class="metric '+(c?.guardStatus==='PASSED'?'ok':'blocked')+'">'+esc(c?.guardStatus||'Not run')+'</div><p>'+esc(c?.guardReportHash?.slice(0,16)||'No proof yet')+'</p></div><div class="card"><div class="eyebrow">Contest accounting</div><div class="metric">'+esc(c?.actualContestCount??'—')+'</div><p>'+esc(c?.scheduledContestCount??0)+' scheduled</p></div><div class="card"><div class="eyebrow">Publication</div><div class="metric">'+esc(v.publication?'Bound':'Pending')+'</div><p>'+esc(v.publication?.certificateHash?.slice(0,16)||'Independent approval required')+'</p></div></div>'+(c?'<div class="schedule card"><h2>Published schedule</h2><table><thead><tr><th>Contest</th><th>Resource</th><th>Start</th><th>End</th></tr></thead><tbody>'+c.schedule.map(x=>'<tr><td><code>'+esc(x.contestId)+'</code></td><td>'+esc(x.resourceId)+'</td><td>'+esc(x.start)+'</td><td>'+esc(x.end)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="card"><h2>Needs input</h2><p>'+esc(v.supportFindings.concat(v.questions.map(q=>q.prompt)).join(' · '))+'</p></div>')}).catch(e=>document.querySelector('#app').innerHTML='<p class="error">'+esc(e.message)+'</p>');</script></body></html>`;
 }

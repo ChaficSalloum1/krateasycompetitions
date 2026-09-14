@@ -137,10 +137,13 @@ a current, intact Guard report and hash-bound certificate. Invalid evidence,
 stale definitions, incomplete acknowledgements and certificate tampering fail
 closed without a partial event-store append.
 
-Delivered: `PUBLISH_TOURNAMENT` performs Guard evaluation, certificate creation
-and lifecycle publication as one append. The legacy status transition remains
-certificate-gated. Tests exercise mismatched source definitions, foreign graphs,
-missing contests, exact acknowledgement sets, tampered reports/certificates,
+Delivered: `PUBLISH_TOURNAMENT` accepts only identity, expected revision and
+acknowledgements, loads tenant-bound authoritative artefacts, independently runs
+Guard, enforces approval separation/freshness, and appends certificate, lifecycle
+publication and outbox intent atomically. The legacy status and standalone
+certification transitions fail closed. Tests exercise forged artefacts, missing
+contests, stale revisions, mismatched hashes, cross-organisation IDs,
+self-approval, exact acknowledgements, duplicate commands, restart/replay,
 API-controlled identity and rollback on blocked publication.
 
 ## M10 — Calm recovery and critical-protocol assurance (reference gate passed)

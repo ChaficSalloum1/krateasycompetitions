@@ -20,6 +20,7 @@ const pilotApi = {
   resolveWebhookSecret: async () => null,
   receiveWebhook: async () => undefined,
 };
+const publicationArtifacts = { load: async () => undefined };
 const readiness = () => assessProductionReadiness([
   "database", "event-ledger", "identity-provider", "kms-provider", "outbox-worker", "secret-provider",
 ].map((name) => ({ name, required: true, status: "HEALTHY" as const, observedAt: "2026-09-12T12:00:00.000Z" })), {
@@ -49,7 +50,8 @@ test("production host loads deployment adapters without applying migrations and 
       return { createProductionAdapters: async ({ tenantId }) => {
         factoryCalls += 1;
         assert.equal(tenantId, "org.one");
-        return { store: database, authenticate: async () => null, pilotApi, readiness, close: async () => { adapterCloses += 1; } };
+        return { store: database, authenticate: async () => null, publicationArtifacts, pilotApi, readiness,
+          close: async () => { adapterCloses += 1; } };
       } };
     },
   });
@@ -64,10 +66,18 @@ test("production host loads deployment adapters without applying migrations and 
 test("production host rejects an adapter without explicit durable persistence", async () => {
   await assert.rejects(() => loadProductionHost({
     env: { NODE_ENV: "production", KREATEASY_TENANT_ID: "org.one", KREATEASY_ADAPTER_MODULE: "adapter:test" },
-    importAdapter: async () => ({ createProductionAdapters: async () => ({ authenticate: async () => null, pilotApi, readiness }) }),
+    importAdapter: async () => ({ createProductionAdapters: async () => ({ authenticate: async () => null, publicationArtifacts, pilotApi, readiness }) }),
   }), /PostgreSQL store or connection string/);
   await assert.rejects(() => loadProductionHost({
     env: { NODE_ENV: "production", KREATEASY_TENANT_ID: "org.one", KREATEASY_ADAPTER_MODULE: "adapter:test" },
-    importAdapter: async () => ({ createProductionAdapters: async () => ({ store: store(), pilotApi, readiness }) }),
+    importAdapter: async () => ({ createProductionAdapters: async () => ({ store: store(), publicationArtifacts, pilotApi, readiness }) }),
   }), /authenticate/);
+});
+
+test("production host fails closed without the authoritative publication artifact resolver", async () => {
+  await assert.rejects(() => loadProductionHost({
+    env: { NODE_ENV: "production", KREATEASY_TENANT_ID: "org.one", KREATEASY_ADAPTER_MODULE: "adapter:test" },
+    importAdapter: async () => ({ createProductionAdapters: async () => ({ store: store(), authenticate: async () => null,
+      pilotApi, readiness }) }),
+  }), /authoritative publication artifact resolver/);
 });

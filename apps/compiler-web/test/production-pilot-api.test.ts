@@ -58,6 +58,19 @@ test("command requests enforce media type, byte limits, idempotency, and an exac
   }, body: JSON.stringify({ kind: "CHANGE_TOURNAMENT_STATUS", tournamentId: "t.one", status: "UNDER_REVIEW" }), principal })).status, 413);
 });
 
+test("pilot publication forwards only identity, expected revision, and acknowledgements", async () => {
+  const { api } = await fixture();
+  const principal = { organizationId: "org.secure", userId: "user.owner" };
+  const request = (idempotencyKey: string, body: unknown) => api.handle({ method: "POST",
+    path: "/v1/organizations/org.secure/commands", headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
+    body: JSON.stringify(body), principal });
+  assert.equal((await request("pilot.publish.valid", { kind: "PUBLISH_TOURNAMENT", tournamentId: "t.one",
+    expectedTournamentRevision: 1, acknowledgedFindingCodes: [] })).status, 422);
+  assert.equal((await request("pilot.publish.forged", { kind: "PUBLISH_TOURNAMENT", tournamentId: "t.one",
+    expectedTournamentRevision: 1, acknowledgedFindingCodes: [], guardInput: {} })).status, 400);
+  assert.equal((await request("pilot.publish.retired", { kind: "CERTIFY_TOURNAMENT_PUBLICATION", tournamentId: "t.one" })).status, 400);
+});
+
 test("JSON field budgets reject pathological nesting, arrays, keys, and strings", async () => {
   const principal = { organizationId: "org.secure", userId: "user.owner" };
   const api = createProductionPilotApi({ ...(await productionOptions()), maxJsonDepth: 3, maxArrayItems: 2, maxObjectFields: 4, maxStringBytes: 20 });

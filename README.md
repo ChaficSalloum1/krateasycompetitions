@@ -85,9 +85,11 @@ edit primitives; unsupported language returns unresolved rather than executable
 free-form policy.
 
 Publication is a guarded operation, not an unverified status flag: the atomic
-`PUBLISH_TOURNAMENT` command independently evaluates the exact approved revision,
-records its Guard report and certificate, and changes lifecycle state in the same
-event-store append. Failed validation or acknowledgement leaves no partial commit.
+`PUBLISH_TOURNAMENT` command accepts only competition identity, expected revision
+and acknowledgements. The server loads the authoritative artefacts, independently
+evaluates the exact approved revision, records its Guard report and certificate,
+and changes lifecycle state with its outbox intent in the same event-store append.
+Failed validation or acknowledgement leaves no partial commit.
 
 Production mode is deliberately fail-closed until a verified authorization
 adapter is injected. The production composition root refuses an in-memory store

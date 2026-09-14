@@ -390,7 +390,8 @@ function journeyClientApiResponse(path: string, journey: CompetitionJourney): un
     const reference = compilerClientApi().portfolio;
     return immutable({ ...reference, items: [
       ...snapshots.map((snapshot) => ({ id: snapshot.id, name: snapshot.name, revision: snapshot.revision,
-        certificationStatus: snapshot.compiled?.guardStatus === "PASSED" ? "CERTIFIED" as const : "REJECTED" as const })),
+        certificationStatus: snapshot.status === "PUBLISHED" && snapshot.compiled?.guardStatus === "PASSED"
+          ? "CERTIFIED" as const : "REJECTED" as const })),
       ...reference.items.filter(({ id }) => !snapshots.some((snapshot) => snapshot.id === id)),
     ] });
   }
@@ -399,12 +400,13 @@ function journeyClientApiResponse(path: string, journey: CompetitionJourney): un
   const snapshot = journey.read(decodeURIComponent(match[1]!));
   if (!snapshot) return undefined;
   const compiled = snapshot.compiled;
-  const certificationStatus = compiled?.guardStatus === "PASSED" ? "CERTIFIED" as const : "REJECTED" as const;
+  const certificationStatus = snapshot.status === "PUBLISHED" && compiled?.guardStatus === "PASSED"
+    ? "CERTIFIED" as const : "REJECTED" as const;
   const section = match[2]!;
   if (section === "blueprint") return immutable({ apiVersion: CLIENT_API_VERSION, id: snapshot.id, name: snapshot.name,
     revision: snapshot.revision, certificationStatus, solverStatus: compiled?.solverStatus ?? "UNKNOWN",
     participantCount: snapshot.blueprint.participantCount ?? 0, actualContestCount: compiled?.actualContestCount ?? 0,
-    scheduledContestCount: compiled?.scheduledContestCount ?? 0, actionRequired: snapshot.status !== "APPROVED" });
+    scheduledContestCount: compiled?.scheduledContestCount ?? 0, actionRequired: snapshot.status !== "PUBLISHED" });
   if (section === "schedule") return immutable({ apiVersion: CLIENT_API_VERSION, tournamentID: snapshot.id,
     timezone: "Asia/Beirut", solverStatus: compiled?.solverStatus ?? "UNKNOWN", objectiveValueMinutes: null,
     lowerBoundMinutes: 0, optimalityGap: null,
@@ -420,8 +422,10 @@ function journeyClientApiResponse(path: string, journey: CompetitionJourney): un
       path: finding.path, message: finding.message, accessibilityLabel: `${finding.severity}: ${finding.message}`,
       debugID: `${compiled.guardReportHash.slice(0, 12)}.${finding.sourceCode}.${index + 1}` })) ?? [] });
   return immutable({ apiVersion: CLIENT_API_VERSION, tournamentID: snapshot.id, status: certificationStatus,
-    statement: compiled ? `Competition Guard ${compiled.guardStatus}; approved revision ${snapshot.revision}.` : "No compiled revision.",
-    certificationHash: compiled?.guardReportHash ?? "pending",
+    statement: snapshot.publication
+      ? `Competition Guard ${compiled?.guardStatus}; published revision ${snapshot.publication.revision}.`
+      : "No published revision.",
+    certificationHash: snapshot.publication?.certificateHash ?? "pending",
     proofIDs: compiled ? { spec: compiled.specHash, graph: compiled.graphHash, schedule: compiled.scheduleHash,
       ...(compiled.simulationHash ? { simulation: compiled.simulationHash } : {}) } : {} });
 }
@@ -615,7 +619,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
       const journeyPage = !production && /^\/competitions\/([^/?#]+)$/.exec(request.url ?? "");
       if (journeyPage && request.method === "GET") {
         const competitionId = decodeURIComponent(journeyPage[1]!);
-        if (!competitionJourney.read(competitionId)) {
+        if (competitionJourney.read(competitionId)?.status !== "PUBLISHED") {
           json(response, 404, { apiVersion: "1.0", error: "journey_not_found" });
           return;
         }

@@ -653,7 +653,7 @@ struct NewTournamentSheet: View {
         switch journeyDraft.status {
         case "DRAFT": return "Compile & run Guard"
         case "READY_FOR_APPROVAL": return "Approve exact revision"
-        case "APPROVED": return "Open web experience"
+        case "PUBLISHED": return "Open web experience"
         default: return "Edit required decisions"
         }
     }
@@ -736,7 +736,7 @@ struct NewTournamentSheet: View {
                 self.journeyDraft = result
                 if let url = model.competitionWebURL(for: result.webPath) { openURL(url) }
                 dismiss()
-            } else if journeyDraft?.status == "APPROVED", let journeyDraft,
+            } else if journeyDraft?.status == "PUBLISHED", let journeyDraft,
                       let url = model.competitionWebURL(for: journeyDraft.webPath) {
                 openURL(url)
                 dismiss()

@@ -64,7 +64,9 @@ export interface PlatformTournamentRevision { readonly revision: number; readonl
   readonly summary: string; readonly createdBy: string; readonly createdAt: string }
 export interface PlatformTournament { readonly id: string; readonly clubId: string; readonly name: string; readonly startsAt: string;
   readonly status: TournamentLifecycleStatus; readonly revisions: readonly PlatformTournamentRevision[]; readonly createdAt: string;
-  readonly updatedAt: string; readonly approvedBy?: string; readonly publishedBy?: string; readonly publishedCertificateHash?: string;
+  readonly updatedAt: string; readonly approvedBy?: string; readonly approvedAt?: string; readonly approvedRevision?: number;
+  readonly approvedDefinitionHash?: string; readonly approvedArtifactSetHash?: string; readonly approvedGuardReportHash?: string;
+  readonly publishedBy?: string; readonly publishedCertificateHash?: string;
   readonly duplicatedFromTournamentId?: string }
 export type FormatVersionStatus = "DRAFT" | "APPROVED" | "DEPRECATED";
 export interface PlatformFormatVersion { readonly version: string; readonly basedOnVersion: string | null; readonly definition: JsonValue;
@@ -124,6 +126,32 @@ export interface PlatformLiveChangeProposal { readonly id: string; readonly tour
 export interface PlatformPublicationRecord { readonly tournamentId: string; readonly tournamentRevision: number;
   readonly definitionHash: string; readonly report: CompetitionGuardReport; readonly certificate: PublicationCertificate;
   readonly assessedBy: string; readonly assessedAt: string }
+
+export interface AuthoritativePublicationArtifacts {
+  readonly organizationId: string;
+  readonly tournamentId: string;
+  readonly tournamentRevision: number;
+  readonly definitionHash: string;
+  readonly compiledBy: string;
+  readonly compiledAt: string;
+  readonly spec: CompetitionGuardInput["spec"];
+  readonly specHash: string;
+  readonly graph: CompetitionGuardInput["graph"];
+  readonly graphHash: string;
+  readonly schedule: CompetitionGuardInput["schedule"];
+  readonly scheduleHash: string;
+  readonly simulation?: CompetitionGuardInput["simulation"];
+  readonly simulationHash?: string;
+}
+
+export interface AuthoritativePublicationArtifactResolver {
+  load(input: { readonly organizationId: string; readonly tournamentId: string; readonly tournamentRevision: number }):
+    Promise<Readonly<AuthoritativePublicationArtifacts> | undefined>;
+}
+
+export interface OrganizationPlatformOptions {
+  readonly publicationArtifacts?: AuthoritativePublicationArtifactResolver;
+}
 
 export interface OrganizationPlatformState {
   readonly organization: PlatformOrganization | null;
@@ -240,11 +268,8 @@ export type OrganizationPlatformCommand =
       readonly repairRequest: ScheduleRepairRequest; readonly maxSearchNodes: number }
   | { readonly kind: "DECIDE_LIVE_CHANGE"; readonly organizationId: string; readonly commandId: string; readonly occurredAt: string;
       readonly actorUserId: string; readonly tournamentId: string; readonly proposalId: string; readonly decision: "APPROVED" | "REJECTED" }
-  | { readonly kind: "CERTIFY_TOURNAMENT_PUBLICATION"; readonly organizationId: string; readonly commandId: string; readonly occurredAt: string;
-      readonly actorUserId: string; readonly tournamentId: string; readonly guardInput: Omit<CompetitionGuardInput, "sourceDefinitionHash">;
-      readonly acknowledgedFindingCodes: readonly string[] }
   | { readonly kind: "PUBLISH_TOURNAMENT"; readonly organizationId: string; readonly commandId: string; readonly occurredAt: string;
-      readonly actorUserId: string; readonly tournamentId: string; readonly guardInput: Omit<CompetitionGuardInput, "sourceDefinitionHash">;
+      readonly actorUserId: string; readonly tournamentId: string; readonly expectedTournamentRevision: number;
       readonly acknowledgedFindingCodes: readonly string[] };
 
 export interface OrganizationPlatform {
@@ -455,13 +480,45 @@ function assertClubs(state: OrganizationPlatformState, clubIds: readonly string[
 }
 
 function publicationOutboxMetadata(record: PlatformPublicationRecord): NonNullable<ProposedEvent["metadata"]> {
-  return { outbox: { topic: "competition.publication.v1", key: record.tournamentId, payload: {
+  return { outbox: { topic: "competition.publication.v1", key: `${record.tournamentId}:v${record.tournamentRevision}`, payload: {
     tournamentId: record.tournamentId,
     tournamentRevision: record.tournamentRevision,
     definitionHash: record.definitionHash,
     guardReportHash: record.report.reportHash,
     certificateHash: record.certificate.certificateHash,
   } } as unknown as JsonValue };
+}
+
+function independentlyEvaluateAuthoritativeArtifacts(
+  artifacts: Readonly<AuthoritativePublicationArtifacts>,
+  expected: { readonly organizationId: string; readonly tournamentId: string; readonly tournamentRevision: number; readonly definitionHash: string },
+): CompetitionGuardReport {
+  if (artifacts.organizationId !== expected.organizationId || artifacts.tournamentId !== expected.tournamentId) {
+    throw new Error("Authoritative publication artifacts do not belong to this organization and tournament");
+  }
+  if (artifacts.tournamentRevision !== expected.tournamentRevision || artifacts.definitionHash !== expected.definitionHash) {
+    throw new Error("Authoritative publication artifacts are stale or do not match the approved revision");
+  }
+  assertTimestamp(artifacts.compiledAt, "publicationArtifacts.compiledAt");
+  if (!artifacts.compiledBy.trim()) throw new Error("Authoritative publication artifacts require a compiler identity");
+  const hashesMatch = artifacts.specHash === canonicalHash(artifacts.spec)
+    && artifacts.graphHash === canonicalHash(artifacts.graph)
+    && artifacts.scheduleHash === canonicalHash(artifacts.schedule)
+    && (artifacts.simulation === undefined
+      ? artifacts.simulationHash === undefined
+      : artifacts.simulationHash === canonicalHash(artifacts.simulation));
+  if (!hashesMatch) throw new Error("Authoritative publication artifact hash mismatch");
+  return evaluateCompetitionGuard({ sourceDefinitionHash: expected.definitionHash, spec: artifacts.spec,
+    graph: artifacts.graph, schedule: artifacts.schedule,
+    ...(artifacts.simulation === undefined ? {} : { simulation: artifacts.simulation }) });
+}
+
+function authoritativeArtifactSetHash(artifacts: Readonly<AuthoritativePublicationArtifacts>): string {
+  return canonicalHash({ organizationId: artifacts.organizationId, tournamentId: artifacts.tournamentId,
+    tournamentRevision: artifacts.tournamentRevision, definitionHash: artifacts.definitionHash,
+    compiledBy: artifacts.compiledBy, compiledAt: artifacts.compiledAt, specHash: artifacts.specHash,
+    graphHash: artifacts.graphHash, scheduleHash: artifacts.scheduleHash,
+    ...(artifacts.simulationHash === undefined ? {} : { simulationHash: artifacts.simulationHash }) });
 }
 
 function liveChangeOutboxMetadata(record: PlatformLiveChangeProposal): NonNullable<ProposedEvent["metadata"]> {
@@ -474,7 +531,8 @@ function liveChangeOutboxMetadata(record: PlatformLiveChangeProposal): NonNullab
   } } as unknown as JsonValue };
 }
 
-function eventsFor(state: OrganizationPlatformState, command: OrganizationPlatformCommand): readonly ProposedEvent[] {
+function eventsFor(state: OrganizationPlatformState, command: OrganizationPlatformCommand,
+  publicationArtifacts?: Readonly<AuthoritativePublicationArtifacts>): readonly ProposedEvent[] {
   assertIdentifier(command.organizationId, "organizationId");
   assertIdentifier(command.commandId, "commandId");
   assertTimestamp(command.occurredAt, "occurredAt");
@@ -900,15 +958,30 @@ function eventsFor(state: OrganizationPlatformState, command: OrganizationPlatfo
       { type: "LIVE_OPERATIONS_CHANGED", payload: { live: approved.liveState } as unknown as JsonValue },
     ];
   }
-  if (command.kind === "CERTIFY_TOURNAMENT_PUBLICATION" || command.kind === "PUBLISH_TOURNAMENT") {
+  if (command.kind === "PUBLISH_TOURNAMENT") {
     const tournament = state.tournaments[command.tournamentId];
-    if (!tournament || tournament.status !== "APPROVED") throw new Error("An approved tournament is required for publication certification");
+    if (!tournament || tournament.status !== "APPROVED") throw new Error("An approved tournament is required for publication");
     requireTournamentManager(state, command.actorUserId, tournament.clubId);
-    if (command.kind === "PUBLISH_TOURNAMENT" && tournament.approvedBy === command.actorUserId) {
+    if (tournament.approvedBy === command.actorUserId) {
       throw new Error("Publication requires a different active member from the approver");
     }
     const latest = tournament.revisions.at(-1)!;
-    const report = evaluateCompetitionGuard({ ...command.guardInput, sourceDefinitionHash: latest.definitionHash });
+    if (command.expectedTournamentRevision !== latest.revision
+      || tournament.approvedRevision !== latest.revision
+      || tournament.approvedDefinitionHash !== latest.definitionHash
+      || !tournament.approvedAt) throw new Error("Publication expected revision is stale or is not the exact approved revision");
+    if (!publicationArtifacts) throw new Error("Authoritative publication artifacts are unavailable");
+    if (publicationArtifacts.compiledBy === tournament.approvedBy) {
+      throw new Error("Approval requires a different active member from the compiler");
+    }
+    const report = independentlyEvaluateAuthoritativeArtifacts(publicationArtifacts, {
+      organizationId: command.organizationId, tournamentId: tournament.id,
+      tournamentRevision: latest.revision, definitionHash: latest.definitionHash,
+    });
+    if (tournament.approvedArtifactSetHash !== authoritativeArtifactSetHash(publicationArtifacts)
+      || tournament.approvedGuardReportHash !== report.reportHash) {
+      throw new Error("Publication requires the exact approved artifact set and Guard report");
+    }
     if (report.status !== "PASSED") {
       throw new Error(`Competition Guard blocked publication: ${report.findings.filter(({ severity }) => severity === "CRITICAL" || severity === "INTEGRITY")
         .map(({ sourceCode, message }) => `${sourceCode} ${message}`).join("; ")}`);
@@ -917,9 +990,6 @@ function eventsFor(state: OrganizationPlatformState, command: OrganizationPlatfo
       acknowledgedFindingCodes: command.acknowledgedFindingCodes, issuedBy: command.actorUserId, issuedAt: command.occurredAt });
     const record: PlatformPublicationRecord = { tournamentId: tournament.id, tournamentRevision: latest.revision,
       definitionHash: latest.definitionHash, report, certificate, assessedBy: command.actorUserId, assessedAt: command.occurredAt };
-    if (command.kind === "CERTIFY_TOURNAMENT_PUBLICATION") {
-      return [{ type: "PUBLICATION_CERTIFIED", payload: { record } as unknown as JsonValue }];
-    }
     const published: PlatformTournament = { ...tournament, status: "PUBLISHED", updatedAt: command.occurredAt,
       publishedBy: command.actorUserId, publishedCertificateHash: certificate.certificateHash };
     return [
@@ -931,27 +1001,29 @@ function eventsFor(state: OrganizationPlatformState, command: OrganizationPlatfo
   const current = state.tournaments[command.tournamentId];
   if (!current) throw new Error("Tournament does not exist"); requireTournamentManager(state, command.actorUserId, current.clubId);
   const allowed: Readonly<Record<TournamentLifecycleStatus, readonly TournamentLifecycleStatus[]>> = {
-    DRAFT: ["UNDER_REVIEW", "ARCHIVED"], UNDER_REVIEW: ["DRAFT", "APPROVED", "ARCHIVED"], APPROVED: ["PUBLISHED", "ARCHIVED"],
+    DRAFT: ["UNDER_REVIEW", "ARCHIVED"], UNDER_REVIEW: ["DRAFT", "APPROVED", "ARCHIVED"], APPROVED: ["ARCHIVED"],
     PUBLISHED: ["LIVE", "ARCHIVED"], LIVE: ["COMPLETED"], COMPLETED: ["ARCHIVED"], ARCHIVED: [],
   };
+  if (command.status === "PUBLISHED") throw new Error("Use PUBLISH_TOURNAMENT for atomic server-owned publication");
   if (!allowed[current.status].includes(command.status)) throw new Error(`Invalid tournament lifecycle transition ${current.status} -> ${command.status}`);
   const latest = current.revisions.at(-1)!;
   if (command.status === "APPROVED" && latest.createdBy === command.actorUserId) throw new Error("Approval requires a different active member from the latest revision author");
-  if (command.status === "PUBLISHED" && current.approvedBy === command.actorUserId) throw new Error("Publication requires a different active member from the approver");
-  const publicationRecord = state.publicationRecords[current.id]?.at(-1);
-  if (command.status === "PUBLISHED" && (!publicationRecord
-    || publicationRecord.tournamentRevision !== latest.revision
-    || publicationRecord.definitionHash !== latest.definitionHash
-    || publicationRecord.certificate.sourceDefinitionHash !== latest.definitionHash
-    || !verifyPublicationCertificate(publicationRecord.certificate, publicationRecord.report))) {
-    throw new Error("Publication requires a current Competition Guard publication certificate for the exact approved revision");
+  let approvalEvidence: { readonly artifactSetHash: string; readonly guardReportHash: string } | undefined;
+  if (command.status === "APPROVED") {
+    if (!publicationArtifacts) throw new Error("Authoritative publication artifacts are unavailable for approval");
+    if (publicationArtifacts.compiledBy === command.actorUserId) throw new Error("Approval requires a different active member from the compiler");
+    const report = independentlyEvaluateAuthoritativeArtifacts(publicationArtifacts, { organizationId: command.organizationId,
+      tournamentId: current.id, tournamentRevision: latest.revision, definitionHash: latest.definitionHash });
+    if (report.status !== "PASSED") throw new Error(`Competition Guard blocked approval: ${report.findings
+      .filter(({ severity }) => severity === "CRITICAL" || severity === "INTEGRITY")
+      .map(({ sourceCode, message }) => `${sourceCode} ${message}`).join("; ")}`);
+    approvalEvidence = { artifactSetHash: authoritativeArtifactSetHash(publicationArtifacts), guardReportHash: report.reportHash };
   }
   const tournament: PlatformTournament = { ...current, status: command.status, updatedAt: command.occurredAt,
-    ...(command.status === "APPROVED" ? { approvedBy: command.actorUserId } : {}),
-    ...(command.status === "PUBLISHED" ? { publishedBy: command.actorUserId,
-      publishedCertificateHash: publicationRecord!.certificate.certificateHash } : {}) };
-  return [{ type: "TOURNAMENT_STATUS_CHANGED", payload: { tournament } as unknown as JsonValue,
-    ...(command.status === "PUBLISHED" ? { metadata: publicationOutboxMetadata(publicationRecord!) } : {}) }];
+    ...(command.status === "APPROVED" ? { approvedBy: command.actorUserId, approvedAt: command.occurredAt,
+      approvedRevision: latest.revision, approvedDefinitionHash: latest.definitionHash,
+      approvedArtifactSetHash: approvalEvidence!.artifactSetHash, approvedGuardReportHash: approvalEvidence!.guardReportHash } : {}) };
+  return [{ type: "TOURNAMENT_STATUS_CHANGED", payload: { tournament } as unknown as JsonValue }];
 }
 
 function platformCommandContentHash(command: OrganizationPlatformCommand): string {
@@ -961,7 +1033,26 @@ function platformCommandContentHash(command: OrganizationPlatformCommand): strin
   return canonicalHash({ ...content, liveCommand });
 }
 
-export function createOrganizationPlatform(store: EventStoreAdapter): OrganizationPlatform {
+function assertServerOwnedPublicationCommand(command: Extract<OrganizationPlatformCommand, { readonly kind: "PUBLISH_TOURNAMENT" }>): void {
+  const allowed = new Set(["kind", "organizationId", "commandId", "occurredAt", "actorUserId", "tournamentId",
+    "expectedTournamentRevision", "acknowledgedFindingCodes"]);
+  if (Object.keys(command).some((key) => !allowed.has(key))) {
+    throw new Error("PUBLISH_TOURNAMENT accepts only identity, revision, and acknowledgements");
+  }
+  assertIdentifier(command.organizationId, "organizationId");
+  assertIdentifier(command.commandId, "commandId");
+  assertIdentifier(command.actorUserId, "actorUserId");
+  assertIdentifier(command.tournamentId, "tournamentId");
+  assertTimestamp(command.occurredAt, "occurredAt");
+  if (!Number.isSafeInteger(command.expectedTournamentRevision) || command.expectedTournamentRevision < 1
+    || !Array.isArray(command.acknowledgedFindingCodes)
+    || command.acknowledgedFindingCodes.some((code) => typeof code !== "string" || !code.trim() || code.length > 100)
+    || new Set(command.acknowledgedFindingCodes).size !== command.acknowledgedFindingCodes.length) {
+    throw new Error("PUBLISH_TOURNAMENT identity, revision, or acknowledgements are invalid");
+  }
+}
+
+export function createOrganizationPlatform(store: EventStoreAdapter, options: OrganizationPlatformOptions = {}): OrganizationPlatform {
   const read = async (organizationId: string): Promise<Readonly<OrganizationPlatformState>> => {
     assertIdentifier(organizationId, "organizationId");
     const state = await store.replay(streamId(organizationId), emptyState(), replayPlatform);
@@ -1028,6 +1119,7 @@ export function createOrganizationPlatform(store: EventStoreAdapter): Organizati
       return deepFreeze({ ...body, stateHash: canonicalHash(body) });
     },
     execute: async (command) => {
+      if (command.kind === "PUBLISH_TOURNAMENT") assertServerOwnedPublicationCommand(command);
       const state = await read(command.organizationId);
       const commandHash = platformCommandContentHash(command);
       const prior = (await store.readStream(streamId(command.organizationId))).find(({ commandId }) => commandId === command.commandId);
@@ -1035,7 +1127,18 @@ export function createOrganizationPlatform(store: EventStoreAdapter): Organizati
         if (prior.metadata.platformCommandHash !== commandHash) throw new IdempotencyConflictError(streamId(command.organizationId), command.commandId);
         return state;
       }
-      const events = eventsFor(state, command);
+      const publicationIdentity = command.kind === "PUBLISH_TOURNAMENT"
+        ? { organizationId: command.organizationId, tournamentId: command.tournamentId,
+          tournamentRevision: command.expectedTournamentRevision }
+        : command.kind === "CHANGE_TOURNAMENT_STATUS" && command.status === "APPROVED"
+          ? (() => { const tournament = state.tournaments[command.tournamentId]; return tournament ? {
+            organizationId: command.organizationId, tournamentId: command.tournamentId,
+            tournamentRevision: tournament.revisions.at(-1)!.revision } : undefined; })()
+          : undefined;
+      const publicationArtifacts = publicationIdentity
+        ? await options.publicationArtifacts?.load(publicationIdentity)
+        : undefined;
+      const events = eventsFor(state, command, publicationArtifacts);
       await store.append({ streamId: streamId(command.organizationId), expectedVersion: state.version,
         commandId: command.commandId, recordedAt: command.occurredAt,
         events: events.map((event) => ({ ...event, metadata: { ...event.metadata, platformCommandHash: commandHash } })) });

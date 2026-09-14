@@ -7,6 +7,7 @@ import {
   type OrganizationPlatformApi,
   type PlatformApiPrincipal,
 } from "@tournament-os/competition-engine";
+import { canonicalHash } from "@tournament-os/tournament-schema";
 import { buildPilotScheduleDecision, type PilotScheduleDecision } from "./pilot-journey.js";
 import { runReferenceDemo } from "./demo.js";
 
@@ -76,8 +77,14 @@ export interface PlatformDemo {
 }
 
 export async function createPlatformDemo(): Promise<PlatformDemo> {
-  const platform = createOrganizationPlatform(createInMemoryEventStore());
   const reference = runReferenceDemo().scenario;
+  const platform = createOrganizationPlatform(createInMemoryEventStore(), { publicationArtifacts: { load: async (identity) => ({
+    ...identity, definitionHash: canonicalHash(reference.spec), compiledBy: "server.pilot-compiler", compiledAt: occurredAt,
+    spec: reference.spec, specHash: canonicalHash(reference.spec),
+    graph: reference.graph, graphHash: canonicalHash(reference.graph),
+    schedule: reference.schedule, scheduleHash: canonicalHash(reference.schedule),
+    ...(reference.simulation ? { simulation: reference.simulation, simulationHash: canonicalHash(reference.simulation) } : {}),
+  }) } });
   let sequence = 0;
   const commandId = () => `demo.${++sequence}`;
   await platform.execute({ kind: "CREATE_ORGANIZATION", organizationId, commandId: commandId(), occurredAt,
@@ -200,8 +207,7 @@ export async function createPlatformDemo(): Promise<PlatformDemo> {
     if (current.publication.status === "PUBLISHED") return current;
     await accepted(await api.handle({ method: "POST", path: "/v1/organizations/org.demo/commands", principal,
       idempotencyKey: "pilot.publish.v1", body: { kind: "PUBLISH_TOURNAMENT", tournamentId: pilotTournamentId,
-        guardInput: { spec: reference.spec, graph: reference.graph, schedule: reference.schedule,
-          ...(reference.simulation ? { simulation: reference.simulation } : {}) },
+        expectedTournamentRevision: 1,
         acknowledgedFindingCodes: current.publication.guardStatus === "PASSED"
           ? (evaluateCompetitionGuard({ sourceDefinitionHash: (await platform.read(organizationId)).tournaments[pilotTournamentId]!.revisions.at(-1)!.definitionHash,
             spec: reference.spec, graph: reference.graph, schedule: reference.schedule,
