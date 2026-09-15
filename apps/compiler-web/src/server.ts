@@ -23,6 +23,7 @@ import { productHtml } from "./product-view.js";
 import { createCompetitionProposal, parseCreationProposalPayload } from "./creation-proposal.js";
 import { CompetitionJourney, competitionJourneyHtml, parseConnectedLiveCommand, parseCreationSource,
   type CompetitionJourneyOptions } from "./competition-journey.js";
+import { renderCompetitionGuardPreflight } from "./guard-preflight-view.js";
 import { analyseCompetitionSources, recognisedCompetitionName } from "./competition-workbench.js";
 import { playerHtml } from "./player-view.js";
 import { participantRecoveryHtml } from "./participant-recovery-view.js";
@@ -689,6 +690,23 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           "referrer-policy": "no-referrer",
         });
         response.end(productHtml);
+        return;
+      }
+      const preflightPage = !production && /^\/competitions\/([^/?#]+)\/preflight$/.exec(request.url ?? "");
+      if (preflightPage && request.method === "GET") {
+        const competitionId = decodeURIComponent(preflightPage[1]!);
+        const snapshot = competitionJourney.read(competitionId);
+        if (!snapshot?.compiled) {
+          json(response, 404, { apiVersion: "1.0", error: "journey_not_found" });
+          return;
+        }
+        response.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+          "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
+        });
+        response.end(renderCompetitionGuardPreflight({ competitionId, competitionName: snapshot.name,
+          preflight: snapshot.compiled.guardPreflight }));
         return;
       }
       const journeyPage = !production && /^\/competitions\/([^/?#]+)$/.exec(request.url ?? "");

@@ -45,6 +45,10 @@ test("one durable journey creates, compiles, Guards, approves, and reopens the s
     assert.equal(compiled.compiled?.guardStatus, "PASSED");
     assert.equal(compiled.compiled?.actualContestCount, 98);
     assert.equal(compiled.compiled?.scheduledContestCount, 98);
+    assert.equal(compiled.compiled?.guardPreflight.guardReportHash, compiled.compiled?.guardReportHash);
+    assert.equal(compiled.compiled?.guardPreflight.outcome, "READY");
+    assert.equal(compiled.compiled?.guardPreflight.detailed.accounting.reconciled, true);
+    assert.match(compiled.compiled?.preflightPath ?? "", /\/preflight$/);
 
     const approved = journey.approve(draft.id, compiled.revision, "mac.organiser",
       compiled.compiled?.requiredAcknowledgementCodes ?? []);

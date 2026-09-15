@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canonicalHash, compileDefinition, type TournamentSpec } from "@tournament-os/tournament-schema";
+import { canonicalHash, compileDefinition, type TournamentSpec, type ValidationFinding } from "@tournament-os/tournament-schema";
 import { playAndKonnectDefinition } from "@tournament-os/tournament-schema/example";
 import {
+  classifyCompetitionGuardFinding,
+  COMPETITION_GUARD_SEVERITY_POLICY,
   createPublicationCertificate,
   evaluateCompetitionGuard,
   verifyPublicationCertificate,
 } from "../src/competition-guard.js";
+import { createCompetitionGuardPreflight } from "../src/competition-guard-preflight.js";
 import { createEntrants } from "../src/graph.js";
 import { runScenario } from "../src/scenario.js";
 
@@ -33,7 +36,65 @@ test("the Competition Guard binds a passing report to the exact proposed definit
   assert.equal(report.binding.scheduleHash, canonicalHash(scenario.schedule));
   assert.equal(report.accounting.requiredContestCount, scenario.graph.generatedActualContestCount);
   assert.equal(report.accounting.scheduledContestCount, scenario.schedule.contests.length);
+  assert.equal(report.accounting.contestLedger.reduce((total, row) => total + row.requiredContestIds.length, 0),
+    report.accounting.requiredContestCount);
+  assert.equal(report.accounting.contestLedger.reduce((total, row) => total + row.requiredOccupiedMinutes, 0),
+    report.accounting.occupiedMinutes);
+  assert.equal(report.accounting.resourceLedger.reduce((total, row) => total + row.occupiedMinutes, 0),
+    report.accounting.occupiedMinutes);
+  assert.equal(report.accounting.reconciled, true);
   assert.match(report.reportHash, /^[a-f0-9]{64}$/);
+
+  const preflight = createCompetitionGuardPreflight(report);
+  assert.equal(preflight.outcome, "READY");
+  assert.deepEqual(preflight.simple.requiredAcknowledgementCodes, report.requiredAcknowledgementCodes);
+  assert.equal(preflight.detailed.assurance.integrityGrade, "CERTIFIED");
+  assert.equal(preflight.detailed.assurance.operationalQuality, "ATTENTION_REQUIRED");
+  assert.equal(preflight.guardReportHash, report.reportHash);
+  assert.equal(preflight.technical.reportHash, report.reportHash);
+  assert.deepEqual(preflight.detailed.accounting, report.accounting);
+  assert.deepEqual(preflight.detailed.sections.map(({ id }) => id),
+    ["DEFINITION", "SCHEDULE", "ACCOUNTING", "DEPENDENCIES"]);
+});
+
+test("the Guard publishes a deterministic six-level severity and override policy", () => {
+  const finding = (code: string, severity: ValidationFinding["severity"], message: string): ValidationFinding =>
+    ({ code, severity, path: "/test", message });
+  assert.deepEqual([
+    finding("TSV401", "ERROR", "Missing scheduled contest"),
+    finding("KCG005", "ERROR", "Advancement mismatch"),
+    finding("OPS001", "WARNING", "Provider delivery risk"),
+    finding("TSW210", "WARNING", "Unequal match opportunity"),
+    finding("QUALITY001", "WARNING", "A better plan exists"),
+    finding("INFO001", "WARNING", "Informational observation"),
+  ].map(classifyCompetitionGuardFinding),
+  ["CRITICAL", "INTEGRITY", "OPERATIONAL", "EXPERIENCE", "OPTIMIZATION", "INFORMATION"]);
+  assert.deepEqual(COMPETITION_GUARD_SEVERITY_POLICY, {
+    CRITICAL: "BLOCK", INTEGRITY: "BLOCK", OPERATIONAL: "ACKNOWLEDGE",
+    EXPERIENCE: "ALLOW", OPTIMIZATION: "ALLOW", INFORMATION: "ALLOW",
+  });
+});
+
+test("historical Guard reports stay readable but require current revalidation", () => {
+  const spec = reference();
+  const scenario = runScenario(spec, createEntrants(spec), "guard-historical-preflight");
+  const historical = structuredClone(evaluateCompetitionGuard({ sourceDefinitionHash: canonicalHash(spec), spec,
+    graph: scenario.graph, schedule: scenario.schedule,
+    ...(scenario.simulation ? { simulation: scenario.simulation } : {}) })) as any;
+  historical.guardVersion = "1.0.0";
+  delete historical.accounting.contestLedger;
+  delete historical.accounting.resourceLedger;
+  delete historical.accounting.unexpectedContestIds;
+  delete historical.accounting.reconciled;
+  historical.findings = historical.findings.map((finding: Record<string, unknown>) => {
+    const legacy = { ...finding };
+    delete legacy.publicationDisposition; delete legacy.evidenceHash; delete legacy.suggestedCorrection;
+    return legacy;
+  });
+  const preflight = createCompetitionGuardPreflight(historical);
+  assert.equal(preflight.outcome, "BLOCKED");
+  assert.equal(preflight.detailed.findings[0]?.ruleId, "GUARD_REVALIDATION_REQUIRED");
+  assert.equal(preflight.detailed.accounting.reconciled, false);
 });
 
 test("a publication certificate binds the passing Guard report and explicit operational acknowledgements", () => {
@@ -109,7 +170,14 @@ test("a schedule with a missing required contest is blocked before publication",
 
   assert.equal(report.status, "BLOCKED");
   assert.equal(report.accounting.unscheduledContestIds.length, 1);
+  assert.equal(report.accounting.reconciled, false);
   assert.ok(report.findings.some(({ severity }) => severity === "CRITICAL" || severity === "INTEGRITY"));
+  const preflight = createCompetitionGuardPreflight(report);
+  assert.equal(preflight.outcome, "BLOCKED");
+  const missingFinding = preflight.detailed.findings.find(({ ruleId }) => ruleId === "TSV401");
+  assert.ok(missingFinding);
+  assert.match(missingFinding.suggestedCorrection, /Repair the schedule/);
+  assert.match(missingFinding.evidenceHash, /^[a-f0-9]{64}$/);
 });
 
 test("the Guard blocks a coordinated graph and schedule omission even when proposer counts agree", () => {

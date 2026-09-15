@@ -89,6 +89,16 @@ async function request(server: ReturnType<typeof createCompilerServer>, method: 
   });
 }
 
+async function requestText(server: ReturnType<typeof createCompilerServer>, url: string) {
+  const incoming = Readable.from([]) as never;
+  Object.assign(incoming, { method: "GET", url, headers: {} });
+  return new Promise<{ status: number; body: string }>((resolve) => {
+    const result = { status: 0, body: "" };
+    server.emit("request", incoming, { writeHead: (status: number) => { result.status = status; },
+      end: (body = "") => { result.body = body; resolve(result); } } as never);
+  });
+}
+
 test("the connected St Albans journey closes, exports, restores and duplicates without another truth", async () => {
   const directory = mkdtempSync(join(tmpdir(), "krateasy-close-"));
   const storagePath = join(directory, "journey.json");
@@ -156,6 +166,10 @@ test("the connected St Albans journey closes, exports, restores and duplicates w
 
     const bundleResponse = await request(server, "GET", `${root}/closure-bundle?closure=${closedResponse.body.closure.closureHash}`);
     assert.equal(bundleResponse.status, 200);
+    const preflightPage = await requestText(server, `/competitions/${encodeURIComponent(published.id)}/preflight`);
+    assert.equal(preflightPage.status, 200);
+    assert.match(preflightPage.body, /Bottom-up contest and minute ledger/);
+    assert.match(preflightPage.body, new RegExp(closedResponse.body.compiled.guardReportHash));
     const names = bundleResponse.body.artifacts.map(({ fileName }: { fileName: string }) => fileName);
     for (const required of ["specification.json", "graph.json", "schedule.json", "guard-report.json",
       "actual-results.json", "live-events.json", "operational-events.json", "sources.json", "audit.md",

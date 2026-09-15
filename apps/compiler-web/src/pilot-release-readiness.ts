@@ -177,8 +177,8 @@ export function assessPilotRelease(input: {
   if (closure.resultSummary.total !== 108 || closure.resultSummary.unresolved !== 0)
     softwareBlockers.push({ code: "ST_ALBANS_RESULT_ACCOUNTING_MISMATCH", ownerRole: "ENGINEERING",
       message: "The St Albans rehearsal must close exactly 108 results with none unresolved.", fallback: engineeringFallback });
-  if (guard.status !== "PASSED" || guard.integrityGrade !== "CERTIFIED" || guard.guardVersion !== "1.1.0"
-    || guard.reportHash !== closure.authority.guardReportHash)
+  if (guard.status !== "PASSED" || guard.integrityGrade !== "CERTIFIED" || guard.guardVersion !== "1.2.0"
+    || !guard.accounting.reconciled || guard.reportHash !== closure.authority.guardReportHash)
     softwareBlockers.push({ code: "INDEPENDENT_GUARD_EVIDENCE_MISMATCH", ownerRole: "ENGINEERING",
       message: "The closed revision is not bound to the current independently passing Guard report.", fallback: engineeringFallback });
   if (closure.publishedRevision < 1 || closure.operationalRevision < closure.publishedRevision || closure.liveVersion < 1)

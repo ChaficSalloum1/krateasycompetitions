@@ -339,7 +339,7 @@ function trustedResult(
 }
 
 export function createCpSatSolver(config: CpSatSolverConfig = {}): CpSatSolver {
-  const pythonExecutable = config.pythonExecutable ?? "python3";
+  const pythonExecutable = config.pythonExecutable ?? process.env.TOURNAMENT_OS_CP_SAT_PYTHON ?? "python3";
   const workerPath = config.workerPath ?? defaultWorkerPath();
   const requiredBackendVersion = config.requiredBackendVersion ?? CP_SAT_BACKEND_VERSION;
   return freeze({

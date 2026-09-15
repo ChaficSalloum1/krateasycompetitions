@@ -4,6 +4,21 @@ import { participantOperationsHtml, venueDisplayHtml } from "../src/attention-vi
 import { competitionJourneyHtml } from "../src/competition-journey.js";
 import { playerHtml } from "../src/player-view.js";
 import { participantRecoveryHtml } from "../src/participant-recovery-view.js";
+import { renderCompetitionGuardPreflight } from "../src/guard-preflight-view.js";
+
+const preflightHtml = renderCompetitionGuardPreflight({ competitionId: "competition.accessibility",
+  competitionName: "Accessible competition", preflight: {
+    outcome: "READY", guardReportHash: "a".repeat(64), projectionHash: "b".repeat(64),
+    simple: { headline: "Passed.", action: "Approve separately.", requiredAcknowledgementCodes: [] },
+    detailed: { assurance: { integrityGrade: "CERTIFIED", operationalQuality: "CLEAR",
+      operationalFindingCodes: [] }, findings: [], sections: [
+      "DEFINITION", "SCHEDULE", "ACCOUNTING", "DEPENDENCIES",
+    ].map((id) => ({ id, status: "PASSED", findingCodes: [], evidenceHash: "c".repeat(64) })),
+    accounting: { contestLedger: [{ divisionId: "open", stageId: "groups", poolId: "A", round: "1",
+      requiredContestIds: ["match.1"], scheduledContestIds: ["match.1"], contestMinutes: 25,
+      turnaroundMinutes: 5 }], reconciled: true } },
+    technical: { guardVersion: "1.2.0", certificationHash: "d".repeat(64), reportHash: "a".repeat(64), binding: {} },
+  } as never });
 
 const coreSurfaces = [
   ["participant next", playerHtml],
@@ -11,6 +26,7 @@ const coreSurfaces = [
   ["organiser live", participantOperationsHtml],
   ["venue display", venueDisplayHtml],
   ["published and closed competition", competitionJourneyHtml("competition.accessibility")],
+  ["Guard pre-flight", preflightHtml],
 ] as const;
 
 test("every connected live-information surface carries the pilot accessibility contract", () => {
@@ -42,6 +58,8 @@ test("dynamic status and dense information have explicit names and announcements
   assert.match(venueDisplayHtml, /aria-live="off"/);
   assert.match(competitionJourneyHtml("competition.accessibility"), /<caption>Published schedule<\/caption>/);
   assert.match(competitionJourneyHtml("competition.accessibility"), /<th scope="col">Contest<\/th>/);
+  assert.match(preflightHtml, /<caption>Bottom-up contest and minute ledger<\/caption>/);
+  assert.match(preflightHtml, /<summary>Technical evidence<\/summary>/);
 });
 
 test("the closed-edition control is accessible and submits only authoritative closure identity plus new facts", () => {

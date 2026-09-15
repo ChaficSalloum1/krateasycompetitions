@@ -9,6 +9,7 @@ export * from "./capability-ledger.js";
 export * from "./compiler.js";
 export * from "./compiler-critic.js";
 export * from "./competition-guard.js";
+export * from "./competition-guard-preflight.js";
 export * from "./cp-sat-solver.js";
 export * from "./declarative-qualification.js";
 export * from "./draw-constraints.js";
