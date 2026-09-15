@@ -20,13 +20,16 @@ test("the untrusted St Albans source is preserved and explained without acceptin
   assert.equal(draft.workbench.sources[0]?.original, fixture);
   assert.equal(draft.workbench.sources[0]?.sourceHash,
     "f86b1d34939f8f4b0ba158b3613b95bc2d5d74d9b921413850b3b377f8d541a5");
-  assert.deepEqual(Object.fromEntries(draft.workbench.understoodFacts.map((fact) => [fact.id, fact.value])), {
+  const headlineFacts = new Set(["entrants.total", "fixtures.group", "fixtures.knockout", "fixtures.total", "pools.total"]);
+  assert.deepEqual(Object.fromEntries(draft.workbench.understoodFacts.filter(({ id }) => headlineFacts.has(id))
+    .map((fact) => [fact.id, fact.value])), {
     "entrants.total": 48,
     "fixtures.group": 66,
     "fixtures.knockout": 42,
     "fixtures.total": 108,
     "pools.total": 13,
   });
+  assert.equal(draft.workbench.understoodFacts.filter(({ id }) => id.startsWith("entrant.")).length, 48 * 4);
   assert.deepEqual(draft.workbench.rules.find(({ id }) => id === "resource.availability")?.value, [
     { courts: [4, 5, 6, 7], from: "11:00", to: "12:00" },
     { courts: [1, 2, 3, 4, 5, 6, 7], from: "12:00", to: "20:00" },

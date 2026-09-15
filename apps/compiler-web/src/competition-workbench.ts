@@ -1,14 +1,20 @@
 import { createHash } from "node:crypto";
 import { canonicalHash, semanticDiff, type SemanticChange } from "@tournament-os/tournament-schema";
 import type { CreationSource } from "./creation-proposal.js";
+import { ingestCreationSource } from "./creation-source-ingestion.js";
 
 export interface WorkbenchSourceDocument {
   readonly id: string;
   readonly kind: CreationSource["mode"];
-  readonly mediaType: "application/json" | "text/plain";
+  readonly mediaType: "application/json" | "application/yaml" | "text/csv" | "text/plain"
+    | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  readonly fileName?: string;
   readonly original: unknown;
   readonly sourceHash: string;
   readonly receivedAt: string;
+  readonly status: "ACCEPTED" | "QUARANTINED";
+  readonly findings: readonly string[];
+  readonly normalized: unknown;
 }
 
 export interface WorkbenchFact {
@@ -90,34 +96,40 @@ const requiredDecisions: readonly WorkbenchDecision[] = [
 ] as const;
 
 function sourceOriginal(source: CreationSource): unknown {
+  if (source.mode === "xlsx") return { fileName: source.fileName, base64: source.base64 };
   return source.mode === "quick" ? structuredClone(source.value) : source.text;
 }
 
 function hashOriginal(source: CreationSource): string {
   if (source.mode === "quick") return canonicalHash(source.value);
+  if (source.mode === "xlsx") return createHash("sha256").update(Buffer.from(source.base64, "base64")).digest("hex");
   return createHash("sha256").update(source.text, "utf8").digest("hex");
 }
 
 function documentFor(source: CreationSource, receivedAt: string): WorkbenchSourceDocument {
   const sourceHash = hashOriginal(source);
+  const ingestion = ingestCreationSource(source);
+  const mediaType = source.mode === "json" ? "application/json" as const
+    : source.mode === "yaml" ? "application/yaml" as const
+      : source.mode === "csv" ? "text/csv" as const
+        : source.mode === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" as const
+          : "text/plain" as const;
   return {
     id: `source.${sourceHash.slice(0, 16)}`,
     kind: source.mode,
-    mediaType: source.mode === "json" ? "application/json" : "text/plain",
+    mediaType,
+    ...(source.mode === "xlsx" ? { fileName: source.fileName } : {}),
     original: sourceOriginal(source),
     sourceHash,
     receivedAt,
+    status: ingestion.status,
+    findings: ingestion.findings,
+    normalized: ingestion.normalized,
   };
 }
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
-}
-
-function jsonValue(source: CreationSource): unknown {
-  if (source.mode === "quick") return source.value;
-  if (source.mode !== "json") return null;
-  try { return JSON.parse(source.text); } catch { return null; }
 }
 
 function stAlbansShape(value: unknown): null | {
@@ -135,6 +147,42 @@ function stAlbansShape(value: unknown): null | {
   if (schedule.some((entry) => entry === null)) return null;
   if (!Array.isArray(rules.courts_11_12)) return null;
   return { event: root.event, rules, pools, schedule: schedule as Record<string, unknown>[], finalCourtAssignments: finals, audit: root.audit };
+}
+
+interface RosterEntry {
+  readonly id: string;
+  readonly displayName: string;
+  readonly divisionId: string;
+  readonly memberIds: readonly string[];
+  readonly seed?: number;
+}
+
+function idFor(label: string): string {
+  return label.toLowerCase().replace(/s$/, "").replace(/[^a-z0-9]+/g, "-") || "division";
+}
+
+function rosterFromStAlbans(shaped: NonNullable<ReturnType<typeof stAlbansShape>>): RosterEntry[] {
+  const entrants: RosterEntry[] = [];
+  for (const [divisionLabel, poolValue] of Object.entries(shaped.pools)) {
+    const divisionId = idFor(divisionLabel); const pools = record(poolValue); let entrantIndex = 0;
+    if (!pools) continue;
+    for (const pool of Object.values(pools)) for (const displayName of Array.isArray(pool) ? pool : []) {
+      if (typeof displayName !== "string") continue;
+      entrantIndex += 1; const id = `${divisionId}.team.${entrantIndex}`;
+      entrants.push({ id, displayName, divisionId,
+        memberIds: displayName.split(" / ").map((_, index) => `${id}.member.${index + 1}`), seed: entrantIndex });
+    }
+  }
+  return entrants;
+}
+
+function rosterFacts(source: WorkbenchSourceDocument, entrants: readonly RosterEntry[]): WorkbenchFact[] {
+  return entrants.flatMap((entrant, index) => [
+    fact(source, `entrant.${entrant.id}.display-name`, `/entrants/${entrant.id}/displayName`, entrant.displayName, `/entrants/${index}/displayName`),
+    fact(source, `entrant.${entrant.id}.division`, `/entrants/${entrant.id}/divisionId`, entrant.divisionId, `/entrants/${index}/divisionId`),
+    fact(source, `entrant.${entrant.id}.member-ids`, `/entrants/${entrant.id}/memberIds`, entrant.memberIds, `/entrants/${index}/memberIds`),
+    fact(source, `entrant.${entrant.id}.seed`, `/entrants/${entrant.id}/seed`, entrant.seed ?? null, `/entrants/${index}/seed`),
+  ]);
 }
 
 function provenance(source: WorkbenchSourceDocument, sourcePath: string) {
@@ -168,6 +216,7 @@ function analyseStAlbans(source: WorkbenchSourceDocument, shaped: NonNullable<Re
     fact(source, "fixtures.knockout", "/derived/fixtureCounts/knockout", knockoutFixtures, "/schedule/*/stage"),
     fact(source, "fixtures.total", "/derived/fixtureCounts/total", shaped.schedule.length, "/schedule"),
     fact(source, "pools.total", "/derived/poolCount", poolSizes.length, "/pools"),
+    ...rosterFacts(source, rosterFromStAlbans(shaped)),
   ];
   const rules = [
     rule(source, "resource.availability", "/resources", [
@@ -214,18 +263,25 @@ export function analyseCompetitionSources(sources: readonly CreationSource[], re
     const document = documentFor(source, receivedAt);
     return { ...document, id: `${document.id}.${index + 1}` };
   });
-  const primarySource = sources[0]; const primaryDocument = documents[0];
-  if (primarySource && primaryDocument) {
-    const shaped = stAlbansShape(jsonValue(primarySource));
+  const primaryIndex = documents.findIndex((document) => document.status === "ACCEPTED" && stAlbansShape(document.normalized) !== null);
+  const primaryDocument = documents[primaryIndex];
+  if (primaryDocument) {
+    const shaped = stAlbansShape(primaryDocument.normalized);
     if (shaped) {
       const primary = analyseStAlbans(primaryDocument, shaped);
       const facts = primary.understoodFacts.map((entry) => ({ ...entry, provenance: [...entry.provenance] }));
       const rules = primary.rules.map((entry) => ({ ...entry, provenance: [...entry.provenance] }));
       const conflicts: CompetitionWorkbenchProjection["conflicts"][number][] = [...primary.conflicts];
       const claims = [...primary.untrustedClaims];
-      for (let index = 1; index < sources.length; index += 1) {
-        const candidateShape = stAlbansShape(jsonValue(sources[index]!)); if (!candidateShape) continue;
-        const candidate = analyseStAlbans(documents[index]!, candidateShape);
+      for (let index = 0; index < sources.length; index += 1) {
+        if (index === primaryIndex || documents[index]!.status === "QUARANTINED") continue;
+        const candidateShape = stAlbansShape(documents[index]!.normalized);
+        const importedEntrants = ingestCreationSource(sources[index]!).entrants;
+        const candidate = candidateShape ? analyseStAlbans(documents[index]!, candidateShape) : importedEntrants.length ? {
+          ...primary, understoodFacts: [fact(documents[index]!, "entrants.total", "/participants/count", importedEntrants.length, "/entrants"),
+            ...rosterFacts(documents[index]!, importedEntrants)], rules: [], untrustedClaims: [],
+        } : null;
+        if (!candidate) continue;
         for (const current of [...facts, ...rules]) {
           const incoming = [...candidate.understoodFacts, ...candidate.rules].find(({ id }) => id === current.id);
           if (!incoming) continue;
@@ -235,11 +291,24 @@ export function analyseCompetitionSources(sources: readonly CreationSource[], re
         }
         claims.push(...candidate.untrustedClaims);
       }
-      return { ...primary, sources: documents, understoodFacts: facts, rules, conflicts, untrustedClaims: claims };
+      const quarantined = documents.filter(({ status }) => status === "QUARANTINED");
+      return { ...primary, sources: documents, understoodFacts: facts, rules, conflicts, untrustedClaims: claims,
+        unsupportedSemantics: quarantined.map((document) => ({ id: `quarantine.${document.id}`, path: `/sources/${document.id}`,
+          description: document.findings.join(" "), blocking: true })) };
     }
   }
-  return { sources: documents, understoodFacts: [], rules: [], assumptions: [], conflicts: [], missingDecisions: [],
-    unsupportedSemantics: [], untrustedClaims: [], definitionVersion: 1, pendingImpact: null };
+  const firstRosterIndex = sources.findIndex((source, index) => documents[index]?.status === "ACCEPTED"
+    && ingestCreationSource(source).entrants.length > 0);
+  const roster = firstRosterIndex >= 0 ? ingestCreationSource(sources[firstRosterIndex]!).entrants : [];
+  const rosterDocument = documents[firstRosterIndex];
+  return { sources: documents,
+    understoodFacts: rosterDocument ? [fact(rosterDocument, "entrants.total", "/participants/count", roster.length, "/entrants"),
+      ...rosterFacts(rosterDocument, roster)] : [], rules: [], assumptions: [], conflicts: [],
+    missingDecisions: rosterDocument ? [{ id: "competition-definition", path: "/", prompt:
+      "Add a JSON or YAML competition definition before compilation.", critical: true }] : [],
+    unsupportedSemantics: documents.filter(({ status }) => status === "QUARANTINED").map((document) => ({
+      id: `quarantine.${document.id}`, path: `/sources/${document.id}`, description: document.findings.join(" "), blocking: true,
+    })), untrustedClaims: [], definitionVersion: 1, pendingImpact: null };
 }
 
 function decisionMap(projection: CompetitionWorkbenchProjection): Record<string, string> {
@@ -304,7 +373,12 @@ export function rebaseWorkbenchSources(projection: CompetitionWorkbenchProjectio
   receivedAt: string): CompetitionWorkbenchProjection {
   const rebased = analyseCompetitionSources(sources, receivedAt);
   const decisions = decisionMap(projection);
-  const preservedSources = rebased.sources.map((source, index) => projection.sources[index] ?? source);
+  const available = [...projection.sources];
+  const preservedSources = rebased.sources.map((source) => {
+    const existingIndex = available.findIndex(({ kind, sourceHash }) => kind === source.kind && sourceHash === source.sourceHash);
+    if (existingIndex < 0) return source;
+    return available.splice(existingIndex, 1)[0]!;
+  });
   return { ...rebased, sources: preservedSources, assumptions: projection.assumptions,
     missingDecisions: requiredDecisions.filter(({ id }) => !(id in decisions)),
     definitionVersion: projection.definitionVersion + 1 };
@@ -313,8 +387,13 @@ export function rebaseWorkbenchSources(projection: CompetitionWorkbenchProjectio
 export function recognisedCompetitionName(projection: CompetitionWorkbenchProjection): string | null {
   const editedName = decisionMap(projection)["event-name"];
   if (editedName) return editedName;
-  const source = projection.sources[0];
-  if (!source || source.kind !== "json" || typeof source.original !== "string") return null;
-  try { const root = record(JSON.parse(source.original)); return typeof root?.event === "string" ? root.event : null; }
-  catch { return null; }
+  for (const source of projection.sources) {
+    const root = record(source.normalized);
+    if (typeof root?.event === "string") return root.event;
+    if (source.kind === "json" && typeof source.original === "string") {
+      try { const legacy = record(JSON.parse(source.original)); if (typeof legacy?.event === "string") return legacy.event; }
+      catch { /* A preserved invalid source has no recognised name. */ }
+    }
+  }
+  return null;
 }

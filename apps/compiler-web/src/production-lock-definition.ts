@@ -11,9 +11,17 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function sourceRoot(workbench: CompetitionWorkbenchProjection): Record<string, unknown> | null {
-  const original = workbench.sources[0]?.original;
-  if (typeof original !== "string") return null;
-  try { return asRecord(JSON.parse(original)); } catch { return null; }
+  for (const source of workbench.sources) {
+    const normalized = asRecord(source.normalized);
+    if (normalized && asRecord(normalized.pools) && Array.isArray(normalized.schedule)) return normalized;
+    if (source.kind === "json" && typeof source.original === "string") {
+      try {
+        const legacy = asRecord(JSON.parse(source.original));
+        if (legacy && asRecord(legacy.pools) && Array.isArray(legacy.schedule)) return legacy;
+      } catch { /* A preserved invalid source is not authoritative. */ }
+    }
+  }
+  return null;
 }
 
 function idFor(label: string): string {
@@ -109,14 +117,20 @@ export function definitionFromProductionLock(workbench: CompetitionWorkbenchProj
     { id: `${division.id}.tower.structure`, label: `${division.label} Tower`, divisionId: division.id,
       targetEntrants: division.towerCount, stageIds: [`${division.id}.tower`] },
   ]);
-  const source = workbench.sources[0]!;
+  const source = workbench.sources.find(({ normalized, kind, original }) => {
+    const root = asRecord(normalized); if (root && asRecord(root.pools) && Array.isArray(root.schedule)) return true;
+    if (kind !== "json" || typeof original !== "string") return false;
+    try { const legacy = asRecord(JSON.parse(original)); return Boolean(legacy && asRecord(legacy.pools) && Array.isArray(legacy.schedule)); }
+    catch { return false; }
+  })!;
   const evidence = workbench.assumptions.map(({ id, path, provenance }) => ({ id: `decision.${id}`, rulePath: path,
     origin: "conversation_clarification" as const, knowledge: "KNOWN" as const,
     sourceReference: `${provenance[0]?.sourceId ?? "organiser-edit"}:${provenance[0]?.sourceHash ?? "unknown"}`,
     approved: true, critical: true }));
-  const sourceEvidence = [...workbench.understoodFacts, ...workbench.rules].map(({ id, path }) => ({ id: `source.${id}`, rulePath: path,
+  const sourceEvidence = [...workbench.understoodFacts, ...workbench.rules].map(({ id, path, provenance }) => ({ id: `source.${id}`, rulePath: path,
     origin: "explicit_prompt" as const, knowledge: "KNOWN" as const,
-    sourceReference: `${source.id}:${source.sourceHash}`, approved: true, critical: false }));
+    sourceReference: provenance.map(({ sourceId, sourceHash, sourcePath }) => `${sourceId}:${sourceHash}:${sourcePath}`).join("|"),
+    approved: true, critical: false }));
   const criticalEvidence = [
     ...data.map((division) => ({ id: `decision.tiebreak.${division.id}`, rulePath: `/standingsPolicies/${division.id}.standings` })),
     ...qualifications.map(({ id }) => ({ id: `decision.qualification.${id}`, rulePath: `/qualificationPolicies/${id}` })),

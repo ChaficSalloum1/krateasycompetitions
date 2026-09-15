@@ -3,7 +3,7 @@
 **Date:** 15 September 2026
 **Authority:** [`PRD-Krateasy-Competitions-Execution-Control.md`](./PRD-Krateasy-Competitions-Execution-Control.md)
 **Starting point:** commit `39c18a0` (`Connect authoritative live participant information`), preserving the separately committed publication, St Albans workbench and guarded no-show slices
-**Programme status:** Sprint 1 is complete. Sprint 2 has a connected first golden JSON workbench and clean-edition duplication from a closed competition, but its broader YAML/CSV/XLSX import and organisation scope remains open. Sprint 3 has authoritative signed participant/public/organiser projections and durable targeted delivery, while token lifecycle, recovery and an external provider/fallback remain open. Sprint 4 has the connected command set, guarded no-show and court-outage repair, actual-result knockout progression and a server-derived delay/overrun revision. Sprint 5 has a server-signed, revision-scoped Mac offline event pack and participant lookup, a durable live/incident/stop command journal with explicit retry/conflict/reconciliation, a replayable Normal/Degraded/Paused/Stopped/Cancelled/Recovering authority state, typed incident log, command transfer and separately cleared restart, plus signed printable order-of-play, court, score, participant-QR and restoration materials. Sprint 6 has the connected authoritative close, replay, evidence export, isolated restore and clean-duplication journey over the completed St Albans state, plus executable markup/contrast/motion/forced-colour/print contracts and keyboard/200–400% reflow browser evidence across the live-information surfaces. The authorised emergency details, external delivery provider/fallback, full disconnect/manual restore rehearsal, named-assistive-technology/outdoor inspection and staff dress rehearsal remain open.
+**Programme status:** Sprint 1 is complete. Sprint 2 now has one connected web/API workbench for Describe, Quick, exact JSON/YAML, CSV/XLSX entrant evidence and clean-edition duplication; raw sources, hashes, field provenance, quarantine, conflicts and reversible last-source removal survive restart. Mac import/duplicate controls and broader organisation deployment remain open. Sprint 3 has authoritative signed participant/public/organiser projections and durable targeted delivery, while token rotation/revocation, privacy-safe recovery and an external provider/fallback remain open. Sprint 4 has the connected command set, guarded no-show and court-outage repair, actual-result knockout progression and a server-derived delay/overrun revision. Sprint 5 has a server-signed, revision-scoped Mac offline event pack and participant lookup, a durable live/incident/stop command journal with explicit retry/conflict/reconciliation, a replayable Normal/Degraded/Paused/Stopped/Cancelled/Recovering authority state, typed incident log, command transfer and separately cleared restart, plus signed printable order-of-play, court, score, participant-QR and restoration materials. Sprint 6 has the connected authoritative close, replay, evidence export, isolated restore and clean-duplication journey over the completed St Albans state, plus executable markup/contrast/motion/forced-colour/print contracts and keyboard/200–400% reflow browser evidence across the live-information surfaces. The authorised emergency details, external delivery provider/fallback, full disconnect/manual restore rehearsal, named-assistive-technology/outdoor inspection and staff dress rehearsal remain open.
 **Outcome:** a controlled live pilot can be created, validated, published, operated, disrupted, repaired, communicated, closed, replayed and repeated without a second source of competition truth.
 
 ## 1. Pilot definition
@@ -141,20 +141,20 @@ Committed outcomes:
 **Dependencies:** existing `CompetitionJourney`, Guard and platform publication code.
 **Exit:** no public API accepts authoritative competition artifacts or a Guard verdict from a client.
 
-### Sprint 2 — Complete canonical creation and durable organisation context — **In progress (`36f91a9` golden JSON workbench)**
+### Sprint 2 — Complete canonical creation and durable organisation context — **In progress (connected multi-source workbench)**
 
 **Sprint goal:** an organiser can bring the event they already have into one durable, organisation-scoped draft.
 
 Committed outcomes:
 
-1. Unify Describe, Quick setup, JSON/YAML, CSV/XLSX and Duplicate behind one canonical creation command/model.
-2. Add spreadsheet mapping, original-file preservation, quarantine, duplicate resolution, formula-injection protection and reversible commit.
-3. Persist requirement IDs, uncertainty classes, provenance and unresolved decisions.
-4. Add semantic diff for draft revisions and explicit preserved paths.
+1. Unify Describe, Quick setup, JSON/YAML, CSV/XLSX and Duplicate behind one canonical creation command/model. **Connected for web/API:** the creator saves through `CompetitionJourney`; YAML normalises to the existing definition shape and CSV/XLSX reuse the existing entrant importer. Mac import/duplicate controls remain.
+2. Add spreadsheet mapping, original-file preservation, quarantine, duplicate resolution, formula-injection protection and reversible commit. **Connected for the pilot envelope:** values-only `Entrants` sheets, exact CSV headers, byte/text hashes, active-content/formula/alias/duplicate/size/expansion quarantine, cross-source field conflicts and last-source removal are executable.
+3. Persist requirement IDs, uncertainty classes, provenance and unresolved decisions. **Connected for St Albans:** every entrant display name, division, member identity and seed retains per-source provenance; the eight critical policy decisions remain explicit. Broader fresh-format uncertainty classes remain.
+4. Add semantic diff for draft revisions and explicit preserved paths. **Connected for registered organiser decisions and source revisions.**
 5. Connect participant unit and counts—individual, pair or team—without reference-event assumptions.
 6. Connect organisation/workspace identity, roles and durable competition storage.
-7. Retire or isolate overlapping guided `JsonValue`, legacy interpreter and local-only draft paths where migration evidence allows.
-8. Prove Mac and web reopen the same draft after a fresh process.
+7. Retire or isolate overlapping guided `JsonValue`, legacy interpreter and local-only draft paths where migration evidence allows. **Partial:** the web creator no longer writes the mutable platform-demo singleton; the historical demo and local-only Mac draft remain explicitly isolated.
+8. Prove Mac and web reopen the same draft after a fresh process. **Partial:** multi-source web/API originals, hashes and provenance replay byte-identically after restart; the Mac already reads the authoritative journey but does not yet initiate these import modes.
 
 **Dependencies:** Sprint 1 publication contract; directory and organisation identifiers.
 **Exit:** a historical pilot workbook or description reaches a resumable, explicit, Guard-eligible draft without a demo handoff.
@@ -226,7 +226,7 @@ Committed outcomes:
 5. Execute backup/restore and fresh-process recovery drills. **Connected for the isolated local file-store drill:** a fresh store restores and re-exports byte-identical evidence. Managed production backup credentials and the staff-run recovery drill remain deployment gates.
 6. Duplicate the completed event into a clean new edition with explicit carried-forward memory. **Connected:** duplicate carries the exact closed source and organiser decisions with closure provenance, applies explicit name/date edits, and starts without compile, approval, publication, live or result truth.
 7. Complete accessibility evidence: automated checks plus keyboard, VoiceOver/NVDA, 200–400% zoom/reflow, contrast, reduced motion, print and representative outdoor/mobile conditions. **Partial:** connected participant, organiser, venue, closure and fallback pages now have tested landmarks, names, live announcements, skip navigation, zoom permission, 320px reflow, AA colour pairs, reduced-motion, increased/forced-colour and print rules. A real browser proves keyboard focus and 200%/400% reflow with no page-level horizontal overflow. Named VoiceOver/NVDA, printed-paper and representative outdoor-device inspection still require the accessibility/pilot operations owners.
-8. Complete tenant, privacy, concurrency, provider-crash and malicious-import review.
+8. Complete tenant, privacy, concurrency, provider-crash and malicious-import review. **Partial:** organisation-scoped publication/projections, optimistic concurrency and provider-crash replay are executable. Malicious YAML/CSV/XLSX imports now fail closed on aliases/anchors/tags, formulas, active content, duplicate identities, unsafe archive paths, encrypted/unsupported entries, excessive expansion, depth and size; production persistence and deployment review remain.
 9. Run a full dress rehearsal with trained staff and documented manual fallback.
 10. Resolve all Critical/Integrity findings and record accepted operational risks.
 

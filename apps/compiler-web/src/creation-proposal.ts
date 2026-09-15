@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { ingestCreationSource } from "./creation-source-ingestion.js";
 
 export const creationFormats = [
   "round_robin", "pools_to_knockout", "single_elimination", "double_elimination", "swiss", "league",
@@ -9,7 +10,10 @@ export type CreationFormat = typeof creationFormats[number];
 export type CreationSource =
   | { readonly mode: "language"; readonly text: string }
   | { readonly mode: "quick"; readonly value: unknown }
-  | { readonly mode: "json"; readonly text: string };
+  | { readonly mode: "json"; readonly text: string }
+  | { readonly mode: "yaml"; readonly text: string }
+  | { readonly mode: "csv"; readonly text: string }
+  | { readonly mode: "xlsx"; readonly fileName: string; readonly base64: string };
 
 export interface CompetitionBlueprint {
   readonly name: string | null;
@@ -169,9 +173,15 @@ function question(field: CreationQuestion["field"], prompt: string, why: string,
 export function createCompetitionProposal(source: CreationSource): Readonly<CreationProposal> {
   let parsed: ReturnType<typeof fromObject>;
   if (source.mode === "language") parsed = fromLanguage(typeof source.text === "string" ? source.text.trim() : "");
-  else if (source.mode === "json") {
-    try { parsed = fromObject(JSON.parse(source.text)); } catch { parsed = { blueprint: emptyBlueprint(), warnings: [], rejected: "The JSON is not valid." }; }
-  } else parsed = fromObject(source.value);
+  else if (source.mode === "json" || source.mode === "yaml") {
+    if (source.mode === "yaml") {
+      const ingestion = ingestCreationSource(source);
+      parsed = ingestion.status === "ACCEPTED" ? fromObject(ingestion.normalized)
+        : { blueprint: emptyBlueprint(), warnings: [], rejected: ingestion.findings.join(" ") };
+    } else try { parsed = fromObject(JSON.parse(source.text)); }
+    catch { parsed = { blueprint: emptyBlueprint(), warnings: [], rejected: "The JSON is not valid." }; }
+  } else if (source.mode === "quick") parsed = fromObject(source.value);
+  else parsed = { blueprint: emptyBlueprint(), warnings: [] };
   const blueprint = parsed.blueprint;
   const questions: CreationQuestion[] = [];
   if (!blueprint.name) questions.push(question("name", "What should this competition be called?", "A stable name is required for the draft and public links."));
@@ -208,6 +218,10 @@ export function parseCreationProposalPayload(value: unknown): Readonly<CreationP
   const record = value as Record<string, unknown>;
   if (record.mode === "language") return createCompetitionProposal({ mode: "language", text: typeof record.text === "string" ? record.text : "" });
   if (record.mode === "json") return createCompetitionProposal({ mode: "json", text: typeof record.text === "string" ? record.text : "" });
+  if (record.mode === "yaml") return createCompetitionProposal({ mode: "yaml", text: typeof record.text === "string" ? record.text : "" });
+  if (record.mode === "csv") return createCompetitionProposal({ mode: "csv", text: typeof record.text === "string" ? record.text : "" });
+  if (record.mode === "xlsx") return createCompetitionProposal({ mode: "xlsx",
+    fileName: typeof record.fileName === "string" ? record.fileName : "", base64: typeof record.base64 === "string" ? record.base64 : "" });
   if (record.mode === "quick") return createCompetitionProposal({ mode: "quick", value: record.value });
   return createCompetitionProposal({ mode: "quick", value: null });
 }

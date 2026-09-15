@@ -31,6 +31,18 @@ test("JSON and quick setup share one strict normalisation and validation boundar
   assert.ok(unknown.warnings.some((entry) => entry.includes("Unknown fields")));
 });
 
+test("YAML uses the same blueprint normalisation without executable semantics", () => {
+  const proposal = createCompetitionProposal({ mode: "yaml", text: [
+    "name: Sunday Social", "sport: padel", "participantUnit: pairs", "participantCount: 16",
+    "resourceCount: 4", "resourceLabel: courts", "format: pools_to_knockout", "poolSize: 4",
+    "qualifiersPerPool: 2", "minimumMatches: 3", "minimumRestMinutes: 20", "matchDurationMinutes: 25",
+    "startsAt: 2026-10-18T09:00:00.000Z", "endsAt: 2026-10-18T18:00:00.000Z", "priority: fair_recovery",
+  ].join("\n") });
+  assert.equal(proposal.status, "READY_TO_COMPILE");
+  assert.equal(proposal.blueprint.participantCount, 16);
+  assert.equal(proposal.blueprint.format, "pools_to_knockout");
+});
+
 test("missing and contradictory scheduling facts remain visible and block compilation", () => {
   const missing = createCompetitionProposal({ mode: "quick", value: { name: "Open", sport: "squash",
     participantUnit: "players", participantCount: 16, resourceCount: 4, format: "single_elimination",
@@ -60,9 +72,12 @@ test("canonical web product separates the lifecycle from the advanced workbench"
   for (const text of ["What needs you now?", "Create a competition", "Templates", "People &amp; places", "Team",
     "Open advanced workbench", "Two valid operating plans", "Participant communications", "All competitions"])
     assert.ok(productHtml.includes(text), `missing ${text}`);
-  for (const text of ["Describe it", "Quick setup", "Import JSON", "No hidden assumptions", "Save as draft",
+  for (const text of ["Describe it", "Quick setup", "Import JSON", "Import YAML", "Import CSV", "Import XLSX",
+    "No hidden assumptions", "Save as draft",
     "nothing publishes automatically", "Minimum rest", "Must finish by"])
     assert.ok(creatorHtml.includes(text), `missing ${text}`);
+  assert.ok(creatorHtml.includes("/v1/competition-journey"));
+  assert.equal(creatorHtml.includes("/api/platform-demo/commands"), false);
   assert.ok(creatorHtml.includes("@media(max-width:580px)"));
   assert.ok(productHtml.includes("@media(max-width:650px)"));
 });

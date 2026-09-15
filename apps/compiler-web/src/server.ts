@@ -20,8 +20,9 @@ import { runReferenceDemo } from "./demo.js";
 import { compilerHtml } from "./ui.js";
 import { creatorHtml } from "./creator-view.js";
 import { productHtml } from "./product-view.js";
-import { parseCreationProposalPayload } from "./creation-proposal.js";
+import { createCompetitionProposal, parseCreationProposalPayload } from "./creation-proposal.js";
 import { CompetitionJourney, competitionJourneyHtml, parseConnectedLiveCommand, parseCreationSource } from "./competition-journey.js";
+import { analyseCompetitionSources, recognisedCompetitionName } from "./competition-workbench.js";
 import { playerHtml } from "./player-view.js";
 import { participantOperationsHtml, venueDisplayHtml } from "./attention-views.js";
 import { verifyOfflineEventPack } from "./offline-event-pack.js";
@@ -532,6 +533,26 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         json(response, 200, parseCreationProposalPayload(await readJsonRequestBody(request, 65_536)));
         return;
       }
+      if (!production && request.url === "/api/competition-source-preview" && request.method === "POST") {
+        if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(String(request.headers["content-type"] ?? ""))) {
+          json(response, 415, { apiVersion: "1.0", error: "unsupported_media_type" });
+          return;
+        }
+        const source = parseCreationSource(await readJsonRequestBody(request, 8_388_608));
+        const proposal = createCompetitionProposal(source); const workbench = analyseCompetitionSources([source], serverNow());
+        const accepted = workbench.sources[0]?.status === "ACCEPTED";
+        const participantCount = workbench.understoodFacts.find(({ id }) => id === "entrants.total")?.value;
+        json(response, 200, { ...proposal, status: accepted ? "NEEDS_INPUT" : "REJECTED",
+          draftCanBeSaved: accepted, compilationCanStart: false,
+          blueprint: typeof participantCount === "number" ? { ...proposal.blueprint,
+            name: recognisedCompetitionName(workbench), sport: recognisedCompetitionName(workbench) ? "padel" : null,
+            participantUnit: "pairs", participantCount } : proposal.blueprint,
+          questions: workbench.missingDecisions.map(({ prompt }) => ({ field: "source", prompt,
+            why: "The authoritative draft keeps this decision explicit and cannot compile until it is resolved.", blocking: true })),
+          understood: workbench.understoodFacts.map(({ id }) => id),
+          warnings: workbench.sources[0]?.findings ?? [], workbench });
+        return;
+      }
       if (!production && request.url === "/api/platform-demo/workspace" && request.method === "GET") {
         json(response, 200, await (await getPlatformDemo()).workspace());
         return;
@@ -659,7 +680,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         return;
       }
       if (!production && request.url === "/v1/competition-journey" && request.method === "POST") {
-        const body = await readJsonRequestBody(request, 65_536);
+        const body = await readJsonRequestBody(request, 8_388_608);
         if (!body || typeof body !== "object" || Array.isArray(body)
           || Object.keys(body as Record<string, unknown>).some((key) => key !== "source")
           || !("source" in body)) throw new Error("invalid_journey_command");
@@ -711,7 +732,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end(html);
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
@@ -732,7 +753,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           json(response, 405, { apiVersion: "1.0", error: "method_not_allowed" }, { allow: "GET, POST" });
           return;
         }
-        const body = await readJsonRequestBody(request, 65_536);
+        const body = await readJsonRequestBody(request, operation === "sources" || operation === "draft" ? 8_388_608 : 65_536);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid_journey_command");
         const command = body as Record<string, unknown>;
         if (operation === "draft") {
@@ -746,6 +767,14 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
             || !Number.isSafeInteger(command.expectedDraftVersion)) throw new Error("invalid_journey_command");
           json(response, 200, competitionJourney.addSource(competitionId, command.expectedDraftVersion as number,
             parseCreationSource(command.source)));
+          return;
+        }
+        if (operation === "source-remove") {
+          if (Object.keys(command).some((key) => !["expectedDraftVersion", "sourceId"].includes(key))
+            || !Number.isSafeInteger(command.expectedDraftVersion) || typeof command.sourceId !== "string")
+            throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.removeSource(competitionId, command.expectedDraftVersion as number,
+            command.sourceId));
           return;
         }
         if (operation === "edit-preview" || operation === "edit-apply") {

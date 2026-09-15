@@ -31,6 +31,7 @@ import {
   type CreationProposal,
   type CreationSource,
 } from "./creation-proposal.js";
+import { validBase64Xlsx, validCreationSourceText } from "./creation-source-ingestion.js";
 import {
   applyWorkbenchEdit,
   analyseCompetitionSources,
@@ -646,6 +647,23 @@ export class CompetitionJourney {
     return snapshotOf(revised);
   }
 
+  public removeSource(id: string, expectedDraftVersion: number, sourceId: string): CompetitionJourneySnapshot {
+    const current = this.require(id);
+    if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
+    if (current.approval) throw new Error("approved_revision_is_immutable");
+    const currentWorkbench = current.workbench ?? analyseCompetitionSources(current.sources ?? [current.source], current.createdAt);
+    const index = currentWorkbench.sources.findIndex(({ id: candidate }) => candidate === sourceId);
+    const currentSources = current.sources ?? [current.source];
+    if (index < 0 || index !== currentSources.length - 1 || currentSources.length <= 1)
+      throw new Error("journey_source_not_removable");
+    const sources = currentSources.filter((_, candidate) => candidate !== index);
+    const updatedAt = this.canonicalNow(); const workbench = rebaseWorkbenchSources(currentWorkbench, sources, updatedAt);
+    const { compiled: _compiled, approval: _approval, publication: _publication, ...draft } = withoutSeal(current);
+    const revised = sealRecord({ ...draft, draftVersion: current.draftVersion + 1, updatedAt,
+      source: sources.at(-1)!, sources, workbench });
+    this.records.set(id, revised); this.persist(); return snapshotOf(revised);
+  }
+
   public planStructuredEdit(id: string, expectedDraftVersion: number, edits: readonly StructuredWorkbenchEdit[],
     editedBy: string): StructuredWorkbenchEditPreview {
     const current = this.require(id);
@@ -1211,8 +1229,12 @@ export class CompetitionJourney {
     const existing = [...this.records.values()].find((record) => record.duplication?.memoryHash === memoryHash);
     if (existing) return snapshotOf(existing);
     const duplicatedAt = this.canonicalNow();
-    const source = (current.sources ?? [current.source])[0]!;
-    const workbench = analyseCompetitionSources([source], duplicatedAt);
+    const baseSources = (current.sources ?? [current.source]).filter((candidate) => {
+      if (candidate.mode !== "quick" || !candidate.value || typeof candidate.value !== "object" || Array.isArray(candidate.value)) return true;
+      return (candidate.value as Record<string, unknown>).kind !== "structured-organiser-edit";
+    });
+    const proposalSource = baseSources.find(({ mode }) => mode === "json" || mode === "yaml") ?? baseSources[0]!;
+    const workbench = analyseCompetitionSources(baseSources, duplicatedAt);
     const carried = workbenchDecisionValues(current.workbench!);
     const edits = Object.entries({ ...carried, "event-name": name, "event-date": input.eventDate })
       .map(([id, value]) => ({ id, value })).sort((left, right) => left.id.localeCompare(right.id));
@@ -1231,7 +1253,7 @@ export class CompetitionJourney {
     if (this.records.has(id)) throw new Error("competition_duplicate_identity_conflict");
     const record = sealRecord({ id, organizationId: current.organizationId, draftVersion: 2,
       createdBy: input.createdBy, createdAt: duplicatedAt, updatedAt: duplicatedAt,
-      source: editSource, sources: [source, editSource], proposal: createCompetitionProposal(source),
+      source: editSource, sources: [...baseSources, editSource], proposal: createCompetitionProposal(proposalSource),
       workbench: revisedWorkbench, supportFindings: [], duplication });
     this.records.set(id, record);
     this.persist();
@@ -1483,7 +1505,15 @@ export function parseCreationSource(value: unknown): CreationSource {
   if (record.mode === "language" && typeof record.text === "string" && Object.keys(record).every((key) => ["mode", "text"].includes(key)))
     return { mode: "language", text: record.text };
   if (record.mode === "json" && typeof record.text === "string" && Object.keys(record).every((key) => ["mode", "text"].includes(key)))
-    return { mode: "json", text: record.text };
+    return validCreationSourceText(record.text) ? { mode: "json", text: record.text } : (() => { throw new Error("invalid_creation_source"); })();
+  if (record.mode === "yaml" && typeof record.text === "string" && validCreationSourceText(record.text)
+    && Object.keys(record).every((key) => ["mode", "text"].includes(key))) return { mode: "yaml", text: record.text };
+  if (record.mode === "csv" && typeof record.text === "string" && validCreationSourceText(record.text)
+    && Object.keys(record).every((key) => ["mode", "text"].includes(key))) return { mode: "csv", text: record.text };
+  if (record.mode === "xlsx" && typeof record.fileName === "string" && /^[^/\\\0]{1,160}\.xlsx$/i.test(record.fileName)
+    && typeof record.base64 === "string" && validBase64Xlsx(record.base64)
+    && Object.keys(record).every((key) => ["mode", "fileName", "base64"].includes(key)))
+    return { mode: "xlsx", fileName: record.fileName, base64: record.base64 };
   if (record.mode === "quick" && Object.keys(record).every((key) => ["mode", "value"].includes(key)))
     return { mode: "quick", value: record.value };
   throw new Error("invalid_creation_source");
