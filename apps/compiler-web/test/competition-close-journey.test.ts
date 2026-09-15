@@ -8,6 +8,12 @@ import { canonicalHash, sha256 } from "@tournament-os/tournament-schema";
 import { createBackupManifest } from "@tournament-os/competition-engine";
 import { CLOSE_ACKNOWLEDGEMENTS } from "../src/competition-lifecycle.js";
 import { CompetitionJourney } from "../src/competition-journey.js";
+import {
+  assessPilotRelease,
+  pilotReleaseScope,
+  PILOT_AUTHORITY_GATES,
+  type PilotAuthorityAcceptance,
+} from "../src/pilot-release-readiness.js";
 import { createCompilerServer } from "../src/server.js";
 
 const fixture = readFileSync(new URL("./fixtures/pk-st-albans-production-lock-candidate-2.json", import.meta.url), "utf8").trimEnd();
@@ -154,6 +160,30 @@ test("the connected St Albans journey closes, exports, restores and duplicates w
     for (const required of ["specification.json", "graph.json", "schedule.json", "guard-report.json",
       "actual-results.json", "live-events.json", "operational-events.json", "sources.json", "audit.md",
       "authoritative-record.json"]) assert.ok(names.includes(required));
+
+    const releaseScope = pilotReleaseScope(bundleResponse.body);
+    const blockedRelease = assessPilotRelease({ bundle: bundleResponse.body, acceptances: [], assessedAt: clock,
+      maximumAcceptanceAgeMs: 86_400_000 });
+    assert.equal(blockedRelease.status, "BLOCKED_EXTERNAL_AUTHORITY");
+    assert.deepEqual(blockedRelease.blockers.map(({ gateId }) => gateId),
+      PILOT_AUTHORITY_GATES.map(({ id }) => id).sort((left, right) => left.localeCompare(right)));
+    const acceptances: PilotAuthorityAcceptance[] = PILOT_AUTHORITY_GATES.map((gate) => ({
+      gateId: gate.id, role: gate.role, ownerId: `owner.${gate.role.toLowerCase()}`,
+      decision: "ACCEPTED", acceptedAt: clock, evidenceRef: `record:${gate.id.toLowerCase()}`,
+      scopeHash: releaseScope, fallbackAcknowledged: true,
+    }));
+    const readyRelease = assessPilotRelease({ bundle: bundleResponse.body, acceptances,
+      assessedAt: clock, maximumAcceptanceAgeMs: 86_400_000 });
+    assert.equal(readyRelease.status, "READY");
+    assert.equal(readyRelease.blockers.length, 0);
+    assert.match(readyRelease.manifestHash, /^[a-f0-9]{64}$/);
+    assert.deepEqual(assessPilotRelease({ bundle: bundleResponse.body,
+      acceptances: [...acceptances].reverse(), assessedAt: clock, maximumAcceptanceAgeMs: 86_400_000 }), readyRelease);
+    const forgedAcceptance = structuredClone(acceptances);
+    forgedAcceptance[0]!.scopeHash = "f".repeat(64);
+    assert.equal(assessPilotRelease({ bundle: bundleResponse.body, acceptances: forgedAcceptance,
+      assessedAt: clock, maximumAcceptanceAgeMs: 86_400_000 }).status, "BLOCKED_EXTERNAL_AUTHORITY");
+
     const forged = structuredClone(bundleResponse.body);
     const forgedSpecification = forged.artifacts.find(({ fileName }: { fileName: string }) => fileName === "specification.json");
     forgedSpecification.content = "{}";
