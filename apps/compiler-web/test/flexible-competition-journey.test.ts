@@ -252,3 +252,17 @@ test("restart independently rejects a re-hashed generic workbench roster forged 
       /journey_store_integrity_failed/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+test("generic compilation fails before candidate publication when the pinned solver is unavailable", () => {
+  const journey = new CompetitionJourney({ now: () => "2026-09-15T10:00:00.000Z",
+    solverPythonExecutable: "/definitely/missing/krateasy-cp-sat-python" });
+  const blueprint = journey.create({ mode: "quick", value: { ...policy, name: "Solver Boundary",
+    format: "round_robin", participantCount: 4, minimumMatches: 3,
+    startsAt: "2026-10-18T08:00:00.000Z", endsAt: "2026-10-18T17:00:00.000Z" } });
+  const rostered = journey.addSource(blueprint.id, blueprint.draftVersion,
+    { mode: "csv", text: rosterCsv("Solver Boundary", 4) });
+  assert.throws(() => journey.compile(rostered.id, rostered.draftVersion), /journey_solver_unknown/);
+  const unchanged = journey.read(rostered.id)!;
+  assert.equal(unchanged.status, "DRAFT");
+  assert.equal(unchanged.compiled, null);
+});

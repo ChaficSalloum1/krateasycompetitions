@@ -231,5 +231,21 @@ test("the connected web draft appends a generic roster into the same authoritati
   assert.deepEqual(rostered.body.workbench.missingDecisions, []);
   assert.equal(rostered.body.workbench.understoodFacts.find((fact: { id: string }) =>
     fact.id === "entrant.harbour.pair.1.display-name").value, "Harbour Pair 1");
+  const compiled = await post(server, `/v1/competition-journey/${encodeURIComponent(saved.body.id)}/compile`,
+    { expectedDraftVersion: rostered.body.draftVersion });
+  assert.equal(compiled.status, 200);
+  assert.equal(compiled.body.status, "READY_FOR_APPROVAL");
+  assert.equal(compiled.body.compiled.guardStatus, "PASSED");
+  const published = await post(server, `/v1/competition-journey/${encodeURIComponent(saved.body.id)}/approve`, {
+    expectedRevision: compiled.body.revision,
+    acknowledgedFindingCodes: compiled.body.compiled.requiredAcknowledgementCodes,
+  });
+  assert.equal(published.status, 200);
+  assert.equal(published.body.status, "PUBLISHED");
+  assert.equal(published.body.publication.revision, 1);
+  const active = await post(server, `/v1/competition-journey/${encodeURIComponent(saved.body.id)}/live-activate`,
+    { expectedRevision: published.body.revision });
+  assert.equal(active.status, 200);
+  assert.equal(active.body.live.baseRevision, 1);
   server.close();
 });

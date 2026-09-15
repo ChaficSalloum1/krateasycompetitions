@@ -84,6 +84,18 @@ test("the draft roster control is accessible, reversible and submits source data
   assert.doesNotMatch(html, /JSON\.stringify\(\{[^}]*guardInput/);
 });
 
+test("the organiser lifecycle control sends only authoritative revision commands", () => {
+  const html = competitionJourneyHtml("competition.accessibility");
+  for (const expected of ['id="lifecycle"', 'aria-labelledby="lifecycle-title"',
+    'id="lifecycle-status"', 'Compile and run Guard', 'Approve and publish exact revision',
+    'Activate live play', 'Open live control room', 'Open venue display'])
+    assert.ok(html.includes(expected), `organiser lifecycle control is missing ${expected}`);
+  assert.ok(html.includes("expectedDraftVersion:view.draftVersion"));
+  assert.ok(html.includes("expectedRevision:view.revision,acknowledgedFindingCodes"));
+  assert.ok(html.includes("expectedRevision:view.revision"));
+  assert.doesNotMatch(html, /payload[^;]*(?:spec|graph|schedule|simulation|guardInput|guardReport)/i);
+});
+
 function channel(value: number): number {
   const component = value / 255;
   return component <= 0.04045 ? component / 12.92 : ((component + 0.055) / 1.055) ** 2.4;
