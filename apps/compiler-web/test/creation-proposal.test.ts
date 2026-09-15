@@ -118,9 +118,13 @@ test("canonical web product separates the lifecycle from the advanced workbench"
   for (const text of ["Describe it", "Quick setup", "Import JSON", "Import YAML", "Import CSV", "Import XLSX",
     "No hidden assumptions", "Save as draft",
     "nothing publishes automatically", "Minimum rest", "Must finish by", "Timezone", "Scoring policy",
-    "Withdrawal policy", "Draw policy"])
+    "Withdrawal policy", "Draw policy", "Drop a JSON file here", "Drop a YAML file here", "Drop a CSV roster here",
+    "Drop an XLSX workbook here", "Browse JSON file", "Browse YAML file", "Browse CSV file", "Browse XLSX file",
+    "original preserved for review", "Paste CSV instead"])
     assert.ok(creatorHtml.includes(text), `missing ${text}`);
   assert.ok(creatorHtml.includes("/v1/competition-journey"));
+  assert.ok(creatorHtml.includes("dataTransfer.files[0]"));
+  assert.ok(creatorHtml.includes("Choose a '+({json:'JSON'"));
   assert.equal(creatorHtml.includes("/api/platform-demo/commands"), false);
   assert.ok(creatorHtml.includes("@media(max-width:580px)"));
   assert.ok(productHtml.includes("@media(max-width:650px)"));
