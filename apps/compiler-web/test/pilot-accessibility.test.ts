@@ -3,9 +3,11 @@ import test from "node:test";
 import { participantOperationsHtml, venueDisplayHtml } from "../src/attention-views.js";
 import { competitionJourneyHtml } from "../src/competition-journey.js";
 import { playerHtml } from "../src/player-view.js";
+import { participantRecoveryHtml } from "../src/participant-recovery-view.js";
 
 const coreSurfaces = [
   ["participant next", playerHtml],
+  ["participant recovery", participantRecoveryHtml],
   ["organiser live", participantOperationsHtml],
   ["venue display", venueDisplayHtml],
   ["published and closed competition", competitionJourneyHtml("competition.accessibility")],

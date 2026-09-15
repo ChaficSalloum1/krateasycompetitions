@@ -59,11 +59,15 @@ import {
 } from "./no-show-journey.js";
 import {
   createParticipantAccessGrant,
+  createParticipantRecoveryGrant,
   deriveParticipantNext,
   derivePublicLive,
   resolveParticipantAccess,
+  resolveParticipantRecovery,
   type ParticipantAccess,
   type ParticipantAccessGrant,
+  type ParticipantRecoveryCode,
+  type ParticipantRecoveryGrant,
   type ParticipantNextProjection,
   type OrganiserLiveProjection,
   type PublicLiveProjection,
@@ -215,6 +219,8 @@ interface StoredJourneyRecord {
   readonly publication?: JourneyPublication;
   readonly live?: JourneyLiveState;
   readonly participantAccess?: readonly ParticipantAccessGrant[];
+  readonly participantRecovery?: readonly ParticipantRecoveryGrant[];
+  readonly participantAccessEvents?: readonly ParticipantAccessControlEvent[];
   readonly closure?: CompetitionClosure;
   readonly duplication?: JourneyDuplication;
   readonly recordHash: string;
@@ -285,9 +291,24 @@ export interface CompetitionJourneyOptions {
   readonly now?: () => string;
   readonly organizationId?: string;
   readonly participantTokenSecret?: string;
+  readonly participantTokenKeys?: Readonly<Record<string, string>>;
   readonly participantTokenKeyVersion?: string;
   readonly offlinePackSigningSeedHex?: string;
   readonly operationalAuthorityAssignments?: OperationalAuthorityAssignments;
+}
+
+interface ParticipantAccessControlEvent {
+  readonly sequence: number;
+  readonly previousEventHash: string | null;
+  readonly commandId: string;
+  readonly requestHash: string;
+  readonly kind: "ROTATED" | "REVOKED" | "RECOVERY_ISSUED";
+  readonly participantId: string;
+  readonly actorId: string;
+  readonly occurredAt: string;
+  readonly affectedCredentialHashes: readonly string[];
+  readonly resultCredentialHash?: string;
+  readonly eventHash: string;
 }
 
 const exactAcknowledgements = (left: readonly string[], right: readonly string[]): boolean =>
@@ -347,6 +368,63 @@ function evidenceBundleForRecord(record: StoredJourneyRecord): CompetitionEviden
   });
 }
 
+const validParticipantCredentialTimestamp = (value: string): boolean => {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+};
+
+function verifyParticipantCredentials(record: StoredJourneyRecord): boolean {
+  const access = record.participantAccess ?? [];
+  const recovery = record.participantRecovery ?? [];
+  const events = record.participantAccessEvents ?? [];
+  if (new Set(access.map(({ tokenHash }) => tokenHash)).size !== access.length
+    || access.some((grant) => grant.organizationId !== record.organizationId || grant.competitionId !== record.id
+      || !/^[a-f0-9]{64}$/.test(grant.tokenHash) || !validParticipantCredentialTimestamp(grant.expiresAt)
+      || Boolean(grant.revokedAt) !== Boolean(grant.revokedByCommandId)
+      || (grant.revokedAt !== undefined && !validParticipantCredentialTimestamp(grant.revokedAt)))) return false;
+  if (new Set(recovery.map(({ codeHash }) => codeHash)).size !== recovery.length
+    || recovery.some((grant) => grant.organizationId !== record.organizationId || grant.competitionId !== record.id
+      || !Number.isSafeInteger(grant.operationalRevision) || grant.operationalRevision < grant.publishedRevision
+      || !/^[a-f0-9]{64}$/.test(grant.codeHash) || !validParticipantCredentialTimestamp(grant.codeExpiresAt)
+      || !validParticipantCredentialTimestamp(grant.accessExpiresAt) || !validParticipantCredentialTimestamp(grant.issuedAt)
+      || !grant.issuedByCommandId.trim() || !/^[a-f0-9]{64}$/.test(grant.requestHash)
+      || Boolean(grant.revokedAt) !== Boolean(grant.revokedByCommandId)
+      || (grant.revokedAt !== undefined && !validParticipantCredentialTimestamp(grant.revokedAt)))) return false;
+  const credentialHashes = new Set([...access.map(({ tokenHash }) => tokenHash), ...recovery.map(({ codeHash }) => codeHash)]);
+  let previousEventHash: string | null = null;
+  const commandIds = new Set<string>();
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index]!;
+    const { eventHash, ...body } = event;
+    if (event.sequence !== index + 1 || event.previousEventHash !== previousEventHash || eventHash !== canonicalHash(body)
+      || commandIds.has(event.commandId) || !event.commandId.trim() || !/^[a-f0-9]{64}$/.test(event.requestHash)
+      || !event.participantId.trim() || !event.actorId.trim() || !validParticipantCredentialTimestamp(event.occurredAt)
+      || event.affectedCredentialHashes.some((hash) => !credentialHashes.has(hash))) return false;
+    if (event.kind === "ROTATED" && (!event.resultCredentialHash
+      || !access.some((grant) => grant.tokenHash === event.resultCredentialHash
+        && grant.issuedByCommandId === event.commandId && grant.participantId === event.participantId))) return false;
+    if (event.kind === "RECOVERY_ISSUED" && (!event.resultCredentialHash
+      || !recovery.some((grant) => grant.codeHash === event.resultCredentialHash
+        && grant.issuedByCommandId === event.commandId && grant.participantId === event.participantId))) return false;
+    if (event.kind === "REVOKED" && event.resultCredentialHash !== undefined) return false;
+    if ((event.kind === "ROTATED" || event.kind === "REVOKED")
+      && event.affectedCredentialHashes.some((hash) =>
+        !access.some((grant) => grant.tokenHash === hash && grant.participantId === event.participantId
+          && grant.revokedByCommandId === event.commandId)
+        && !recovery.some((grant) => grant.codeHash === hash && grant.participantId === event.participantId
+          && grant.revokedByCommandId === event.commandId))) return false;
+    commandIds.add(event.commandId);
+    previousEventHash = event.eventHash;
+  }
+  return true;
+}
+
+function nextParticipantAccessEvent(events: readonly ParticipantAccessControlEvent[],
+  input: Omit<ParticipantAccessControlEvent, "sequence" | "previousEventHash" | "eventHash">): ParticipantAccessControlEvent {
+  const body = { sequence: events.length + 1, previousEventHash: events.at(-1)?.eventHash ?? null, ...input };
+  return { ...body, eventHash: canonicalHash(body) };
+}
+
 function verifyRecord(record: StoredJourneyRecord): boolean {
   const { recordHash, ...body } = record;
   if (recordHash !== makeRecordHash(body)) return false;
@@ -359,9 +437,7 @@ function verifyRecord(record: StoredJourneyRecord): boolean {
       || new Set(record.duplication.sourceDocumentHashes).size !== record.duplication.sourceDocumentHashes.length
       || record.duplication.sourceDocumentHashes.some((hash) => !/^[a-f0-9]{64}$/.test(hash))) return false;
   }
-  if (record.participantAccess && (new Set(record.participantAccess.map(({ tokenHash }) => tokenHash)).size
-    !== record.participantAccess.length || record.participantAccess.some((grant) => grant.organizationId !== record.organizationId
-      || grant.competitionId !== record.id || !/^[a-f0-9]{64}$/.test(grant.tokenHash)))) return false;
+  if (!verifyParticipantCredentials(record)) return false;
   if (!record.live) return !record.closure;
   if (!record.live.operations || !verifyOperationalSafetyState(record.live.operations)) return false;
   const replay = replayLiveOperationsEvents(record.live.state.definition, record.live.state.events);
@@ -559,7 +635,7 @@ export class CompetitionJourney {
   private readonly storagePath: string | undefined;
   private readonly now: () => string;
   private readonly organizationId: string;
-  private readonly participantTokenSecret: string;
+  private readonly participantTokenKeys: Readonly<Record<string, string>>;
   private readonly participantTokenKeyVersion: string;
   private readonly offlinePackSigningSeedHex: string;
   private readonly operationalAuthorityAssignments: OperationalAuthorityAssignments;
@@ -568,8 +644,12 @@ export class CompetitionJourney {
     this.storagePath = options.storagePath;
     this.now = options.now ?? (() => new Date().toISOString());
     this.organizationId = options.organizationId ?? "org.local";
-    this.participantTokenSecret = options.participantTokenSecret ?? "";
     this.participantTokenKeyVersion = options.participantTokenKeyVersion ?? "v1";
+    this.participantTokenKeys = options.participantTokenKeys
+      ?? (options.participantTokenSecret ? { [this.participantTokenKeyVersion]: options.participantTokenSecret } : {});
+    if (Object.entries(this.participantTokenKeys).some(([version, secret]) => !version.trim() || secret.length < 32)
+      || (Object.keys(this.participantTokenKeys).length > 0 && !this.participantTokenKeys[this.participantTokenKeyVersion]))
+      throw new Error("participant_signing_not_configured");
     this.offlinePackSigningSeedHex = options.offlinePackSigningSeedHex ?? "";
     this.operationalAuthorityAssignments = options.operationalAuthorityAssignments ?? {
       incidentLead: "local.incident-lead", competitionLead: "local.competition-lead",
@@ -1269,12 +1349,16 @@ export class CompetitionJourney {
     if (!knownParticipants.has(input.participantId)) throw new Error("participant_access_denied");
     const issuedAt = this.canonicalNow();
     if (Date.parse(input.expiresAt) <= Date.parse(issuedAt)) throw new Error("invalid_participant_access_grant");
+    const activeSecret = this.participantTokenKeys[this.participantTokenKeyVersion];
+    if (!activeSecret) throw new Error("participant_signing_not_configured");
     const { grant, access } = createParticipantAccessGrant({ organizationId: input.organizationId,
       competitionId: input.competitionId, publishedRevision: input.expectedPublishedRevision,
       participantId: input.participantId, expiresAt: input.expiresAt,
-      keyVersion: this.participantTokenKeyVersion }, this.participantTokenSecret,
+      keyVersion: this.participantTokenKeyVersion }, activeSecret,
     current.live.publication?.revision ?? current.live.baseRevision);
     const grants = current.participantAccess ?? [];
+    if (grants.some((candidate) => candidate.tokenHash === grant.tokenHash && candidate.revokedAt))
+      throw new Error("participant_access_revoked");
     if (!grants.some(({ tokenHash }) => tokenHash === grant.tokenHash)) {
       const revised = sealRecord({ ...withoutSeal(current), updatedAt: issuedAt, participantAccess: [...grants, grant]
         .sort((left, right) => left.participantId.localeCompare(right.participantId) || left.expiresAt.localeCompare(right.expiresAt)) });
@@ -1284,11 +1368,193 @@ export class CompetitionJourney {
     return access;
   }
 
+  public rotateParticipantAccess(input: { readonly organizationId: string; readonly competitionId: string;
+    readonly expectedPublishedRevision: number; readonly expectedOperationalRevision: number;
+    readonly participantId: string; readonly expiresAt: string; readonly commandId: string;
+    readonly actorId: string; readonly reason: string }): ParticipantAccess {
+    const current = this.requireScoped(input.organizationId, input.competitionId);
+    const requestHash = canonicalHash(input);
+    const prior = (current.participantAccessEvents ?? []).find(({ commandId }) => commandId === input.commandId);
+    if (prior) {
+      if (prior.kind !== "ROTATED" || prior.requestHash !== requestHash || !prior.resultCredentialHash)
+        throw new Error("participant_access_command_conflict");
+      const grant = (current.participantAccess ?? []).find(({ tokenHash }) => tokenHash === prior.resultCredentialHash);
+      const secret = grant && this.participantTokenKeys[grant.keyVersion];
+      if (!grant || !secret) throw new Error("participant_signing_not_configured");
+      return createParticipantAccessGrant({ organizationId: grant.organizationId, competitionId: grant.competitionId,
+        publishedRevision: grant.publishedRevision, participantId: grant.participantId, expiresAt: grant.expiresAt,
+        keyVersion: grant.keyVersion, ...(grant.issuedAt ? { issuedAt: grant.issuedAt } : {}),
+        ...(grant.issuedByCommandId ? { issuedByCommandId: grant.issuedByCommandId } : {}) }, secret,
+      current.live?.publication?.revision ?? current.live?.baseRevision ?? grant.publishedRevision).access;
+    }
+    const live = this.requireProjectedLive(current, input.expectedOperationalRevision);
+    if (current.publication!.revision !== input.expectedPublishedRevision || live.baseRevision !== input.expectedPublishedRevision)
+      throw new Error("journey_revision_conflict");
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{2,199}$/.test(input.commandId) || !input.actorId.trim()
+      || input.reason.trim().length < 4 || input.reason.length > 500) throw new Error("invalid_participant_access_command");
+    const knownParticipants = new Set(live.state.definition.contests.flatMap(({ entrantIds }) => entrantIds));
+    if (!knownParticipants.has(input.participantId)) throw new Error("participant_access_denied");
+    const occurredAt = this.canonicalNow();
+    if (!validParticipantCredentialTimestamp(input.expiresAt) || Date.parse(input.expiresAt) <= Date.parse(occurredAt))
+      throw new Error("invalid_participant_access_grant");
+    const secret = this.participantTokenKeys[this.participantTokenKeyVersion];
+    if (!secret) throw new Error("participant_signing_not_configured");
+    const revokedAccess = (current.participantAccess ?? []).map((grant) => grant.participantId === input.participantId
+      && !grant.revokedAt ? { ...grant, revokedAt: occurredAt, revokedBy: input.actorId,
+        revocationReason: input.reason.trim(), revokedByCommandId: input.commandId } : grant);
+    const revokedRecovery = (current.participantRecovery ?? []).map((grant) => grant.participantId === input.participantId
+      && !grant.revokedAt ? { ...grant, revokedAt: occurredAt, revokedByCommandId: input.commandId } : grant);
+    const affectedCredentialHashes = [...(current.participantAccess ?? []).filter((grant) =>
+      grant.participantId === input.participantId && !grant.revokedAt).map(({ tokenHash }) => tokenHash),
+    ...(current.participantRecovery ?? []).filter((grant) => grant.participantId === input.participantId && !grant.revokedAt)
+      .map(({ codeHash }) => codeHash)].sort();
+    const created = createParticipantAccessGrant({ organizationId: input.organizationId,
+      competitionId: input.competitionId, publishedRevision: input.expectedPublishedRevision,
+      participantId: input.participantId, expiresAt: input.expiresAt, keyVersion: this.participantTokenKeyVersion,
+      issuedAt: occurredAt, issuedByCommandId: input.commandId }, secret, input.expectedOperationalRevision);
+    const events = current.participantAccessEvents ?? [];
+    const event = nextParticipantAccessEvent(events, { commandId: input.commandId, requestHash, kind: "ROTATED",
+      participantId: input.participantId, actorId: input.actorId, occurredAt, affectedCredentialHashes,
+      resultCredentialHash: created.grant.tokenHash });
+    const revised = sealRecord({ ...withoutSeal(current), updatedAt: occurredAt,
+      participantAccess: [...revokedAccess, created.grant].sort((left, right) =>
+        left.participantId.localeCompare(right.participantId) || left.expiresAt.localeCompare(right.expiresAt)
+        || left.tokenHash.localeCompare(right.tokenHash)), participantRecovery: revokedRecovery,
+      participantAccessEvents: [...events, event] });
+    this.records.set(current.id, revised);
+    this.persist();
+    return created.access;
+  }
+
+  public revokeParticipantAccess(input: { readonly organizationId: string; readonly competitionId: string;
+    readonly expectedPublishedRevision: number; readonly expectedOperationalRevision: number;
+    readonly participantId: string; readonly commandId: string; readonly actorId: string;
+    readonly reason: string }): { readonly status: "REVOKED"; readonly revokedGrantCount: number } {
+    const current = this.requireScoped(input.organizationId, input.competitionId);
+    const requestHash = canonicalHash(input);
+    const prior = (current.participantAccessEvents ?? []).find(({ commandId }) => commandId === input.commandId);
+    if (prior) {
+      if (prior.kind !== "REVOKED" || prior.requestHash !== requestHash)
+        throw new Error("participant_access_command_conflict");
+      return { status: "REVOKED", revokedGrantCount: prior.affectedCredentialHashes.length };
+    }
+    const live = this.requireProjectedLive(current, input.expectedOperationalRevision);
+    if (current.publication!.revision !== input.expectedPublishedRevision || live.baseRevision !== input.expectedPublishedRevision)
+      throw new Error("journey_revision_conflict");
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{2,199}$/.test(input.commandId) || !input.actorId.trim()
+      || input.reason.trim().length < 4 || input.reason.length > 500) throw new Error("invalid_participant_access_command");
+    const knownParticipants = new Set(live.state.definition.contests.flatMap(({ entrantIds }) => entrantIds));
+    if (!knownParticipants.has(input.participantId)) throw new Error("participant_access_denied");
+    const occurredAt = this.canonicalNow();
+    const activeAccess = (current.participantAccess ?? []).filter((grant) =>
+      grant.participantId === input.participantId && !grant.revokedAt);
+    const activeRecovery = (current.participantRecovery ?? []).filter((grant) =>
+      grant.participantId === input.participantId && !grant.revokedAt);
+    const affectedCredentialHashes = [...activeAccess.map(({ tokenHash }) => tokenHash),
+      ...activeRecovery.map(({ codeHash }) => codeHash)].sort();
+    const participantAccess = (current.participantAccess ?? []).map((grant) => activeAccess.includes(grant)
+      ? { ...grant, revokedAt: occurredAt, revokedBy: input.actorId, revocationReason: input.reason.trim(),
+        revokedByCommandId: input.commandId } : grant);
+    const participantRecovery = (current.participantRecovery ?? []).map((grant) => activeRecovery.includes(grant)
+      ? { ...grant, revokedAt: occurredAt, revokedByCommandId: input.commandId } : grant);
+    const events = current.participantAccessEvents ?? [];
+    const event = nextParticipantAccessEvent(events, { commandId: input.commandId, requestHash, kind: "REVOKED",
+      participantId: input.participantId, actorId: input.actorId, occurredAt, affectedCredentialHashes });
+    const revised = sealRecord({ ...withoutSeal(current), updatedAt: occurredAt, participantAccess,
+      participantRecovery, participantAccessEvents: [...events, event] });
+    this.records.set(current.id, revised);
+    this.persist();
+    return { status: "REVOKED", revokedGrantCount: affectedCredentialHashes.length };
+  }
+
+  public issueParticipantRecoveryCode(input: { readonly organizationId: string; readonly competitionId: string;
+    readonly expectedPublishedRevision: number; readonly expectedOperationalRevision: number;
+    readonly participantId: string; readonly codeExpiresAt: string; readonly accessExpiresAt: string;
+    readonly commandId: string; readonly actorId: string }): ParticipantRecoveryCode {
+    const current = this.requireScoped(input.organizationId, input.competitionId);
+    const requestHash = canonicalHash(input);
+    const prior = (current.participantAccessEvents ?? []).find(({ commandId }) => commandId === input.commandId);
+    if (prior) {
+      if (prior.kind !== "RECOVERY_ISSUED" || prior.requestHash !== requestHash || !prior.resultCredentialHash)
+        throw new Error("participant_access_command_conflict");
+      const grant = (current.participantRecovery ?? []).find(({ codeHash }) => codeHash === prior.resultCredentialHash);
+      const secret = grant && this.participantTokenKeys[grant.keyVersion];
+      if (!grant || !secret) throw new Error("participant_signing_not_configured");
+      return createParticipantRecoveryGrant({ organizationId: grant.organizationId,
+        competitionId: grant.competitionId, publishedRevision: grant.publishedRevision,
+        operationalRevision: grant.operationalRevision,
+        participantId: grant.participantId, codeExpiresAt: grant.codeExpiresAt,
+        accessExpiresAt: grant.accessExpiresAt, keyVersion: grant.keyVersion, issuedAt: grant.issuedAt,
+        issuedBy: grant.issuedBy, issuedByCommandId: grant.issuedByCommandId, requestHash: grant.requestHash },
+      secret).recovery;
+    }
+    const live = this.requireProjectedLive(current, input.expectedOperationalRevision);
+    if (current.publication!.revision !== input.expectedPublishedRevision || live.baseRevision !== input.expectedPublishedRevision)
+      throw new Error("journey_revision_conflict");
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{2,199}$/.test(input.commandId) || !input.actorId.trim())
+      throw new Error("invalid_participant_access_command");
+    const knownParticipants = new Set(live.state.definition.contests.flatMap(({ entrantIds }) => entrantIds));
+    if (!knownParticipants.has(input.participantId)) throw new Error("participant_access_denied");
+    const occurredAt = this.canonicalNow();
+    const secret = this.participantTokenKeys[this.participantTokenKeyVersion];
+    if (!secret) throw new Error("participant_signing_not_configured");
+    const created = createParticipantRecoveryGrant({ organizationId: input.organizationId,
+      competitionId: input.competitionId, publishedRevision: input.expectedPublishedRevision,
+      operationalRevision: input.expectedOperationalRevision,
+      participantId: input.participantId, codeExpiresAt: input.codeExpiresAt,
+      accessExpiresAt: input.accessExpiresAt, keyVersion: this.participantTokenKeyVersion,
+      issuedAt: occurredAt, issuedBy: input.actorId, issuedByCommandId: input.commandId, requestHash }, secret);
+    const existing = current.participantRecovery ?? [];
+    if (existing.some(({ codeHash }) => codeHash === created.grant.codeHash))
+      throw new Error("participant_recovery_conflict");
+    const events = current.participantAccessEvents ?? [];
+    const event = nextParticipantAccessEvent(events, { commandId: input.commandId, requestHash,
+      kind: "RECOVERY_ISSUED", participantId: input.participantId, actorId: input.actorId,
+      occurredAt, affectedCredentialHashes: [], resultCredentialHash: created.grant.codeHash });
+    const revised = sealRecord({ ...withoutSeal(current), updatedAt: occurredAt,
+      participantRecovery: [...existing, created.grant].sort((left, right) =>
+        left.participantId.localeCompare(right.participantId) || left.codeHash.localeCompare(right.codeHash)),
+      participantAccessEvents: [...events, event] });
+    this.records.set(current.id, revised);
+    this.persist();
+    return created.recovery;
+  }
+
+  public recoverParticipantAccess(input: { readonly organizationId: string; readonly competitionId: string;
+    readonly expectedOperationalRevision: number; readonly code: string; readonly at: string }): ParticipantAccess {
+    const current = this.requireScoped(input.organizationId, input.competitionId);
+    const live = this.requireProjectedLive(current, input.expectedOperationalRevision);
+    const recovery = resolveParticipantRecovery(current.participantRecovery ?? [], input.code,
+      this.participantTokenKeys, input.organizationId, input.competitionId, input.at);
+    if (recovery.publishedRevision !== current.publication!.revision
+      || Date.parse(recovery.accessExpiresAt) <= Date.parse(input.at)) throw new Error("participant_recovery_denied");
+    const secret = this.participantTokenKeys[recovery.keyVersion];
+    if (!secret) throw new Error("participant_recovery_denied");
+    const created = createParticipantAccessGrant({ organizationId: recovery.organizationId,
+      competitionId: recovery.competitionId, publishedRevision: recovery.publishedRevision,
+      participantId: recovery.participantId, expiresAt: recovery.accessExpiresAt,
+      keyVersion: recovery.keyVersion, issuedAt: recovery.issuedAt,
+      issuedByCommandId: `recovery:${recovery.issuedByCommandId}` }, secret,
+    live.publication?.revision ?? live.baseRevision);
+    const grants = current.participantAccess ?? [];
+    const existing = grants.find(({ tokenHash }) => tokenHash === created.grant.tokenHash);
+    if (existing?.revokedAt) throw new Error("participant_recovery_denied");
+    if (!existing) {
+      const revised = sealRecord({ ...withoutSeal(current), updatedAt: this.canonicalNow(),
+        participantAccess: [...grants, created.grant].sort((left, right) =>
+          left.participantId.localeCompare(right.participantId) || left.expiresAt.localeCompare(right.expiresAt)
+          || left.tokenHash.localeCompare(right.tokenHash)) });
+      this.records.set(current.id, revised);
+      this.persist();
+    }
+    return created.access;
+  }
+
   public readParticipantNext(input: { readonly organizationId: string; readonly competitionId: string;
     readonly expectedOperationalRevision: number; readonly token: string; readonly at: string }): ParticipantNextProjection {
     const current = this.requireScoped(input.organizationId, input.competitionId);
     const live = this.requireProjectedLive(current, input.expectedOperationalRevision);
-    const grant = resolveParticipantAccess(current.participantAccess ?? [], input.token, this.participantTokenSecret,
+    const grant = resolveParticipantAccess(current.participantAccess ?? [], input.token, this.participantTokenKeys,
       input.organizationId, input.competitionId, input.at);
     if (grant.publishedRevision !== current.publication!.revision) throw new Error("participant_access_denied");
     return deriveParticipantNext({ competitionId: current.id,
@@ -1341,10 +1607,16 @@ export class CompetitionJourney {
       ...(message.providerId ? { providerId: message.providerId } : {}),
       ...(message.providerMessageId ? { providerMessageId: message.providerMessageId } : {}),
       ...(message.deliveredAt ? { deliveredAt: message.deliveredAt } : {}) }));
+    const accessEvidence = (current.participantAccessEvents ?? []).map((event) => ({
+      commandId: event.commandId, kind: event.kind, participantId: event.participantId,
+      actorId: event.actorId, occurredAt: event.occurredAt,
+      affectedCredentialCount: event.affectedCredentialHashes.length,
+      replacementIssued: event.resultCredentialHash !== undefined,
+    }));
     const body = { apiVersion: "1.0" as const, organizationId: input.organizationId,
       public: publicProjection, liveVersion: live.state.version, stateProofHash: live.state.proofHash,
       authorityAssignments: live.operations.authorityAssignments, incidents: live.operations.incidents,
-      restartClearances: live.operations.restartClearances, participants, deliveryEvidence };
+      restartClearances: live.operations.restartClearances, participants, deliveryEvidence, accessEvidence };
     return { ...body, projectionHash: canonicalHash(body) };
   }
 
@@ -1373,12 +1645,15 @@ export class CompetitionJourney {
         participantId, participantNames, state: live.state, assignments, operation: live.operations.publicStatus }) }));
     const participantAccess: ManualParticipantAccess[] = [];
     const grants = [...(current.participantAccess ?? [])];
-    if (this.participantTokenSecret.length > 0) {
+    const participantSecret = this.participantTokenKeys[this.participantTokenKeyVersion];
+    if (participantSecret) {
       for (const participantId of participantIds) {
         const created = createParticipantAccessGrant({ organizationId: input.organizationId,
           competitionId: current.id, publishedRevision: current.publication!.revision, participantId,
-          expiresAt: input.expiresAt, keyVersion: this.participantTokenKeyVersion }, this.participantTokenSecret,
+          expiresAt: input.expiresAt, keyVersion: this.participantTokenKeyVersion }, participantSecret,
         input.expectedOperationalRevision);
+        if (grants.some((grant) => grant.tokenHash === created.grant.tokenHash && grant.revokedAt))
+          throw new Error("participant_access_revoked");
         participantAccess.push({ participantId, accessPath: created.access.path, expiresAt: created.access.expiresAt });
         if (!grants.some(({ tokenHash }) => tokenHash === created.grant.tokenHash)) grants.push(created.grant);
       }

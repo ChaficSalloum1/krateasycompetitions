@@ -21,14 +21,16 @@ import { compilerHtml } from "./ui.js";
 import { creatorHtml } from "./creator-view.js";
 import { productHtml } from "./product-view.js";
 import { createCompetitionProposal, parseCreationProposalPayload } from "./creation-proposal.js";
-import { CompetitionJourney, competitionJourneyHtml, parseConnectedLiveCommand, parseCreationSource } from "./competition-journey.js";
+import { CompetitionJourney, competitionJourneyHtml, parseConnectedLiveCommand, parseCreationSource,
+  type CompetitionJourneyOptions } from "./competition-journey.js";
 import { analyseCompetitionSources, recognisedCompetitionName } from "./competition-workbench.js";
 import { playerHtml } from "./player-view.js";
+import { participantRecoveryHtml } from "./participant-recovery-view.js";
 import { participantOperationsHtml, venueDisplayHtml } from "./attention-views.js";
 import { verifyOfflineEventPack } from "./offline-event-pack.js";
 import { renderPrintableManualFallback } from "./manual-fallback-view.js";
 import { createPlatformDemo } from "./platform-demo.js";
-import type { ProductionPilotApi } from "./production-pilot-api.js";
+import { createInMemoryRateLimitStore, type ProductionPilotApi, type RateLimitStore } from "./production-pilot-api.js";
 
 const json = (response: ServerResponse, status: number, value: unknown, headers: Readonly<Record<string, string>> = {}): void => {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store",
@@ -74,6 +76,7 @@ export interface CompilerServerOptions {
   competitionJourney?: CompetitionJourney;
   organizationId?: string;
   now?: () => string;
+  participantRecoveryRateLimitStore?: RateLimitStore;
 }
 
 function normalizedHeaders(request: IncomingMessage): Readonly<Record<string, string | undefined>> {
@@ -85,6 +88,21 @@ function normalizedHeaders(request: IncomingMessage): Readonly<Record<string, st
 let platformDemo: ReturnType<typeof createPlatformDemo> | undefined;
 const getPlatformDemo = () => platformDemo ??= createPlatformDemo();
 export type PilotDemoAction = "read" | "publish" | "propose-outage" | "approve-outage";
+
+function participantTokenConfiguration(): Partial<Pick<CompetitionJourneyOptions,
+  "participantTokenSecret" | "participantTokenKeys" | "participantTokenKeyVersion">> {
+  const keyVersion = process.env.KRATEASY_PARTICIPANT_TOKEN_KEY_VERSION ?? "v1";
+  const encodedKeys = process.env.KRATEASY_PARTICIPANT_TOKEN_KEYS;
+  if (!encodedKeys) return process.env.KRATEASY_PARTICIPANT_TOKEN_SECRET
+    ? { participantTokenSecret: process.env.KRATEASY_PARTICIPANT_TOKEN_SECRET, participantTokenKeyVersion: keyVersion } : {};
+  let value: unknown;
+  try { value = JSON.parse(encodedKeys); } catch { throw new Error("participant_signing_not_configured"); }
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || Object.keys(value).length < 1 || Object.entries(value).some(([version, secret]) =>
+      !version.trim() || typeof secret !== "string" || secret.length < 32))
+    throw new Error("participant_signing_not_configured");
+  return { participantTokenKeys: value as Record<string, string>, participantTokenKeyVersion: keyVersion };
+}
 
 export async function pilotDemoAction(action: PilotDemoAction) {
   const demo = await getPlatformDemo();
@@ -456,11 +474,11 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
   const serverNow = options.now ?? (() => new Date().toISOString());
   const competitionJourney = options.competitionJourney ?? new CompetitionJourney({
     ...(production ? {} : { storagePath: process.env.KRATEASY_JOURNEY_STORE ?? `${process.cwd()}/work/competition-journey.json` }),
-    organizationId, ...(process.env.KRATEASY_PARTICIPANT_TOKEN_SECRET
-      ? { participantTokenSecret: process.env.KRATEASY_PARTICIPANT_TOKEN_SECRET } : {}),
+    organizationId, ...participantTokenConfiguration(),
     ...(process.env.KRATEASY_OFFLINE_PACK_SIGNING_SEED
       ? { offlinePackSigningSeedHex: process.env.KRATEASY_OFFLINE_PACK_SIGNING_SEED } : {}),
   });
+  const participantRecoveryRateLimitStore = options.participantRecoveryRateLimitStore ?? createInMemoryRateLimitStore();
   const readiness = () => options.productionReadiness?.()
     ?? compilerReadiness({ production, hasAuthorizer: Boolean(options.authorize) });
 
@@ -496,6 +514,31 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.writeHead(200, { "content-type": "image/svg+xml; charset=utf-8", "cache-control": "no-store",
           "x-content-type-options": "nosniff" });
         response.end(svg);
+        return;
+      }
+      if (!production && request.url?.startsWith("/next-recovery-qr.svg") && request.method === "GET") {
+        const query = new URL(request.url, "http://local.invalid").searchParams;
+        const competition = query.get("competition"); const revision = query.get("revision");
+        if (!competition || !/^\d+$/.test(revision ?? "")) {
+          json(response, 400, { error: "participant_recovery_denied" }); return;
+        }
+        const host = String(request.headers.host ?? "127.0.0.1:4173");
+        const safeHost = /^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host) ? host : "127.0.0.1:4173";
+        const target = new URL(`http://${safeHost}/next/recover`);
+        target.searchParams.set("competition", competition); target.searchParams.set("revision", revision!);
+        const svg = await QRCode.toString(target.toString(), { type: "svg", margin: 1,
+          color: { dark: "#17201d", light: "#ffffff" }, errorCorrectionLevel: "M" });
+        response.writeHead(200, { "content-type": "image/svg+xml; charset=utf-8", "cache-control": "no-store",
+          "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" });
+        response.end(svg);
+        return;
+      }
+      if (!production && (request.url === "/next/recover" || request.url?.startsWith("/next/recover?"))
+        && request.method === "GET") {
+        response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store",
+          "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+          "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" });
+        response.end(participantRecoveryHtml);
         return;
       }
       if (!production && (request.url === "/attention" || request.url?.startsWith("/attention?")) && request.method === "GET") {
@@ -732,7 +775,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end(html);
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|participant-access-rotate|participant-access-revoke|participant-recovery-code|participant-recover|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
@@ -854,6 +897,69 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           json(response, 201, competitionJourney.issueParticipantAccess({ organizationId, competitionId,
             expectedPublishedRevision: command.expectedPublishedRevision as number,
             participantId: command.participantId, expiresAt: command.expiresAt }));
+          return;
+        }
+        if (operation === "participant-access-rotate") {
+          const allowed = ["expectedPublishedRevision", "expectedOperationalRevision", "participantId", "expiresAt",
+            "commandId", "reason"];
+          if (Object.keys(command).some((key) => !allowed.includes(key))
+            || !Number.isSafeInteger(command.expectedPublishedRevision)
+            || !Number.isSafeInteger(command.expectedOperationalRevision)
+            || !["participantId", "expiresAt", "commandId", "reason"].every((key) => typeof command[key] === "string"))
+            throw new Error("invalid_journey_command");
+          json(response, 201, competitionJourney.rotateParticipantAccess({ organizationId, competitionId,
+            expectedPublishedRevision: command.expectedPublishedRevision as number,
+            expectedOperationalRevision: command.expectedOperationalRevision as number,
+            participantId: command.participantId as string, expiresAt: command.expiresAt as string,
+            commandId: command.commandId as string, reason: command.reason as string,
+            actorId: "local.communications-lead" }));
+          return;
+        }
+        if (operation === "participant-access-revoke") {
+          const allowed = ["expectedPublishedRevision", "expectedOperationalRevision", "participantId", "commandId", "reason"];
+          if (Object.keys(command).some((key) => !allowed.includes(key))
+            || !Number.isSafeInteger(command.expectedPublishedRevision)
+            || !Number.isSafeInteger(command.expectedOperationalRevision)
+            || !["participantId", "commandId", "reason"].every((key) => typeof command[key] === "string"))
+            throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.revokeParticipantAccess({ organizationId, competitionId,
+            expectedPublishedRevision: command.expectedPublishedRevision as number,
+            expectedOperationalRevision: command.expectedOperationalRevision as number,
+            participantId: command.participantId as string, commandId: command.commandId as string,
+            reason: command.reason as string, actorId: "local.communications-lead" }));
+          return;
+        }
+        if (operation === "participant-recovery-code") {
+          const allowed = ["expectedPublishedRevision", "expectedOperationalRevision", "participantId", "codeExpiresAt",
+            "accessExpiresAt", "commandId"];
+          if (Object.keys(command).some((key) => !allowed.includes(key))
+            || !Number.isSafeInteger(command.expectedPublishedRevision)
+            || !Number.isSafeInteger(command.expectedOperationalRevision)
+            || !["participantId", "codeExpiresAt", "accessExpiresAt", "commandId"]
+              .every((key) => typeof command[key] === "string")) throw new Error("invalid_journey_command");
+          json(response, 201, competitionJourney.issueParticipantRecoveryCode({ organizationId, competitionId,
+            expectedPublishedRevision: command.expectedPublishedRevision as number,
+            expectedOperationalRevision: command.expectedOperationalRevision as number,
+            participantId: command.participantId as string, codeExpiresAt: command.codeExpiresAt as string,
+            accessExpiresAt: command.accessExpiresAt as string, commandId: command.commandId as string,
+            actorId: "local.communications-lead" }));
+          return;
+        }
+        if (operation === "participant-recover") {
+          if (Object.keys(command).some((key) => !["expectedOperationalRevision", "code"].includes(key))
+            || !Number.isSafeInteger(command.expectedOperationalRevision) || typeof command.code !== "string")
+            throw new Error("participant_recovery_denied");
+          const clientKey = createHash("sha256").update(`${organizationId}\0${competitionId}\0${request.socket.remoteAddress ?? "unknown"}\0${request.headers["user-agent"] ?? "unknown"}`).digest("hex");
+          const rate = await participantRecoveryRateLimitStore.consume({ key: `participant-recovery:${clientKey}`,
+            limit: 5, windowMs: 60_000, nowMs: Date.parse(serverNow()) });
+          if (!rate.allowed) {
+            json(response, 429, { error: "participant_recovery_rate_limited" },
+              { "retry-after": String(rate.retryAfterSeconds) });
+            return;
+          }
+          json(response, 200, competitionJourney.recoverParticipantAccess({ organizationId, competitionId,
+            expectedOperationalRevision: command.expectedOperationalRevision as number,
+            code: command.code, at: serverNow() }));
           return;
         }
         if (operation === "offline-pack") {

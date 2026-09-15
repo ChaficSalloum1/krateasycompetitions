@@ -3,7 +3,7 @@
 **Date:** 15 September 2026
 **Authority:** [`PRD-Krateasy-Competitions-Execution-Control.md`](./PRD-Krateasy-Competitions-Execution-Control.md)
 **Starting point:** commit `39c18a0` (`Connect authoritative live participant information`), preserving the separately committed publication, St Albans workbench and guarded no-show slices
-**Programme status:** Sprint 1 is complete. Sprint 2 now has one connected web/API workbench for Describe, Quick, exact JSON/YAML, CSV/XLSX entrant evidence and clean-edition duplication; raw sources, hashes, field provenance, quarantine, conflicts and reversible last-source removal survive restart. Mac import/duplicate controls and broader organisation deployment remain open. Sprint 3 has authoritative signed participant/public/organiser projections and durable targeted delivery, while token rotation/revocation, privacy-safe recovery and an external provider/fallback remain open. Sprint 4 has the connected command set, guarded no-show and court-outage repair, actual-result knockout progression and a server-derived delay/overrun revision. Sprint 5 has a server-signed, revision-scoped Mac offline event pack and participant lookup, a durable live/incident/stop command journal with explicit retry/conflict/reconciliation, a replayable Normal/Degraded/Paused/Stopped/Cancelled/Recovering authority state, typed incident log, command transfer and separately cleared restart, plus signed printable order-of-play, court, score, participant-QR and restoration materials. Sprint 6 has the connected authoritative close, replay, evidence export, isolated restore and clean-duplication journey over the completed St Albans state, plus executable markup/contrast/motion/forced-colour/print contracts and keyboard/200–400% reflow browser evidence across the live-information surfaces. The authorised emergency details, external delivery provider/fallback, full disconnect/manual restore rehearsal, named-assistive-technology/outdoor inspection and staff dress rehearsal remain open.
+**Programme status:** Sprint 1 is complete. Sprint 2 now has one connected web/API workbench for Describe, Quick, exact JSON/YAML, CSV/XLSX entrant evidence and clean-edition duplication; raw sources, hashes, field provenance, quarantine, conflicts and reversible last-source removal survive restart. Mac import/duplicate controls and broader organisation deployment remain open. Sprint 3 has authoritative signed participant/public/organiser projections, durable targeted delivery, active-key rotation, participant revocation, a generic event QR and rate-limited privacy-safe recovery. An external provider/fallback and representative weak-network timing remain open. Sprint 4 has the connected command set, guarded no-show and court-outage repair, actual-result knockout progression and a server-derived delay/overrun revision. Sprint 5 has a server-signed, revision-scoped Mac offline event pack and participant lookup, a durable live/incident/stop command journal with explicit retry/conflict/reconciliation, a replayable Normal/Degraded/Paused/Stopped/Cancelled/Recovering authority state, typed incident log, command transfer and separately cleared restart, plus signed printable order-of-play, court, score, participant-QR and restoration materials. Sprint 6 has the connected authoritative close, replay, evidence export, isolated restore and clean-duplication journey over the completed St Albans state, plus executable markup/contrast/motion/forced-colour/print contracts and keyboard/200–400% reflow browser evidence across the live-information surfaces. The authorised emergency details, external delivery provider/fallback, full disconnect/manual restore rehearsal, named-assistive-technology/outdoor inspection and staff dress rehearsal remain open.
 **Outcome:** a controlled live pilot can be created, validated, published, operated, disrupted, repaired, communicated, closed, replayed and repeated without a second source of competition truth.
 
 ## 1. Pilot definition
@@ -159,19 +159,19 @@ Committed outcomes:
 **Dependencies:** Sprint 1 publication contract; directory and organisation identifiers.
 **Exit:** a historical pilot workbook or description reaches a resumable, explicit, Guard-eligible draft without a demo handoff.
 
-### Sprint 3 — Make the published promise useful to participants — **In progress (`39c18a0` connected live information)**
+### Sprint 3 — Make the published promise useful to participants — **In progress (connected live information and governed recovery)**
 
 **Sprint goal:** every participant can retrieve the current next action from the authoritative published revision without installing anything.
 
 Committed outcomes:
 
-1. Replace participant-attention demo singleton with a projector derived from published competition plus live-operation heads.
-2. Issue signed opaque participant tokens with expiry, rotation and revocation.
-3. Deliver `/next`: arrival target, effective time, resource/place, opponent or dependency, change summary and freshness.
-4. Add event QR and rate-limited privacy-safe recovery.
-5. Make staff lookup, message payload and venue display use the same participant DTO and revision.
+1. Replace participant-attention demo singleton with a projector derived from published competition plus live-operation heads. **Connected.**
+2. Issue signed opaque participant tokens with expiry, rotation and revocation. **Connected:** versioned keyrings validate old keys only until an atomic participant rotation/revocation invalidates them; lifecycle evidence replays after restart.
+3. Deliver `/next`: arrival target, effective time, resource/place, opponent or dependency, change summary and freshness. **Connected for the pilot projection; richer changed-from copy remains.**
+4. Add event QR and rate-limited privacy-safe recovery. **Connected:** the generic QR contains no participant identity or token; a private expiring code exchanges at the exact operational head under a five-attempt/minute opaque-client bucket.
+5. Make staff lookup, message payload and venue display use the same participant DTO and revision. **Connected for the current minimal projections:** staff issuance and private recovery resolve the same participant projection; delivery and public/venue reads bind the same authoritative heads.
 6. Connect one real messaging provider plus non-urgent email fallback; distinguish queued, accepted, delivered, failed and acknowledged.
-7. Add public privacy, enumeration, superseded-message, stale-projection and weak-network tests.
+7. Add public privacy, enumeration, superseded-message, stale-projection and weak-network tests. **Partial:** privacy/enumeration, forged credentials, stale heads, superseded credentials, rate limiting and restart are executable; representative weak-network/provider timing remains.
 8. Verify under ten-second median retrieval in representative pilot conditions.
 
 **Dependencies:** authoritative publication and durable public projection boundary.

@@ -17,6 +17,36 @@ export interface ParticipantAccessGrant {
   readonly participantId: string;
   readonly expiresAt: string;
   readonly keyVersion: string;
+  readonly issuedAt?: string;
+  readonly issuedByCommandId?: string;
+  readonly revokedAt?: string;
+  readonly revokedBy?: string;
+  readonly revocationReason?: string;
+  readonly revokedByCommandId?: string;
+}
+
+export interface ParticipantRecoveryGrant {
+  readonly codeHash: string;
+  readonly organizationId: string;
+  readonly competitionId: string;
+  readonly publishedRevision: number;
+  readonly operationalRevision: number;
+  readonly participantId: string;
+  readonly codeExpiresAt: string;
+  readonly accessExpiresAt: string;
+  readonly keyVersion: string;
+  readonly issuedAt: string;
+  readonly issuedBy: string;
+  readonly issuedByCommandId: string;
+  readonly requestHash: string;
+  readonly revokedAt?: string;
+  readonly revokedByCommandId?: string;
+}
+
+export interface ParticipantRecoveryCode {
+  readonly code: string;
+  readonly eventPath: string;
+  readonly expiresAt: string;
 }
 
 export interface ParticipantAccess {
@@ -98,6 +128,15 @@ export interface OrganiserLiveProjection {
     readonly providerMessageId?: string;
     readonly deliveredAt?: string;
   }[];
+  readonly accessEvidence: readonly {
+    readonly commandId: string;
+    readonly kind: "ROTATED" | "REVOKED" | "RECOVERY_ISSUED";
+    readonly participantId: string;
+    readonly actorId: string;
+    readonly occurredAt: string;
+    readonly affectedCredentialCount: number;
+    readonly replacementIssued: boolean;
+  }[];
   readonly projectionHash: string;
 }
 
@@ -106,8 +145,15 @@ function canonicalTimestamp(value: string): boolean {
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
 
-function tokenFor(grant: Omit<ParticipantAccessGrant, "tokenHash">, secret: string): string {
-  return `kp1_${createHmac("sha256", secret).update(canonicalHash(grant)).digest("hex")}`;
+function participantAccessClaims(grant: Omit<ParticipantAccessGrant, "tokenHash"> | ParticipantAccessGrant) {
+  return { organizationId: grant.organizationId, competitionId: grant.competitionId,
+    publishedRevision: grant.publishedRevision, participantId: grant.participantId,
+    expiresAt: grant.expiresAt, keyVersion: grant.keyVersion,
+    ...(grant.issuedByCommandId ? { issuedByCommandId: grant.issuedByCommandId } : {}) };
+}
+
+function tokenFor(grant: Omit<ParticipantAccessGrant, "tokenHash"> | ParticipantAccessGrant, secret: string): string {
+  return `kp1_${createHmac("sha256", secret).update(canonicalHash(participantAccessClaims(grant))).digest("hex")}`;
 }
 
 export function createParticipantAccessGrant(input: Omit<ParticipantAccessGrant, "tokenHash">,
@@ -127,19 +173,68 @@ export function createParticipantAccessGrant(input: Omit<ParticipantAccessGrant,
 }
 
 export function resolveParticipantAccess(grants: readonly ParticipantAccessGrant[], token: string,
-  secret: string, organizationId: string, competitionId: string, at: string): ParticipantAccessGrant {
-  if (secret.length < 32) throw new Error("participant_signing_not_configured");
+  secrets: string | Readonly<Record<string, string>>, organizationId: string, competitionId: string,
+  at: string): ParticipantAccessGrant {
   if (!canonicalTimestamp(at) || !/^kp1_[a-f0-9]{64}$/.test(token)) throw new Error("participant_access_denied");
   const suppliedHash = Buffer.from(canonicalHash(token), "hex");
   const grant = grants.find((candidate) => {
     const candidateHash = Buffer.from(candidate.tokenHash, "hex");
     return candidateHash.length === suppliedHash.length && timingSafeEqual(candidateHash, suppliedHash);
   });
-  if (!grant || grant.organizationId !== organizationId || grant.competitionId !== competitionId
+  if (!grant || grant.organizationId !== organizationId || grant.competitionId !== competitionId || grant.revokedAt
     || Date.parse(grant.expiresAt) <= Date.parse(at)) throw new Error("participant_access_denied");
-  const { tokenHash: _tokenHash, ...body } = grant;
-  const expected = tokenFor(body, secret);
+  const secret = typeof secrets === "string" ? secrets : secrets[grant.keyVersion];
+  if (!secret || secret.length < 32) throw new Error("participant_access_denied");
+  const expected = tokenFor(grant, secret);
   if (!timingSafeEqual(Buffer.from(expected), Buffer.from(token))) throw new Error("participant_access_denied");
+  return grant;
+}
+
+function recoveryClaims(grant: Omit<ParticipantRecoveryGrant, "codeHash"> | ParticipantRecoveryGrant) {
+  return { organizationId: grant.organizationId, competitionId: grant.competitionId,
+    publishedRevision: grant.publishedRevision, operationalRevision: grant.operationalRevision,
+    participantId: grant.participantId,
+    codeExpiresAt: grant.codeExpiresAt, accessExpiresAt: grant.accessExpiresAt,
+    keyVersion: grant.keyVersion, issuedByCommandId: grant.issuedByCommandId };
+}
+
+function recoveryCodeFor(grant: Omit<ParticipantRecoveryGrant, "codeHash"> | ParticipantRecoveryGrant,
+  secret: string): string {
+  return `kpr1_${createHmac("sha256", secret).update(canonicalHash(recoveryClaims(grant))).digest("hex").slice(0, 32)}`;
+}
+
+export function createParticipantRecoveryGrant(input: Omit<ParticipantRecoveryGrant, "codeHash">,
+  secret: string): { readonly grant: ParticipantRecoveryGrant;
+    readonly recovery: ParticipantRecoveryCode } {
+  if (secret.length < 32) throw new Error("participant_signing_not_configured");
+  if (!input.organizationId.trim() || !input.competitionId.trim() || !input.participantId.trim()
+    || !input.keyVersion.trim() || !input.issuedBy.trim() || !input.issuedByCommandId.trim()
+    || !Number.isSafeInteger(input.publishedRevision) || input.publishedRevision < 1
+    || !Number.isSafeInteger(input.operationalRevision) || input.operationalRevision < input.publishedRevision
+    || !canonicalTimestamp(input.codeExpiresAt) || !canonicalTimestamp(input.accessExpiresAt)
+    || !canonicalTimestamp(input.issuedAt) || Date.parse(input.codeExpiresAt) <= Date.parse(input.issuedAt)
+    || Date.parse(input.accessExpiresAt) <= Date.parse(input.issuedAt)) throw new Error("invalid_participant_recovery_grant");
+  const code = recoveryCodeFor(input, secret);
+  return { grant: { ...input, codeHash: canonicalHash(code) }, recovery: { code,
+    eventPath: `/next/recover?competition=${encodeURIComponent(input.competitionId)}&revision=${input.operationalRevision}`,
+    expiresAt: input.codeExpiresAt } };
+}
+
+export function resolveParticipantRecovery(grants: readonly ParticipantRecoveryGrant[], code: string,
+  secrets: Readonly<Record<string, string>>, organizationId: string, competitionId: string,
+  at: string): ParticipantRecoveryGrant {
+  if (!canonicalTimestamp(at) || !/^kpr1_[a-f0-9]{32}$/.test(code)) throw new Error("participant_recovery_denied");
+  const suppliedHash = Buffer.from(canonicalHash(code), "hex");
+  const grant = grants.find((candidate) => {
+    const candidateHash = Buffer.from(candidate.codeHash, "hex");
+    return candidateHash.length === suppliedHash.length && timingSafeEqual(candidateHash, suppliedHash);
+  });
+  if (!grant || grant.organizationId !== organizationId || grant.competitionId !== competitionId || grant.revokedAt
+    || Date.parse(grant.codeExpiresAt) <= Date.parse(at)) throw new Error("participant_recovery_denied");
+  const secret = secrets[grant.keyVersion];
+  if (!secret || secret.length < 32) throw new Error("participant_recovery_denied");
+  const expected = recoveryCodeFor(grant, secret);
+  if (!timingSafeEqual(Buffer.from(expected), Buffer.from(code))) throw new Error("participant_recovery_denied");
   return grant;
 }
 
