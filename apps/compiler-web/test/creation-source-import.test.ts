@@ -200,3 +200,36 @@ test("the connected creator previews and saves imports through the authoritative
   assert.equal(journey.list().length, 1);
   server.close();
 });
+
+test("the connected web draft appends a generic roster into the same authoritative workbench", async () => {
+  const journey = new CompetitionJourney({ now: () => "2026-09-15T10:00:00.000Z", organizationId: "org.web" });
+  const server = createCompilerServer({ competitionJourney: journey });
+  const source = { mode: "quick", value: { name: "Harbour Web Open", sport: "padel", participantUnit: "pairs",
+    participantCount: 4, resourceCount: 2, resourceLabel: "courts", format: "round_robin", minimumMatches: 3,
+    minimumRestMinutes: 10, matchDurationMinutes: 20, startsAt: "2026-10-18T08:00:00.000Z",
+    endsAt: "2026-10-18T17:00:00.000Z", timezone: "Europe/London", priority: "fair_recovery",
+    scoringPolicy: "head_to_head_total_score_no_draw", tiebreakPolicy: "wins_score_difference_score_for_manual",
+    withdrawalPolicy: "preserve_played_walkover_future", drawPolicy: "seeded_input_order" } };
+  const saved = await post(server, "/v1/competition-journey", { source });
+  assert.equal(saved.status, 201);
+  assert.equal(saved.body.status, "NEEDS_INPUT");
+  assert.ok(saved.body.workbench.missingDecisions.some((decision: { id: string }) => decision.id === "entrant-roster"));
+  const page = await get(server, `/competitions/${encodeURIComponent(saved.body.id)}`);
+  assert.equal(page.status, 200);
+  assert.ok(page.body.includes("Add or corroborate entrants"));
+  assert.ok(page.body.includes("/sources"));
+
+  const rows = [["entrant_id", "display_name", "division_id", "member_ids", "seed"],
+    ...Array.from({ length: 4 }, (_, index) => { const number = index + 1; return [
+      `harbour.pair.${number}`, `Harbour Pair ${number}`, "open",
+      `harbour.pair.${number}.member.1|harbour.pair.${number}.member.2`, String(number)]; })];
+  const rostered = await post(server, `/v1/competition-journey/${encodeURIComponent(saved.body.id)}/sources`, {
+    expectedDraftVersion: saved.body.draftVersion, source: { mode: "csv", text: rows.map((row) => row.join(",")).join("\n") },
+  });
+  assert.equal(rostered.status, 200);
+  assert.equal(rostered.body.status, "DRAFT");
+  assert.deepEqual(rostered.body.workbench.missingDecisions, []);
+  assert.equal(rostered.body.workbench.understoodFacts.find((fact: { id: string }) =>
+    fact.id === "entrant.harbour.pair.1.display-name").value, "Harbour Pair 1");
+  server.close();
+});

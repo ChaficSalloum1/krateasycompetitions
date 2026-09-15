@@ -149,7 +149,7 @@ function stAlbansShape(value: unknown): null | {
   return { event: root.event, rules, pools, schedule: schedule as Record<string, unknown>[], finalCourtAssignments: finals, audit: root.audit };
 }
 
-interface RosterEntry {
+export interface WorkbenchRosterEntry {
   readonly id: string;
   readonly displayName: string;
   readonly divisionId: string;
@@ -161,8 +161,8 @@ function idFor(label: string): string {
   return label.toLowerCase().replace(/s$/, "").replace(/[^a-z0-9]+/g, "-") || "division";
 }
 
-function rosterFromStAlbans(shaped: NonNullable<ReturnType<typeof stAlbansShape>>): RosterEntry[] {
-  const entrants: RosterEntry[] = [];
+function rosterFromStAlbans(shaped: NonNullable<ReturnType<typeof stAlbansShape>>): WorkbenchRosterEntry[] {
+  const entrants: WorkbenchRosterEntry[] = [];
   for (const [divisionLabel, poolValue] of Object.entries(shaped.pools)) {
     const divisionId = idFor(divisionLabel); const pools = record(poolValue); let entrantIndex = 0;
     if (!pools) continue;
@@ -176,7 +176,7 @@ function rosterFromStAlbans(shaped: NonNullable<ReturnType<typeof stAlbansShape>
   return entrants;
 }
 
-function rosterFacts(source: WorkbenchSourceDocument, entrants: readonly RosterEntry[]): WorkbenchFact[] {
+function rosterFacts(source: WorkbenchSourceDocument, entrants: readonly WorkbenchRosterEntry[]): WorkbenchFact[] {
   return entrants.flatMap((entrant, index) => [
     fact(source, `entrant.${entrant.id}.display-name`, `/entrants/${entrant.id}/displayName`, entrant.displayName, `/entrants/${index}/displayName`),
     fact(source, `entrant.${entrant.id}.division`, `/entrants/${entrant.id}/divisionId`, entrant.divisionId, `/entrants/${index}/divisionId`),
@@ -290,9 +290,71 @@ function analyseBlueprintSources(sources: readonly CreationSource[], documents: 
         description: `Source ${candidate.document.id} disagrees with ${existing.provenance[0]?.sourceId ?? "the primary source"} about ${field}.` });
     }
   }
+  const rosterCandidates = sources.map((source, index) => ({ document: documents[index]!, entrants: ingestCreationSource(source).entrants }))
+    .filter(({ document, entrants }) => document.status === "ACCEPTED" && entrants.length > 0);
+  const rosterAnchor = rosterCandidates[0];
+  if (rosterAnchor) {
+    const anchorFacts = [
+      fact(rosterAnchor.document, "entrants.total", "/participants/count", rosterAnchor.entrants.length, "/entrants"),
+      fact(rosterAnchor.document, "entrants.order", "/participants/entrantOrder",
+        rosterAnchor.entrants.map(({ id }) => id), "/entrants/*/entrant_id"),
+      ...rosterFacts(rosterAnchor.document, rosterAnchor.entrants),
+    ];
+    for (const entry of anchorFacts) { understoodFacts.push(entry); byField.set(entry.id, entry); }
+    for (const candidate of rosterCandidates.slice(1)) {
+      const incomingFacts = [
+        fact(candidate.document, "entrants.total", "/participants/count", candidate.entrants.length, "/entrants"),
+        fact(candidate.document, "entrants.order", "/participants/entrantOrder",
+          candidate.entrants.map(({ id }) => id), "/entrants/*/entrant_id"),
+        ...rosterFacts(candidate.document, candidate.entrants),
+      ];
+      const incomingById = new Map(incomingFacts.map((entry) => [entry.id, entry]));
+      for (const current of anchorFacts) {
+        const incoming = incomingById.get(current.id);
+        if (incoming && canonicalHash(current.value) === canonicalHash(incoming.value))
+          (current.provenance as { sourceId: string; sourceHash: string; sourcePath: string }[]).push(...incoming.provenance);
+        else conflicts.push({ id: `conflict.${current.id}.${candidate.document.id}`, paths: [current.path],
+          description: `Roster source ${candidate.document.id} disagrees with ${rosterAnchor.document.id} about ${current.id}.` });
+      }
+      for (const incoming of incomingFacts) if (!byField.has(incoming.id)) conflicts.push({
+        id: `conflict.${incoming.id}.${candidate.document.id}`, paths: [incoming.path],
+        description: `Roster source ${candidate.document.id} contains entrant identity not present in ${rosterAnchor.document.id}.`,
+      });
+    }
+    if (primary.proposal.blueprint.participantCount !== rosterAnchor.entrants.length) conflicts.push({
+      id: "conflict.blueprint.roster-cardinality", paths: ["/blueprint/participantCount", "/participants/entrantOrder"],
+      description: `The blueprint declares ${primary.proposal.blueprint.participantCount ?? "no"} entrants but the authoritative roster contains ${rosterAnchor.entrants.length}.`,
+    });
+    if (rosterAnchor.entrants.some(({ divisionId }) => divisionId !== "open")) conflicts.push({
+      id: "conflict.blueprint.roster-division", paths: ["/entrants/*/divisionId", "/blueprint/format"],
+      description: "Connected generic round-robin and single-elimination rosters must use the canonical open division.",
+    });
+    if (rosterAnchor.entrants.some(({ memberIds }) => memberIds.length !== 2)) conflicts.push({
+      id: "conflict.blueprint.roster-shape", paths: ["/entrants/*/memberIds", "/blueprint/participantUnit"],
+      description: "Every connected pair entrant must contain exactly two stable member identities.",
+    });
+    const suppliedSeeds = rosterAnchor.entrants.flatMap(({ seed }) => seed === undefined ? [] : [seed]);
+    if (suppliedSeeds.length > 0 && suppliedSeeds.length !== rosterAnchor.entrants.length) conflicts.push({
+      id: "conflict.blueprint.roster-partial-seeding", paths: ["/entrants/*/seed", "/blueprint/drawPolicy"],
+      description: "A roster must either seed every entrant or leave every seed blank so the approved input-order draw is unambiguous.",
+    });
+    if (suppliedSeeds.length === rosterAnchor.entrants.length
+      && canonicalHash([...suppliedSeeds].sort((left, right) => left - right))
+        !== canonicalHash(Array.from({ length: suppliedSeeds.length }, (_, index) => index + 1))) conflicts.push({
+      id: "conflict.blueprint.roster-seeding", paths: ["/entrants/*/seed", "/blueprint/drawPolicy"],
+      description: "Complete roster seeds must be unique and contiguous from 1 through the entrant count.",
+    });
+  }
+  const connectedFormat = primary.proposal.blueprint.format === "round_robin"
+    || primary.proposal.blueprint.format === "single_elimination";
+  const missingDecisions = [...primary.proposal.questions.map(({ field, prompt }) => ({
+    id: String(field), path: `/blueprint/${String(field)}`, prompt, critical: true as const,
+  }))];
+  if (connectedFormat && !rosterAnchor) missingDecisions.push({ id: "entrant-roster", path: "/entrants", prompt:
+    "Add an authoritative CSV or XLSX entrant roster before compilation.", critical: true });
   return {
     sources: [...documents], understoodFacts, rules, assumptions: [], conflicts,
-    missingDecisions: primary.proposal.questions.map(({ field, prompt }) => ({ id: String(field), path: `/blueprint/${String(field)}`, prompt, critical: true })),
+    missingDecisions,
     unsupportedSemantics: documents.filter(({ status }) => status === "QUARANTINED").map((document) => ({
       id: `quarantine.${document.id}`, path: `/sources/${document.id}`, description: document.findings.join(" "), blocking: true,
     })), untrustedClaims: [], definitionVersion: 1, pendingImpact: null,
@@ -359,7 +421,7 @@ function decisionMap(projection: CompetitionWorkbenchProjection): Record<string,
 }
 
 function requiredDecisionsFor(projection: CompetitionWorkbenchProjection): readonly WorkbenchDecision[] {
-  return projection.rules.some(({ id }) => id === "progression.paths") ? requiredDecisions : [];
+  return projection.rules.some(({ id }) => id === "progression.paths") ? requiredDecisions : projection.missingDecisions;
 }
 
 function operationalImpact(projection: CompetitionWorkbenchProjection, edits: readonly StructuredWorkbenchEdit[]): string[] {
@@ -421,6 +483,30 @@ export function workbenchSourceDocument(source: CreationSource, receivedAt: stri
 
 export function workbenchDecisionValues(projection: CompetitionWorkbenchProjection): Readonly<Record<string, string>> {
   return decisionMap(projection);
+}
+
+export function rosterFromWorkbench(projection: CompetitionWorkbenchProjection): readonly WorkbenchRosterEntry[] | null {
+  const order = projection.understoodFacts.find(({ id }) => id === "entrants.order")?.value;
+  const total = projection.understoodFacts.find(({ id }) => id === "entrants.total")?.value;
+  if (!Array.isArray(order) || !order.every((id) => typeof id === "string") || !Number.isSafeInteger(total)
+    || total !== order.length || new Set(order).size !== order.length) return null;
+  const byId = new Map<string, Partial<WorkbenchRosterEntry>>();
+  for (const entry of projection.understoodFacts) {
+    const match = /^\/entrants\/([^/]+)\/(displayName|divisionId|memberIds|seed)$/.exec(entry.path);
+    if (!match) continue;
+    const current = byId.get(match[1]!) ?? { id: match[1]! };
+    Object.assign(current, { [match[2]!]: entry.value }); byId.set(match[1]!, current);
+  }
+  const roster: WorkbenchRosterEntry[] = [];
+  for (const id of order) {
+    const entry = byId.get(id);
+    if (!entry || typeof entry.displayName !== "string" || typeof entry.divisionId !== "string"
+      || !Array.isArray(entry.memberIds) || !entry.memberIds.every((memberId) => typeof memberId === "string")
+      || (entry.seed !== null && entry.seed !== undefined && !Number.isSafeInteger(entry.seed))) return null;
+    roster.push({ id, displayName: entry.displayName, divisionId: entry.divisionId,
+      memberIds: [...entry.memberIds], ...(entry.seed === null || entry.seed === undefined ? {} : { seed: entry.seed as number }) });
+  }
+  return roster;
 }
 
 export function rebaseWorkbenchSources(projection: CompetitionWorkbenchProjection, sources: readonly CreationSource[],

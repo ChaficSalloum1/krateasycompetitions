@@ -73,6 +73,17 @@ test("the closed-edition control is accessible and submits only authoritative cl
   assert.doesNotMatch(html, /JSON\.stringify\(\{[^}]*guardInput/);
 });
 
+test("the draft roster control is accessible, reversible and submits source data only", () => {
+  const html = competitionJourneyHtml("competition.accessibility");
+  for (const expected of ['id="source-import"', 'aria-labelledby="source-title"', 'for="source-csv"',
+    'for="source-xlsx"', 'id="source-status"', 'role="status"', 'Remove last source'])
+    assert.ok(html.includes(expected), `draft roster control is missing ${expected}`);
+  assert.match(html, /JSON\.stringify\(\{expectedDraftVersion:view\.draftVersion,source\}\)/);
+  assert.match(html, /JSON\.stringify\(\{expectedDraftVersion:view\.draftVersion,sourceId:documents\.at\(-1\)\.id\}\)/);
+  assert.ok(html.includes("v.workbench.missingDecisions.map"));
+  assert.doesNotMatch(html, /JSON\.stringify\(\{[^}]*guardInput/);
+});
+
 function channel(value: number): number {
   const component = value / 255;
   return component <= 0.04045 ? component / 12.92 : ((component + 0.055) / 1.055) ** 2.4;

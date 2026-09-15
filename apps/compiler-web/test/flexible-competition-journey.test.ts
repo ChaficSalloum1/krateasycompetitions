@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { canonicalHash } from "@tournament-os/tournament-schema";
 import { CLOSE_ACKNOWLEDGEMENTS } from "../src/competition-lifecycle.js";
 import { CompetitionJourney } from "../src/competition-journey.js";
 
@@ -21,6 +22,18 @@ const fixtures = [{
   name: "Northside Eight-Pair Knockout", format: "single_elimination", participantCount: 8, minimumMatches: 1,
   startsAt: "2026-10-25T09:00:00.000Z", endsAt: "2026-10-25T18:00:00.000Z", expectedContests: 7,
 }] as const;
+
+function rosterCsv(name: string, participantCount: number, change?: (rows: string[][]) => void): string {
+  const prefix = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const rows = [["entrant_id", "display_name", "division_id", "member_ids", "seed"],
+    ...Array.from({ length: participantCount }, (_, index) => {
+      const number = index + 1; const entrantId = `${prefix}.pair.${number}`;
+      return [entrantId, `${name} Pair ${number}`, "open",
+        `${entrantId}.member.1|${entrantId}.member.2`, String(number)];
+    })];
+  change?.(rows);
+  return rows.map((row) => row.join(",")).join("\n");
+}
 
 function completeAvailable(journey: CompetitionJourney, competitionId: string, operationalRevision: number,
   snapshot: ReturnType<CompetitionJourney["read"]>) {
@@ -65,10 +78,18 @@ for (const fixture of fixtures) test(`${fixture.name} uses the same authoritativ
     const { expectedContests, ...fixtureInput } = fixture;
     const journey = new CompetitionJourney({ storagePath, organizationId: "org.flexible", now: () => clock,
       participantTokenSecret: "generic-fixture-participant-key-32-bytes-minimum" });
-    const draft = journey.create({ mode: "quick", value: { ...policy, ...fixtureInput } }, "organiser.author");
+    const blueprintDraft = journey.create({ mode: "quick", value: { ...policy, ...fixtureInput } }, "organiser.author");
+    assert.equal(blueprintDraft.status, "NEEDS_INPUT");
+    assert.ok(blueprintDraft.workbench.missingDecisions.some(({ id }) => id === "entrant-roster"));
+    const draft = journey.addSource(blueprintDraft.id, blueprintDraft.draftVersion,
+      { mode: "csv", text: rosterCsv(fixture.name, fixture.participantCount) });
     assert.equal(draft.status, "DRAFT");
     assert.deepEqual(draft.supportFindings, []);
-    assert.equal(draft.workbench.sources.length, 1);
+    assert.equal(draft.workbench.sources.length, 2);
+    assert.deepEqual(draft.workbench.missingDecisions, []);
+    assert.equal(draft.workbench.understoodFacts.find(({ id }) => id === "entrants.total")?.value,
+      fixture.participantCount);
+    assert.equal(draft.workbench.understoodFacts.find(({ id }) => id === "entrants.order")?.provenance.length, 1);
     assert.ok(draft.workbench.understoodFacts.some(({ id, provenance }) => id === "blueprint.participantCount"
       && provenance[0]?.sourceHash === draft.workbench.sources[0]?.sourceHash));
     assert.ok(draft.workbench.rules.some(({ id }) => id === "blueprint.scoringPolicy"));
@@ -122,6 +143,9 @@ for (const fixture of fixtures) test(`${fixture.name} uses the same authoritativ
       expectedOperationalRevision: operationalRevision, at: clock });
     assert.equal(participant.competition.id, active.id);
     assert.equal(participant.revision, operationalRevision);
+    assert.equal(participant.participant.displayName,
+      `${fixture.name} Pair ${Number(participantId.split(".").at(-1))}`);
+    assert.ok(publicProjection.contests.some(({ participantNames }) => participantNames.includes(participant.participant.displayName)));
     assert.equal(publicProjection.operationalRevision, operationalRevision);
     assert.equal(organiserProjection.public.operationalRevision, operationalRevision);
     const finished = completeAvailable(journey, active.id, operationalRevision, active);
@@ -169,4 +193,62 @@ test("advertised but unconnected semantics remain explicit and fail closed", () 
   assert.equal(oversized.status, "NEEDS_INPUT");
   assert.ok(oversized.supportFindings.some((finding) => finding.includes("2 to 64 entrants")));
   assert.throws(() => journey.compile(oversized.id, oversized.draftVersion), /journey_not_ready/);
+});
+
+test("generic rosters fail closed on cardinality, identity, shape, seed and cross-source conflicts", () => {
+  const journey = new CompetitionJourney({ now: () => "2026-09-15T10:00:00.000Z" });
+  const blueprint = journey.create({ mode: "quick", value: { ...policy, name: "Roster Boundary",
+    format: "round_robin", participantCount: 6, minimumMatches: 5,
+    startsAt: "2026-10-18T08:00:00.000Z", endsAt: "2026-10-18T17:00:00.000Z" } });
+  const short = journey.addSource(blueprint.id, blueprint.draftVersion,
+    { mode: "csv", text: rosterCsv("Roster Boundary", 5) });
+  assert.ok(short.workbench.conflicts.some(({ id }) => id === "conflict.blueprint.roster-cardinality"));
+  assert.throws(() => journey.compile(short.id, short.draftVersion), /journey_not_ready/);
+
+  const clean = journey.removeSource(short.id, short.draftVersion, short.workbench.sources[1]!.id);
+  const rostered = journey.addSource(clean.id, clean.draftVersion,
+    { mode: "csv", text: rosterCsv("Roster Boundary", 6) });
+  assert.deepEqual(rostered.workbench.conflicts, []);
+  const forgedName = journey.addSource(rostered.id, rostered.draftVersion, { mode: "csv",
+    text: rosterCsv("Roster Boundary", 6, (rows) => { rows[1]![1] = "Forged Pair"; }) });
+  assert.ok(forgedName.workbench.conflicts.some(({ id }) => id.includes("display-name")));
+  assert.throws(() => journey.compile(forgedName.id, forgedName.draftVersion), /journey_not_ready/);
+
+  const shapeJourney = new CompetitionJourney({ now: () => "2026-09-15T10:00:00.000Z" });
+  const shapeBlueprint = shapeJourney.create({ mode: "quick", value: { ...policy, name: "Shape Boundary",
+    format: "single_elimination", participantCount: 4, minimumMatches: 1,
+    startsAt: "2026-10-18T08:00:00.000Z", endsAt: "2026-10-18T17:00:00.000Z" } });
+  const invalidShape = shapeJourney.addSource(shapeBlueprint.id, shapeBlueprint.draftVersion, { mode: "csv",
+    text: rosterCsv("Shape Boundary", 4, (rows) => {
+      rows[1]![2] = "another-division"; rows[2]![3] = rows[2]![3]!.split("|")[0]!; rows[3]![4] = "";
+    }) });
+  for (const id of ["conflict.blueprint.roster-division", "conflict.blueprint.roster-shape",
+    "conflict.blueprint.roster-partial-seeding"]) assert.ok(invalidShape.workbench.conflicts.some((entry) => entry.id === id));
+  assert.throws(() => shapeJourney.compile(invalidShape.id, invalidShape.draftVersion), /journey_not_ready/);
+});
+
+test("restart independently rejects a re-hashed generic workbench roster forged away from its source", () => {
+  const directory = mkdtempSync(join(tmpdir(), "krateasy-generic-roster-forgery-"));
+  const storagePath = join(directory, "journey.json");
+  try {
+    const journey = new CompetitionJourney({ storagePath, organizationId: "org.flexible",
+      now: () => "2026-09-15T10:00:00.000Z" });
+    const blueprint = journey.create({ mode: "quick", value: { ...policy, name: "Roster Integrity",
+      format: "round_robin", participantCount: 4, minimumMatches: 3,
+      startsAt: "2026-10-18T08:00:00.000Z", endsAt: "2026-10-18T17:00:00.000Z" } });
+    const rostered = journey.addSource(blueprint.id, blueprint.draftVersion,
+      { mode: "csv", text: rosterCsv("Roster Integrity", 4) });
+    journey.compile(rostered.id, rostered.draftVersion);
+
+    const envelope = JSON.parse(readFileSync(storagePath, "utf8")) as any;
+    const record = envelope.records[0];
+    const displayName = record.workbench.understoodFacts.find((fact: { path: string }) => fact.path.endsWith("/displayName"));
+    displayName.value = "Forged Pair";
+    const { recordHash: _recordHash, ...recordBody } = record;
+    record.recordHash = canonicalHash(recordBody);
+    envelope.storeHash = canonicalHash(envelope.records);
+    writeFileSync(storagePath, `${JSON.stringify(envelope, null, 2)}\n`);
+    assert.throws(() => new CompetitionJourney({ storagePath, organizationId: "org.flexible" }),
+      /journey_store_integrity_failed/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });
