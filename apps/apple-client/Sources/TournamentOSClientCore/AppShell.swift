@@ -9,6 +9,7 @@ public enum WorkspaceDestination: String, Equatable, Sendable {
 public enum AppSheet: String, Identifiable, Sendable {
     case newTournament
     case editTournament
+    case duplicateCompetition
 
     public var id: String { rawValue }
 }
@@ -366,6 +367,35 @@ public final class TournamentOSAppModel {
             )
         }
         return try await journeyClient.createCompetitionDraft(source)
+    }
+
+    public func addCompetitionSource(_ source: CompetitionCreationSourceInput,
+                                     to current: CompetitionJourneyDTO) async throws -> CompetitionJourneyDTO {
+        guard let journeyClient = activeClient as? any CompetitionJourneyClient else {
+            throw TournamentAPIClientError.unsupportedOperation
+        }
+        return try await journeyClient.addCompetitionSource(
+            id: current.id, expectedDraftVersion: current.draftVersion, source: source
+        )
+    }
+
+    public func duplicateSelectedCompetition(name: String, eventDate: String) async throws -> CompetitionJourneyDTO {
+        guard let competitionID = selectedTournamentID,
+              let journeyClient = activeClient as? any CompetitionJourneyClient else {
+            throw TournamentAPIClientError.unsupportedOperation
+        }
+        let current = try await journeyClient.fetchCompetitionJourney(id: competitionID)
+        guard current.status == "CLOSED", let closureHash = current.closure?.closureHash else {
+            throw TournamentAPIClientError.invalidResponse
+        }
+        let duplicate = try await journeyClient.duplicateCompetition(
+            id: competitionID, expectedClosureHash: closureHash,
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines), eventDate: eventDate
+        )
+        await loadPortfolio()
+        openTournament(duplicate.id)
+        await loadSelectedTournament()
+        return duplicate
     }
 
     public func compileCompetitionDraft(_ draft: CompetitionJourneyDTO) async throws -> CompetitionJourneyDTO {
@@ -883,6 +913,8 @@ public struct TournamentOSAppShell: View {
                 NewTournamentSheet(model: model)
             case .editTournament:
                 NewTournamentSheet(model: model, draft: model.localDraft(model.editingDraftID))
+            case .duplicateCompetition:
+                DuplicateCompetitionSheet(model: model)
             }
         }
     }

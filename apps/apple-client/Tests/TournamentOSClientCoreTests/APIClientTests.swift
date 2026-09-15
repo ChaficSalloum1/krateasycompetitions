@@ -175,6 +175,90 @@ final class APIClientTests: XCTestCase {
         XCTAssertNil(approvalJSON["guardInput"])
     }
 
+    func testConnectedSourceImportsUseTheAuthoritativeMultiSourceBoundaryWithoutNativeInterpretation() async throws {
+        let (client, transport) = makeClient()
+        let response = """
+        {"apiVersion":"1.0","id":"st-albans","name":"St Albans","draftVersion":2,"revision":0,"status":"NEEDS_INPUT",
+         "blueprint":{},"understood":[],"questions":[],"warnings":[],"supportFindings":[],"assumptions":[],
+         "compiled":null,"webPath":"/competitions/st-albans"}
+        """
+        for status in [201, 200, 200, 200] { transport.respond(status: status, json: response) }
+        let json = "{\"name\":\"St Albans\"}\n"
+        let yaml = "name: St Albans\n"
+        let csv = "entrant_id,display_name\npair.1,Pair One\n"
+        let xlsx = Data([0x50, 0x4b, 0x03, 0x04])
+
+        let draft = try await client.createCompetitionDraft(.json(json))
+        _ = try await client.addCompetitionSource(id: draft.id, expectedDraftVersion: 1, source: .yaml(yaml))
+        _ = try await client.addCompetitionSource(id: draft.id, expectedDraftVersion: 2, source: .csv(csv))
+        _ = try await client.addCompetitionSource(id: draft.id, expectedDraftVersion: 3,
+                                                   source: .xlsx(fileName: "entrants.xlsx", data: xlsx))
+
+        XCTAssertEqual(transport.allRequests.map { $0.url?.path }, [
+            "/v1/competition-journey", "/v1/competition-journey/st-albans/sources",
+            "/v1/competition-journey/st-albans/sources", "/v1/competition-journey/st-albans/sources",
+        ])
+        let bodies = try transport.allRequestBodies.map { try XCTUnwrap($0) }.map {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: $0) as? [String: Any])
+        }
+        XCTAssertEqual((bodies[0]["source"] as? [String: Any])?["text"] as? String, json)
+        XCTAssertEqual((bodies[1]["source"] as? [String: Any])?["text"] as? String, yaml)
+        XCTAssertEqual((bodies[2]["source"] as? [String: Any])?["text"] as? String, csv)
+        XCTAssertEqual((bodies[3]["source"] as? [String: Any])?["fileName"] as? String, "entrants.xlsx")
+        XCTAssertEqual((bodies[3]["source"] as? [String: Any])?["base64"] as? String, xlsx.base64EncodedString())
+        XCTAssertNil((bodies[3]["source"] as? [String: Any])?["value"])
+    }
+
+    func testMacFileImportFailsClosedOnUnsupportedOversizedOrNonUTF8Sources() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("krateasy-import-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let yamlURL = directory.appendingPathComponent("pilot.yaml")
+        try Data("name: St Albans\n".utf8).write(to: yamlURL)
+        XCTAssertEqual(try CompetitionCreationSourceInput.importFile(at: yamlURL), .yaml("name: St Albans\n"))
+        let unknownURL = directory.appendingPathComponent("pilot.pdf")
+        try Data("not a competition".utf8).write(to: unknownURL)
+        XCTAssertThrowsError(try CompetitionCreationSourceInput.importFile(at: unknownURL))
+        let badCSV = directory.appendingPathComponent("pilot.csv")
+        try Data([0xff, 0xfe]).write(to: badCSV)
+        XCTAssertThrowsError(try CompetitionCreationSourceInput.importFile(at: badCSV))
+        let oversized = directory.appendingPathComponent("pilot.json")
+        try Data(repeating: 0x41, count: 2_097_153).write(to: oversized)
+        XCTAssertThrowsError(try CompetitionCreationSourceInput.importFile(at: oversized))
+    }
+
+    func testClosedCompetitionDuplicateSendsOnlyClosureIdentityAndNewEditionFacts() async throws {
+        let (client, transport) = makeClient()
+        transport.respond(status: 200, json: """
+        {"apiVersion":"1.0","id":"st-albans","name":"St Albans","draftVersion":2,"revision":1,"status":"CLOSED",
+         "blueprint":{},"understood":[],"questions":[],"warnings":[],"supportFindings":[],"assumptions":[],
+         "compiled":{"guardStatus":"PASSED","requiredAcknowledgementCodes":[]},
+         "closure":{"closureHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+         "webPath":"/competitions/st-albans"}
+        """)
+        transport.respond(status: 201, json: """
+        {"apiVersion":"1.0","id":"st-albans-2027","name":"St Albans 2027","draftVersion":2,"revision":0,"status":"DRAFT",
+         "blueprint":{},"understood":[],"questions":[],"warnings":[],"supportFindings":[],"assumptions":[],
+         "compiled":null,"webPath":"/competitions/st-albans-2027"}
+        """)
+
+        let closed = try await client.fetchCompetitionJourney(id: "st-albans")
+        let duplicate = try await client.duplicateCompetition(id: closed.id,
+                                                              expectedClosureHash: try XCTUnwrap(closed.closure?.closureHash),
+                                                              name: "St Albans 2027", eventDate: "2027-09-19")
+
+        XCTAssertEqual(duplicate.id, "st-albans-2027")
+        XCTAssertEqual(transport.allRequests.map { $0.url?.path }, [
+            "/v1/competition-journey/st-albans", "/v1/competition-journey/st-albans/duplicate",
+        ])
+        let body = try XCTUnwrap(transport.allRequestBodies.last ?? nil)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(Set(object.keys), ["expectedClosureHash", "name", "eventDate"])
+        XCTAssertNil(object["source"])
+        XCTAssertNil(object["guardInput"])
+    }
+
     func testOfflineLiveCommandTransportSendsOnlyTheExactQueuedServerCommand() async throws {
         let (client, transport) = makeClient()
         transport.respond(status: 200, json: #"{"live":{"state":{"version":8}}}"#)

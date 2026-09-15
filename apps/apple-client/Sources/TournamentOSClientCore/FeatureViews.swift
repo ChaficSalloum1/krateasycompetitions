@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum CompetitionTheme {
     static let accent = Color(red: 0.04, green: 0.43, blue: 0.31)
@@ -448,6 +449,10 @@ struct NewTournamentSheet: View {
     @State private var isSubmitting = false
     @State private var journeyDraft: CompetitionJourneyDTO?
     @State private var interpretationReviewed = false
+    @State private var importedSource: CompetitionCreationSourceInput?
+    @State private var importedFileName: String?
+    @State private var isImportingFile = false
+    @State private var appendingImportedSource = false
 
     private let steps = ["Basics", "People", "Format", "Rules", "Resources", "Review"]
 
@@ -526,6 +531,10 @@ struct NewTournamentSheet: View {
             #endif
         }
         .interactiveDismissDisabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+        .fileImporter(isPresented: $isImportingFile, allowedContentTypes: importContentTypes,
+                      allowsMultipleSelection: false) { result in
+            handleImportedFile(result)
+        }
     }
 
     @ViewBuilder private var stepContent: some View {
@@ -535,6 +544,7 @@ struct NewTournamentSheet: View {
                 Picker("Start from", selection: $entryMode) {
                     Text("Quick setup").tag("Quick setup")
                     Text("Describe it").tag("Describe it")
+                    Text("Import file").tag("Import file")
                 }
                 .pickerStyle(.segmented)
                 if entryMode == "Describe it" {
@@ -542,6 +552,16 @@ struct NewTournamentSheet: View {
                         .frame(minHeight: 120)
                         .accessibilityLabel("Competition description")
                     Text("The local deterministic interpreter extracts only registered facts and stops for anything missing or unsupported.")
+                        .foregroundStyle(.secondary)
+                }
+                if entryMode == "Import file" {
+                    Button {
+                        appendingImportedSource = false
+                        isImportingFile = true
+                    } label: {
+                        Label(importedFileName ?? "Choose JSON, YAML, CSV or XLSX", systemImage: "doc.badge.plus")
+                    }
+                    Text("The exact file is sent to the authoritative server workbench. The Mac does not interpret competition rules or spreadsheet values.")
                         .foregroundStyle(.secondary)
                 }
                 TextField("Competition name", text: $name, prompt: Text("Autumn championship"))
@@ -643,6 +663,17 @@ struct NewTournamentSheet: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                Section("Original sources") {
+                    Button {
+                        appendingImportedSource = true
+                        isImportingFile = true
+                    } label: {
+                        Label("Add JSON, YAML, CSV or XLSX source", systemImage: "doc.badge.plus")
+                    }
+                    .disabled(isSubmitting)
+                    Text("Each source keeps its original bytes or text, hash and field provenance in this same draft.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -661,7 +692,11 @@ struct NewTournamentSheet: View {
     private func continueForward() {
         validationMessage = nil
         if step == 0 {
-            if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if entryMode == "Import file", importedSource == nil {
+                validationMessage = "Choose a JSON, YAML, CSV or XLSX file before continuing."
+                return
+            }
+            if entryMode != "Import file" && name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 validationMessage = "Give the competition a name before continuing."
                 return
             }
@@ -722,9 +757,14 @@ struct NewTournamentSheet: View {
             endsAt: formatter.string(from: finish),
             priority: priority == "Finish on time" ? "finish_on_time" : priority == "Minimise court changes" ? "minimum_disruption" : "fair_recovery"
         )
-        let source: CompetitionCreationSourceInput = entryMode == "Describe it"
-            ? .language(description.trimmingCharacters(in: .whitespacesAndNewlines))
-            : .quick(input)
+        let source: CompetitionCreationSourceInput
+        if entryMode == "Describe it" {
+            source = .language(description.trimmingCharacters(in: .whitespacesAndNewlines))
+        } else if entryMode == "Import file", let importedSource {
+            source = importedSource
+        } else {
+            source = .quick(input)
+        }
         do {
             if !interpretationReviewed {
                 journeyDraft = try await model.reviewCompetitionDraft(source, replacing: journeyDraft)
@@ -748,6 +788,39 @@ struct NewTournamentSheet: View {
             validationMessage = "Stopped safely: \(error.localizedDescription) Check every required fact and the verified milestone envelope."
             isSubmitting = false
         }
+    }
+
+    private var importContentTypes: [UTType] {
+        [UTType.json, UTType.commaSeparatedText, UTType(filenameExtension: "yaml"),
+         UTType(filenameExtension: "yml"), UTType(filenameExtension: "xlsx")].compactMap { $0 }
+    }
+
+    private func handleImportedFile(_ result: Result<[URL], Error>) {
+        validationMessage = nil
+        do {
+            let url = try result.get().first ?? { throw TournamentAPIClientError.invalidURL }()
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            let source = try CompetitionCreationSourceInput.importFile(at: url)
+            if appendingImportedSource, let journeyDraft {
+                isSubmitting = true
+                Task { @MainActor in
+                    defer { isSubmitting = false }
+                    do {
+                        self.journeyDraft = try await model.addCompetitionSource(source, to: journeyDraft)
+                        importedFileName = url.lastPathComponent
+                    } catch {
+                        validationMessage = "Source was not added: \(error.localizedDescription)"
+                    }
+                }
+            } else {
+                importedSource = source
+                importedFileName = url.lastPathComponent
+            }
+        } catch {
+            validationMessage = "This file was not accepted. Choose UTF-8 JSON, YAML or CSV up to 2 MB, or XLSX up to 5 MB."
+        }
+        appendingImportedSource = false
     }
 }
 
@@ -1686,8 +1759,77 @@ private struct CompetitionView: View {
             VStack(alignment: .leading, spacing: 24) {
                 PageIntro(kicker: "DESIGN", title: "Format & rules", detail: "The compiled contest graph, scheduling proof, and revision behind this event.")
                 BlueprintPanel(model: model)
+                if !model.isDemoWorkspace {
+                    VStack(alignment: .leading, spacing: 12) {
+                        EyebrowTitle("Next edition", detail: "Reuse governed memory without copying live truth")
+                        Text("A duplicate is allowed only after authoritative closure. The server carries source and approved decision provenance into a clean draft, never results, publication or live state.")
+                            .foregroundStyle(.secondary)
+                        Button {
+                            model.presentedSheet = .duplicateCompetition
+                        } label: {
+                            Label("Duplicate closed edition", systemImage: "doc.on.doc")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .surfaceStyle()
+                }
             }.pageFrame()
         }.background(Color.primary.opacity(0.025))
+    }
+}
+
+struct DuplicateCompetitionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let model: TournamentOSAppModel
+    @State private var name = ""
+    @State private var eventDate = Calendar.current.date(byAdding: .year, value: 1, to: Date()) ?? Date()
+    @State private var message: String?
+    @State private var isSubmitting = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Clean edition") {
+                    TextField("New competition name", text: $name, prompt: Text("St Albans 2027"))
+                    DatePicker("Event date", selection: $eventDate, displayedComponents: .date)
+                }
+                Section("Authority") {
+                    Text("Krateasy reads the current closure hash from the authoritative competition. Only the new name and date are submitted with it.")
+                        .foregroundStyle(.secondary)
+                }
+                if let message {
+                    Section { Label(message, systemImage: "exclamationmark.circle").foregroundStyle(.red) }
+                }
+            }
+            .navigationTitle("Duplicate competition")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create clean draft") { Task { await duplicate() } }
+                        .disabled(isSubmitting || name.trimmingCharacters(in: .whitespacesAndNewlines).count < 2)
+                }
+            }
+            #if os(macOS)
+            .frame(minWidth: 520, minHeight: 320)
+            #endif
+        }
+    }
+
+    @MainActor private func duplicate() async {
+        isSubmitting = true
+        message = nil
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        do {
+            _ = try await model.duplicateSelectedCompetition(name: name, eventDate: formatter.string(from: eventDate))
+            dismiss()
+        } catch {
+            message = "Duplication stopped safely. Confirm this competition is closed and reload its authoritative state."
+        }
+        isSubmitting = false
     }
 }
 

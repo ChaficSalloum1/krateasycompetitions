@@ -58,8 +58,12 @@ public struct CompetitionCreationInput: Codable, Equatable, Sendable {
 public enum CompetitionCreationSourceInput: Encodable, Equatable, Sendable {
     case language(String)
     case quick(CompetitionCreationInput)
+    case json(String)
+    case yaml(String)
+    case csv(String)
+    case xlsx(fileName: String, data: Data)
 
-    private enum CodingKeys: String, CodingKey { case mode, text, value }
+    private enum CodingKeys: String, CodingKey { case mode, text, value, fileName, base64 }
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
@@ -69,6 +73,44 @@ public enum CompetitionCreationSourceInput: Encodable, Equatable, Sendable {
         case .quick(let value):
             try container.encode("quick", forKey: .mode)
             try container.encode(value, forKey: .value)
+        case .json(let text), .yaml(let text), .csv(let text):
+            let mode: String
+            switch self {
+            case .json: mode = "json"
+            case .yaml: mode = "yaml"
+            case .csv: mode = "csv"
+            default: preconditionFailure("unreachable source mode")
+            }
+            try container.encode(mode, forKey: .mode)
+            try container.encode(text, forKey: .text)
+        case .xlsx(let fileName, let data):
+            try container.encode("xlsx", forKey: .mode)
+            try container.encode(fileName, forKey: .fileName)
+            try container.encode(data.base64EncodedString(), forKey: .base64)
+        }
+    }
+
+    public static func importFile(at url: URL) throws -> CompetitionCreationSourceInput {
+        let fileName = url.lastPathComponent
+        guard !fileName.isEmpty, !fileName.contains("/"), !fileName.contains("\\") else {
+            throw TournamentAPIClientError.invalidURL
+        }
+        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+        switch url.pathExtension.lowercased() {
+        case "xlsx":
+            guard data.count <= 5_000_000 else { throw TournamentAPIClientError.invalidResponse }
+            return .xlsx(fileName: fileName, data: data)
+        case "json", "yaml", "yml", "csv":
+            guard data.count <= 2_097_152, let text = String(data: data, encoding: .utf8) else {
+                throw TournamentAPIClientError.invalidResponse
+            }
+            switch url.pathExtension.lowercased() {
+            case "json": return .json(text)
+            case "yaml", "yml": return .yaml(text)
+            default: return .csv(text)
+            }
+        default:
+            throw TournamentAPIClientError.invalidResponse
         }
     }
 }
@@ -113,6 +155,10 @@ public struct CompetitionJourneyAssumptionDTO: Codable, Equatable, Sendable, Ide
     public let critical: Bool
 }
 
+public struct CompetitionJourneyClosureDTO: Codable, Equatable, Sendable {
+    public let closureHash: String
+}
+
 public struct CompetitionJourneyDTO: Codable, Equatable, Sendable {
     public let apiVersion: String
     public let id: String
@@ -127,16 +173,23 @@ public struct CompetitionJourneyDTO: Codable, Equatable, Sendable {
     public let supportFindings: [String]
     public let assumptions: [CompetitionJourneyAssumptionDTO]
     public let compiled: CompetitionJourneyCompiledDTO?
+    public let closure: CompetitionJourneyClosureDTO?
     public let webPath: String
 }
 
+extension CompetitionJourneyDTO: VersionedAPIDTO {}
+
 public protocol CompetitionJourneyClient: Sendable {
     var competitionWebBaseURL: URL { get }
+    func fetchCompetitionJourney(id: String) async throws -> CompetitionJourneyDTO
     func createCompetitionDraft(_ source: CompetitionCreationSourceInput) async throws -> CompetitionJourneyDTO
     func reviseCompetitionDraft(id: String, expectedDraftVersion: Int, source: CompetitionCreationSourceInput) async throws -> CompetitionJourneyDTO
+    func addCompetitionSource(id: String, expectedDraftVersion: Int, source: CompetitionCreationSourceInput) async throws -> CompetitionJourneyDTO
     func compileCompetition(id: String, expectedDraftVersion: Int) async throws -> CompetitionJourneyDTO
     func approveCompetition(id: String, expectedRevision: Int, acknowledgedFindingCodes: [String]) async throws -> CompetitionJourneyDTO
     func createApprovedCompetition(_ source: CompetitionCreationSourceInput) async throws -> CompetitionJourneyDTO
+    func duplicateCompetition(id: String, expectedClosureHash: String, name: String,
+                              eventDate: String) async throws -> CompetitionJourneyDTO
 }
 
 public protocol OfflineEventPackClient: Sendable {
@@ -177,6 +230,10 @@ public final class URLSessionTournamentAPIClient: TournamentAPIClient, Competiti
 
     public var competitionWebBaseURL: URL { baseURL }
 
+    public func fetchCompetitionJourney(id: String) async throws -> CompetitionJourneyDTO {
+        try await fetch(pathComponents: ["v1", "competition-journey", id])
+    }
+
     public func createCompetitionDraft(_ source: CompetitionCreationSourceInput) async throws -> CompetitionJourneyDTO {
         try await send(
             pathComponents: ["v1", "competition-journey"],
@@ -187,6 +244,13 @@ public final class URLSessionTournamentAPIClient: TournamentAPIClient, Competiti
     public func reviseCompetitionDraft(id: String, expectedDraftVersion: Int, source: CompetitionCreationSourceInput) async throws -> CompetitionJourneyDTO {
         try await send(pathComponents: ["v1", "competition-journey", id, "draft"],
                        body: ReviseJourneyCommand(expectedDraftVersion: expectedDraftVersion, source: source))
+    }
+
+    public func addCompetitionSource(id: String, expectedDraftVersion: Int,
+                                     source: CompetitionCreationSourceInput) async throws -> CompetitionJourneyDTO {
+        guard expectedDraftVersion >= 1 else { throw TournamentAPIClientError.invalidResponse }
+        return try await send(pathComponents: ["v1", "competition-journey", id, "sources"],
+                              body: ReviseJourneyCommand(expectedDraftVersion: expectedDraftVersion, source: source))
     }
 
     public func compileCompetition(id: String, expectedDraftVersion: Int) async throws -> CompetitionJourneyDTO {
@@ -209,6 +273,19 @@ public final class URLSessionTournamentAPIClient: TournamentAPIClient, Competiti
         guard compiled.compiled?.guardStatus == "PASSED" else { throw TournamentAPIClientError.invalidResponse }
         return try await approveCompetition(id: draft.id, expectedRevision: compiled.revision,
                                             acknowledgedFindingCodes: compiled.compiled?.requiredAcknowledgementCodes ?? [])
+    }
+
+    public func duplicateCompetition(id: String, expectedClosureHash: String, name: String,
+                                     eventDate: String) async throws -> CompetitionJourneyDTO {
+        guard expectedClosureHash.count == 64,
+              expectedClosureHash.allSatisfy({ $0.isHexDigit }),
+              !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              eventDate.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else {
+            throw TournamentAPIClientError.invalidResponse
+        }
+        return try await send(pathComponents: ["v1", "competition-journey", id, "duplicate"],
+                              body: DuplicateJourneyCommand(expectedClosureHash: expectedClosureHash,
+                                                            name: name, eventDate: eventDate))
     }
 
     public func fetchOfflineEventPack(competitionID: String, organizationID: String,
@@ -454,6 +531,11 @@ private struct CompileJourneyCommand: Encodable { let expectedDraftVersion: Int 
 private struct ApproveJourneyCommand: Encodable {
     let expectedRevision: Int
     let acknowledgedFindingCodes: [String]
+}
+private struct DuplicateJourneyCommand: Encodable {
+    let expectedClosureHash: String
+    let name: String
+    let eventDate: String
 }
 private struct OfflineEventPackCommand: Encodable {
     let expectedPublishedRevision: Int
