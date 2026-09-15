@@ -6,6 +6,7 @@ import {
 } from "@tournament-os/tournament-schema";
 import { certify } from "./certification.js";
 import { independentlyExpectedContestCount } from "./graph.js";
+import { independentlyValidateAdvancementPaths } from "./guard-path-reconstruction.js";
 import type { CompetitionGraph, ScheduleSolution, SimulationRun } from "./types.js";
 
 export type CompetitionGuardSeverity =
@@ -62,7 +63,7 @@ export interface CompetitionGuardBinding {
 
 export interface CompetitionGuardReport {
   readonly schemaVersion: "1.0.0";
-  readonly guardVersion: "1.0.0";
+  readonly guardVersion: "1.1.0";
   readonly status: "PASSED" | "BLOCKED";
   readonly integrityGrade: "CERTIFIED" | "REJECTED";
   readonly findings: readonly CompetitionGuardFinding[];
@@ -169,6 +170,7 @@ export function evaluateCompetitionGuard(input: CompetitionGuardInput): Readonly
     message: "The proposed graph omits or invents contests relative to the Guard's independent derivation from the compiled specification.",
     evidence: { expected: independentlyRequiredContestCount, actual: input.graph.generatedActualContestCount },
   });
+  bindingFindings.push(...independentlyValidateAdvancementPaths(input.spec, input.graph));
   const findings = [...certification.findings, ...bindingFindings]
     .map((finding): CompetitionGuardFinding => ({
       rule: finding.path,
@@ -197,7 +199,7 @@ export function evaluateCompetitionGuard(input: CompetitionGuardInput): Readonly
   };
   const body = {
     schemaVersion: "1.0.0" as const,
-    guardVersion: "1.0.0" as const,
+    guardVersion: "1.1.0" as const,
     status: blocked ? "BLOCKED" as const : "PASSED" as const,
     integrityGrade: blocked ? "REJECTED" as const : "CERTIFIED" as const,
     findings,

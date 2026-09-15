@@ -134,6 +134,60 @@ test("the Guard blocks a coordinated graph and schedule omission even when propo
   assert.equal(report.accounting.unscheduledContestIds.length, 0);
 });
 
+test("the Guard independently rejects a count-preserving advancement-path mutation", () => {
+  const spec = reference();
+  const scenario = runScenario(spec, createEntrants(spec), "guard-path-mutation");
+  const graph = structuredClone(scenario.graph);
+  const target = graph.nodes.find(({ kind, roundIndex, slots }) => kind === "contest" && roundIndex >= 3
+    && slots[0].type === "winner");
+  assert.ok(target);
+  const original = target.slots[0];
+  assert.equal(original.type, "winner");
+  const earlier = graph.nodes.find(({ kind, stageId, roundIndex }) => kind === "contest"
+    && stageId === target.stageId && roundIndex < target.roundIndex - 1);
+  assert.ok(earlier);
+  target.slots[0] = { type: "winner", contestId: earlier.id };
+  graph.edges = graph.edges.filter(({ fromContestId, toContestId, toSlot }) =>
+    !(fromContestId === original.contestId && toContestId === target.id && toSlot === 0));
+  graph.edges.push({ fromContestId: earlier.id, outcome: "winner", toContestId: target.id, toSlot: 0 });
+
+  const report = evaluateCompetitionGuard({ sourceDefinitionHash: canonicalHash(spec), spec, graph,
+    schedule: scenario.schedule, ...(scenario.simulation ? { simulation: scenario.simulation } : {}) });
+
+  assert.equal(report.accounting.requiredContestCount, scenario.graph.generatedActualContestCount);
+  assert.equal(report.status, "BLOCKED");
+  assert.ok(report.findings.some(({ sourceCode }) => sourceCode === "KCG005"));
+});
+
+test("the Guard independently rejects forged opening draws and qualification dependencies", () => {
+  const spec = reference();
+  const scenario = runScenario(spec, createEntrants(spec), "guard-draw-mutations");
+  const duplicateDraw = structuredClone(scenario.graph);
+  const bracketStage = spec.stages.find(({ bracket, primitive }) => bracket
+    && ["single_elimination", "consolation"].includes(primitive));
+  assert.ok(bracketStage);
+  const openingSlots = duplicateDraw.nodes.filter(({ stageId, roundIndex }) =>
+    stageId === bracketStage.id && roundIndex === 1).flatMap(({ slots }) => slots)
+    .filter((slot): slot is Extract<typeof slot, { type: "entrant" }> => slot.type === "entrant");
+  assert.ok(openingSlots.length >= 2);
+  openingSlots[1]!.entrantId = openingSlots[0]!.entrantId;
+  const drawReport = evaluateCompetitionGuard({ sourceDefinitionHash: canonicalHash(spec), spec,
+    graph: duplicateDraw, schedule: scenario.schedule,
+    ...(scenario.simulation ? { simulation: scenario.simulation } : {}) });
+  assert.equal(drawReport.status, "BLOCKED");
+  assert.ok(drawReport.findings.some(({ sourceCode }) => sourceCode === "KCG005"));
+
+  const qualificationGraph = structuredClone(scenario.graph);
+  const completeEdges = qualificationGraph.edges.filter(({ outcome }) => outcome === "complete");
+  assert.ok(completeEdges.length >= 2);
+  completeEdges[0]!.toContestId = completeEdges[1]!.toContestId;
+  const qualificationReport = evaluateCompetitionGuard({ sourceDefinitionHash: canonicalHash(spec), spec,
+    graph: qualificationGraph, schedule: scenario.schedule,
+    ...(scenario.simulation ? { simulation: scenario.simulation } : {}) });
+  assert.equal(qualificationReport.status, "BLOCKED");
+  assert.ok(qualificationReport.findings.some(({ sourceCode }) => sourceCode === "KCG005"));
+});
+
 test("certificate acknowledgements are exact and tampering is detectable", () => {
   const spec = reference();
   const scenario = runScenario(spec, createEntrants(spec), "guard-tampering");
