@@ -44,6 +44,17 @@ test("dynamic status and dense information have explicit names and announcements
   assert.match(competitionJourneyHtml("competition.accessibility"), /<th scope="col">Contest<\/th>/);
 });
 
+test("the closed-edition control is accessible and submits only authoritative closure identity plus new facts", () => {
+  const html = competitionJourneyHtml("competition.accessibility");
+  assert.match(html, /id="duplicate-form"/);
+  assert.match(html, /for="duplicate-name"/);
+  assert.match(html, /for="duplicate-date"/);
+  assert.match(html, /id="duplicate-status"[^>]*role="status"[^>]*aria-live="polite"/);
+  assert.match(html, /v\.closure\?[^;]+duplicate-form/);
+  assert.match(html, /JSON\.stringify\(\{expectedClosureHash:v\.closure\.closureHash,name,eventDate\}\)/);
+  assert.doesNotMatch(html, /JSON\.stringify\(\{[^}]*guardInput/);
+});
+
 function channel(value: number): number {
   const component = value / 255;
   return component <= 0.04045 ? component / 12.92 : ((component + 0.055) / 1.055) ** 2.4;
