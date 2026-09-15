@@ -111,6 +111,15 @@ test("authority injection is rejected without a partial draft", () => {
   assert.deepEqual(proposal.understood, []);
 });
 
+test("long organiser descriptions remain reviewable within the bounded source intake budget", () => {
+  const core = "Create a padel tournament called Long Form Open for 8 pairs on 4 courts. Round robin. At least 7 matches, matches last 25 minutes, 20 minutes rest. Start 2026-10-18 09:00 and finish by 2026-10-18 18:00. Timezone Europe/London. Use total score with no draws. Tiebreaks use wins, score difference, score for, then manual decision. Preserve played matches and make future matches walkovers after withdrawal. Use seeded input order. Prioritise fair recovery.";
+  const proposal = createCompetitionProposal({ mode: "language", text: `${core}\n${"Operational note. ".repeat(1_500)}` });
+  assert.equal(proposal.status, "READY_TO_COMPILE");
+  const tooLarge = createCompetitionProposal({ mode: "language", text: "x".repeat(48_001) });
+  assert.equal(tooLarge.status, "REJECTED");
+  assert.match(tooLarge.warnings.join(" "), /48,000-character safe review boundary/);
+});
+
 test("canonical web product separates the lifecycle from the advanced workbench", () => {
   for (const text of ["What needs you now?", "Create a competition", "Templates", "People &amp; places", "Team",
     "Open advanced workbench", "Two valid operating plans", "Participant communications", "All competitions"])
@@ -129,6 +138,7 @@ test("canonical web product separates the lifecycle from the advanced workbench"
   assert.ok(creatorHtml.includes("Source needs a smaller review unit"));
   assert.ok(creatorHtml.includes("Technical details"));
   assert.equal(creatorHtml.includes("Stopped safely:"), false);
+  assert.equal(creatorHtml.includes("Input rejected safely."), false);
   assert.equal(creatorHtml.includes("/api/platform-demo/commands"), false);
   assert.ok(creatorHtml.includes("@media(max-width:580px)"));
   assert.ok(productHtml.includes("@media(max-width:650px)"));
