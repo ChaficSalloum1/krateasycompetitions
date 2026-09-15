@@ -12,6 +12,7 @@ import {
   type LiveOperationsState,
   createEntrants,
   createCompetitionGuardPreflight,
+  createPublicationChangeSet,
   createPublicationCertificate,
   evaluateCompetitionGuard,
   replayLiveOperationsEvents,
@@ -20,6 +21,8 @@ import {
   type CompetitionGraph,
   type CompetitionGuardReport,
   type CompetitionGuardPreflight,
+  type PublicationChangeSet,
+  type PublicationCertificate,
   type ScheduleSolution,
   type SimulationRun,
   InMemoryTransactionalOutbox,
@@ -114,6 +117,7 @@ interface CompiledJourneyRevision {
   readonly schedule: ScheduleSolution;
   readonly simulation?: SimulationRun;
   readonly guardReport: CompetitionGuardReport;
+  readonly changeSet?: PublicationChangeSet;
 }
 
 interface JourneyApproval {
@@ -121,6 +125,7 @@ interface JourneyApproval {
   readonly approvedBy: string;
   readonly approvedAt: string;
   readonly guardReportHash: string;
+  readonly changeSetHash: string;
   readonly acknowledgedFindingCodes: readonly string[];
   readonly approvalHash: string;
 }
@@ -129,7 +134,9 @@ interface JourneyPublication {
   readonly revision: number;
   readonly definitionHash: string;
   readonly guardReportHash: string;
+  readonly changeSetHash: string;
   readonly certificateHash: string;
+  readonly certificate: PublicationCertificate;
   readonly publishedBy: "competition-journey.publisher";
   readonly publishedAt: string;
   readonly outboxIntents: readonly [{
@@ -140,6 +147,7 @@ interface JourneyPublication {
       readonly revision: number;
       readonly definitionHash: string;
       readonly guardReportHash: string;
+      readonly changeSetHash: string;
       readonly certificateHash: string;
     };
   }];
@@ -271,6 +279,8 @@ export interface CompetitionJourneySnapshot {
     scheduledContestCount: number;
     guardStatus: CompetitionGuardReport["status"];
     guardReportHash: string;
+    changeSet: PublicationChangeSet | null;
+    changeSetHash: string | null;
     guardFindings: CompetitionGuardReport["findings"];
     guardPreflight: CompetitionGuardPreflight;
     preflightPath: string;
@@ -343,13 +353,14 @@ function sealRecord(record: Omit<StoredJourneyRecord, "recordHash">): StoredJour
 }
 
 function closureAuthority(record: StoredJourneyRecord): CompetitionClosure["authority"] | null {
-  if (!record.compiled || !record.publication || !record.live) return null;
+  if (!record.compiled || !record.compiled.changeSet || !record.publication || !record.live) return null;
   return {
     specificationHash: canonicalHash(record.compiled.spec),
     graphHash: canonicalHash(record.compiled.graph),
     scheduleHash: canonicalHash(record.compiled.schedule),
     simulationHash: record.compiled.simulation ? canonicalHash(record.compiled.simulation) : null,
     guardReportHash: record.compiled.guardReport.reportHash,
+    publicationChangeSetHash: record.compiled.changeSet.changeSetHash,
     publicationCertificateHash: record.publication.certificateHash,
     operationalPublicationHash: record.live.publication?.publicationHash ?? null,
     liveStateProofHash: record.live.state.proofHash,
@@ -359,14 +370,15 @@ function closureAuthority(record: StoredJourneyRecord): CompetitionClosure["auth
 }
 
 function evidenceBundleForRecord(record: StoredJourneyRecord): CompetitionEvidenceBundle {
-  if (!record.closure || !record.compiled || !record.approval || !record.publication || !record.live)
+  if (!record.closure || !record.compiled || !record.compiled.changeSet || !record.approval || !record.publication || !record.live)
     throw new Error("competition_closure_mismatch");
   return createCompetitionEvidenceBundle({
     name: recognisedCompetitionName(record.workbench!) ?? record.proposal.blueprint.name ?? "Competition",
     closure: record.closure, sources: record.workbench?.sources ?? [], spec: record.compiled.spec,
     graph: record.compiled.graph, schedule: record.compiled.schedule,
     ...(record.compiled.simulation ? { simulation: record.compiled.simulation } : {}),
-    guardReport: record.compiled.guardReport, approval: record.approval, publication: record.publication,
+    guardReport: record.compiled.guardReport, changeSet: record.compiled.changeSet,
+    approval: record.approval, publication: record.publication,
     operationalPublications: record.live.publicationHistory ?? [], live: record.live.state,
     operations: record.live.operations, authoritativeRecord: record, recordHash: record.recordHash,
   });
@@ -575,6 +587,8 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
       scheduledContestCount: compiled.schedule.contests.length,
       guardStatus: compiled.guardReport.status,
       guardReportHash: compiled.guardReport.reportHash,
+      changeSet: compiled.changeSet ?? null,
+      changeSetHash: compiled.changeSet?.changeSetHash ?? null,
       guardFindings: compiled.guardReport.findings,
       guardPreflight: createCompetitionGuardPreflight(compiled.guardReport),
       preflightPath: `/competitions/${encodeURIComponent(record.id)}/preflight`,
@@ -624,6 +638,13 @@ function compileReferenceRevision(record: StoredJourneyRecord, compiledAt: strin
     schedule,
     ...(scenario.simulation ? { simulation: scenario.simulation } : {}),
   });
+  const previous = record.compiled;
+  const pendingImpact = record.workbench?.pendingImpact;
+  const changeSet = createPublicationChangeSet({ fromRevision: previous?.revision ?? null, toRevision: revision,
+    ...(previous ? { previousDefinition: previous.spec, previousSchedule: previous.schedule } : {}),
+    definition: spec, specHash: guardReport.binding.specHash, schedule,
+    ...(pendingImpact ? { reviewedImpact: { previewHash: pendingImpact.previewHash,
+      semanticChanges: pendingImpact.semantic, operationalImpact: pendingImpact.operational } } : {}) });
   return {
     revision,
     compiledBy: "competition-journey.compiler",
@@ -633,6 +654,7 @@ function compileReferenceRevision(record: StoredJourneyRecord, compiledAt: strin
     schedule,
     ...(scenario.simulation ? { simulation: scenario.simulation } : {}),
     guardReport,
+    changeSet,
   };
 }
 
@@ -799,6 +821,7 @@ export class CompetitionJourney {
     const current = this.require(id);
     const compiled = current.compiled;
     if (!compiled || compiled.revision !== expectedRevision) throw new Error("journey_revision_conflict");
+    if (!compiled.changeSet) throw new Error("journey_revision_requires_recompile");
     if (!approvedBy.trim() || approvedBy === compiled.compiledBy) throw new Error("approval_requires_independent_actor");
     const definitionHash = canonicalHash(compiled.spec);
     const independentlyVerifiedReport = evaluateCompetitionGuard({ sourceDefinitionHash: definitionHash, spec: compiled.spec,
@@ -811,16 +834,19 @@ export class CompetitionJourney {
     const approvedAt = this.canonicalNow();
     const approvalBody = { revision: compiled.revision, approvedBy, approvedAt,
       guardReportHash: independentlyVerifiedReport.reportHash,
+      changeSetHash: compiled.changeSet.changeSetHash,
       acknowledgedFindingCodes: [...new Set(acknowledgedFindingCodes)].sort() };
     const approval: JourneyApproval = { ...approvalBody, approvalHash: canonicalHash(approvalBody) };
     const publishedBy = "competition-journey.publisher" as const;
     if (publishedBy === approvedBy) throw new Error("publication_requires_independent_actor");
     const certificate = createPublicationCertificate({ tournamentId: current.id, tournamentRevision: compiled.revision,
-      report: independentlyVerifiedReport, acknowledgedFindingCodes, issuedBy: publishedBy, issuedAt: approvedAt });
+      report: independentlyVerifiedReport, changeSet: compiled.changeSet,
+      acknowledgedFindingCodes, issuedBy: publishedBy, issuedAt: approvedAt });
     const publicationBody = { revision: compiled.revision, definitionHash,
-      guardReportHash: independentlyVerifiedReport.reportHash, certificateHash: certificate.certificateHash,
+      guardReportHash: independentlyVerifiedReport.reportHash, changeSetHash: compiled.changeSet.changeSetHash,
+      certificateHash: certificate.certificateHash,
       publishedBy, publishedAt: approvedAt };
-    const publication: JourneyPublication = { ...publicationBody, outboxIntents: [{
+    const publication: JourneyPublication = { ...publicationBody, certificate, outboxIntents: [{
       topic: "competition.publication.v1", key: `${current.id}:v${compiled.revision}`,
       payload: { competitionId: current.id, ...publicationBody },
     }] };

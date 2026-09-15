@@ -77,6 +77,7 @@ test("structured decisions show impact before converging on one guarded 108-fixt
   assert.equal(resolved.workbench.sources.length, 2);
   assert.deepEqual(resolved.workbench.missingDecisions, []);
   assert.equal(resolved.workbench.assumptions.length, decisions.length);
+  assert.equal(resolved.workbench.pendingImpact?.previewHash, preview.previewHash);
 
   const compiled = journey.compile(resolved.id, resolved.draftVersion);
   assert.equal(compiled.status, "READY_FOR_APPROVAL");
@@ -84,6 +85,8 @@ test("structured decisions show impact before converging on one guarded 108-fixt
   assert.equal(compiled.compiled?.actualContestCount, 108);
   assert.equal(compiled.compiled?.scheduledContestCount, 108);
   assert.equal(compiled.compiled?.guardStatus, "PASSED");
+  assert.equal(compiled.compiled?.changeSet?.reviewedImpact?.previewHash, preview.previewHash);
+  assert.equal(compiled.compiled?.changeSet?.toRevision, compiled.revision);
   assert.equal(compiled.compiled?.schedule.every(({ end }) => end <= "2026-09-20T19:00:00.000Z"), true);
   const finalIds = new Set(["advanced.konnect.R2.M1", "advanced.tower.R3.M1", "beginner.konnect.R2.M1",
     "beginner.tower.R4.M1", "intermediate.konnect.R2.M1", "intermediate.tower.R5.M1"]);
@@ -179,6 +182,9 @@ test("the AI-free golden journey publishes one exact revision and replays it aft
     assert.equal(published.status, "PUBLISHED");
     assert.equal(published.publication?.revision, published.compiled?.revision);
     assert.equal(published.publication?.definitionHash, published.compiled?.specHash);
+    assert.equal(published.approval?.changeSetHash, published.compiled?.changeSetHash);
+    assert.equal(published.publication?.changeSetHash, published.compiled?.changeSetHash);
+    assert.equal(published.publication?.outboxIntents[0]?.payload.changeSetHash, published.compiled?.changeSetHash);
     assert.equal(published.publication?.outboxIntents[0]?.payload.revision, published.revision);
     assert.equal(published.webPath, `/competitions/${encodeURIComponent(published.id)}`);
 

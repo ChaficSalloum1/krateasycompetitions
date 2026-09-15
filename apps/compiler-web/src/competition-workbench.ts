@@ -358,7 +358,11 @@ export function applyWorkbenchEdit(projection: CompetitionWorkbenchProjection, p
   });
   return { ...projection, sources: [...projection.sources, indexedSource], assumptions,
     missingDecisions: requiredDecisions.filter(({ id }) => !(id in decisions)),
-    definitionVersion: projection.definitionVersion + 1, pendingImpact: null };
+    definitionVersion: projection.definitionVersion + 1, pendingImpact: {
+      previewHash: preview.previewHash,
+      semantic: preview.semanticDiff,
+      operational: preview.operationalImpact,
+    } };
 }
 
 export function workbenchSourceDocument(source: CreationSource, receivedAt: string): WorkbenchSourceDocument {

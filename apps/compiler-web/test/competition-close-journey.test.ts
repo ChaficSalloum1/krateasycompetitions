@@ -152,6 +152,8 @@ test("the connected St Albans journey closes, exports, restores and duplicates w
     assert.equal(closedResponse.body.closure.resultSummary.total, 108);
     assert.equal(closedResponse.body.closure.resultSummary.unresolved, 0);
     assert.equal(closedResponse.body.closure.authority.liveStateProofHash, finished.live!.state.proofHash);
+    assert.equal(closedResponse.body.closure.authority.publicationChangeSetHash,
+      closedResponse.body.compiled.changeSetHash);
 
     const replayedClose = await request(server, "POST", `${root}/close`, {
       expectedPublishedRevision: 1, expectedOperationalRevision: 2,
@@ -171,7 +173,7 @@ test("the connected St Albans journey closes, exports, restores and duplicates w
     assert.match(preflightPage.body, /Bottom-up contest and minute ledger/);
     assert.match(preflightPage.body, new RegExp(closedResponse.body.compiled.guardReportHash));
     const names = bundleResponse.body.artifacts.map(({ fileName }: { fileName: string }) => fileName);
-    for (const required of ["specification.json", "graph.json", "schedule.json", "guard-report.json",
+    for (const required of ["specification.json", "graph.json", "schedule.json", "guard-report.json", "publication-change-set.json",
       "actual-results.json", "live-events.json", "operational-events.json", "sources.json", "audit.md",
       "authoritative-record.json"]) assert.ok(names.includes(required));
 
@@ -193,6 +195,24 @@ test("the connected St Albans journey closes, exports, restores and duplicates w
     assert.match(readyRelease.manifestHash, /^[a-f0-9]{64}$/);
     assert.deepEqual(assessPilotRelease({ bundle: bundleResponse.body,
       acceptances: [...acceptances].reverse(), assessedAt: clock, maximumAcceptanceAgeMs: 86_400_000 }), readyRelease);
+    const forgedChangeSetBundle = structuredClone(bundleResponse.body);
+    const forgedChangeSetArtifact = forgedChangeSetBundle.artifacts.find(
+      ({ fileName }: { fileName: string }) => fileName === "publication-change-set.json");
+    const forgedChangeSet = JSON.parse(forgedChangeSetArtifact.content);
+    forgedChangeSet.changeSetHash = "0".repeat(64);
+    forgedChangeSetArtifact.content = JSON.stringify(forgedChangeSet);
+    forgedChangeSetArtifact.sha256 = sha256(forgedChangeSetArtifact.content);
+    forgedChangeSetBundle.manifest = createBackupManifest({ backupId: forgedChangeSetBundle.manifest.backupId,
+      createdAt: forgedChangeSetBundle.manifest.createdAt, schemaVersion: forgedChangeSetBundle.manifest.schemaVersion,
+      artifacts: forgedChangeSetBundle.artifacts.map(({ fileName: path, content, sha256: checksum }:
+        { fileName: string; content: string; sha256: string }) => ({ path,
+        bytes: Buffer.byteLength(content, "utf8"), sha256: checksum })) });
+    const { bundleHash: _oldChangeSetBundleHash, ...forgedChangeSetBundleBody } = forgedChangeSetBundle;
+    forgedChangeSetBundle.bundleHash = canonicalHash(forgedChangeSetBundleBody);
+    const blockedChangeSetRelease = assessPilotRelease({ bundle: forgedChangeSetBundle, acceptances,
+      assessedAt: clock, maximumAcceptanceAgeMs: 86_400_000 });
+    assert.equal(blockedChangeSetRelease.status, "BLOCKED_SOFTWARE");
+    assert.ok(blockedChangeSetRelease.blockers.some(({ code }) => code === "PUBLICATION_CHANGE_SET_MISMATCH"));
     const forgedAcceptance = structuredClone(acceptances);
     forgedAcceptance[0]!.scopeHash = "f".repeat(64);
     assert.equal(assessPilotRelease({ bundle: bundleResponse.body, acceptances: forgedAcceptance,

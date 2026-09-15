@@ -48,6 +48,7 @@ test("one durable journey creates, compiles, Guards, approves, and reopens the s
     assert.equal(compiled.compiled?.guardPreflight.guardReportHash, compiled.compiled?.guardReportHash);
     assert.equal(compiled.compiled?.guardPreflight.outcome, "READY");
     assert.equal(compiled.compiled?.guardPreflight.detailed.accounting.reconciled, true);
+    assert.match(compiled.compiled?.changeSetHash ?? "", /^[a-f0-9]{64}$/);
     assert.match(compiled.compiled?.preflightPath ?? "", /\/preflight$/);
 
     const approved = journey.approve(draft.id, compiled.revision, "mac.organiser",
@@ -56,6 +57,8 @@ test("one durable journey creates, compiles, Guards, approves, and reopens the s
     assert.match(approved.approval?.approvalHash ?? "", /^[a-f0-9]{64}$/);
     assert.equal(approved.publication?.revision, approved.revision);
     assert.equal(approved.publication?.guardReportHash, approved.compiled?.guardReportHash);
+    assert.equal(approved.approval?.changeSetHash, approved.compiled?.changeSetHash);
+    assert.equal(approved.publication?.changeSetHash, approved.compiled?.changeSetHash);
     assert.equal(approved.publication?.outboxIntents[0]?.key, `${approved.id}:v${approved.revision}`);
     assert.match(approved.publication?.certificateHash ?? "", /^[a-f0-9]{64}$/);
 

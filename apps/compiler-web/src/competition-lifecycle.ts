@@ -6,6 +6,7 @@ import {
   type BackupManifest,
   type CompetitionGraph,
   type CompetitionGuardReport,
+  type PublicationChangeSet,
   type LiveOperationsState,
   type OutboxMessage,
   type ScheduleSolution,
@@ -64,6 +65,7 @@ export interface CompetitionClosure {
     readonly scheduleHash: string;
     readonly simulationHash: string | null;
     readonly guardReportHash: string;
+    readonly publicationChangeSetHash: string;
     readonly publicationCertificateHash: string;
     readonly operationalPublicationHash: string | null;
     readonly liveStateProofHash: string;
@@ -255,6 +257,7 @@ export function createCompetitionEvidenceBundle(input: {
   readonly schedule: ScheduleSolution;
   readonly simulation?: SimulationRun;
   readonly guardReport: CompetitionGuardReport;
+  readonly changeSet: PublicationChangeSet;
   readonly approval: unknown;
   readonly publication: unknown;
   readonly operationalPublications: unknown;
@@ -270,6 +273,7 @@ export function createCompetitionEvidenceBundle(input: {
     artifact("schedule.json", "application/json", input.schedule),
     ...(input.simulation ? [artifact("simulation.json", "application/json", input.simulation)] : []),
     artifact("guard-report.json", "application/json", input.guardReport),
+    artifact("publication-change-set.json", "application/json", input.changeSet),
     artifact("approval.json", "application/json", input.approval),
     artifact("publication.json", "application/json", { publication: input.publication,
       operationalPublications: input.operationalPublications }),
@@ -304,7 +308,7 @@ export function verifyCompetitionEvidenceBundle(bundle: CompetitionEvidenceBundl
   if (bundle.schemaVersion !== "1.0.0" || canonicalHash(body) !== bundleHash)
     throw new Error("invalid_competition_evidence_bundle");
   const paths = new Set(bundle.artifacts.map(({ fileName }) => fileName));
-  const required = ["sources.json", "specification.json", "graph.json", "schedule.json", "guard-report.json",
+  const required = ["sources.json", "specification.json", "graph.json", "schedule.json", "guard-report.json", "publication-change-set.json",
     "approval.json", "publication.json", "actual-results.json", "live-events.json", "operational-events.json",
     "closure.json", "authoritative-record.json", "audit.md"];
   if (paths.size !== bundle.artifacts.length || required.some((path) => !paths.has(path)))

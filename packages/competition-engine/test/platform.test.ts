@@ -158,6 +158,8 @@ test("tournaments retain immutable draft revisions, guarded lifecycle transition
     state.tournaments["tournament.autumn"]?.revisions[1]?.definitionHash);
   assert.equal(state.tournaments["tournament.autumn"]?.publishedCertificateHash,
     state.publicationRecords["tournament.autumn"]?.at(-1)?.certificate.certificateHash);
+  assert.equal(state.tournaments["tournament.autumn"]?.approvedChangeSetHash,
+    state.publicationRecords["tournament.autumn"]?.at(-1)?.changeSet.changeSetHash);
   const dashboard = await platform.dashboard("org.lifecycle", "user.owner");
   assert.deepEqual(dashboard.publicationReadiness.find(({ tournamentId }) => tournamentId === "tournament.autumn"), {
     tournamentId: "tournament.autumn", tournamentRevision: 2, status: "PUBLISHED",

@@ -1,5 +1,11 @@
 import { canonicalHash, deepFreeze } from "@tournament-os/tournament-schema";
-import type { CompetitionGuardReport } from "@tournament-os/competition-engine";
+import {
+  verifyPublicationCertificate,
+  verifyPublicationChangeSet,
+  type CompetitionGuardReport,
+  type PublicationCertificate,
+  type PublicationChangeSet,
+} from "@tournament-os/competition-engine";
 import {
   verifyCompetitionEvidenceBundle,
   type CompetitionClosure,
@@ -167,6 +173,10 @@ export function assessPilotRelease(input: {
   verifyCompetitionEvidenceBundle(input.bundle);
   const closure = parseArtifact<CompetitionClosure>(input.bundle, "closure.json");
   const guard = parseArtifact<CompetitionGuardReport>(input.bundle, "guard-report.json");
+  const changeSet = parseArtifact<PublicationChangeSet>(input.bundle, "publication-change-set.json");
+  const publicationArtifact = parseArtifact<{ readonly publication: {
+    readonly changeSetHash: string; readonly certificateHash: string; readonly certificate: PublicationCertificate;
+  } }>(input.bundle, "publication.json");
   const scopeHash = pilotReleaseScope(input.bundle);
   const softwareBlockers: PilotReleaseBlocker[] = [];
   const engineeringFallback = "Keep the pilot in rehearsal and retain the last independently verified evidence bundle.";
@@ -181,6 +191,15 @@ export function assessPilotRelease(input: {
     || !guard.accounting.reconciled || guard.reportHash !== closure.authority.guardReportHash)
     softwareBlockers.push({ code: "INDEPENDENT_GUARD_EVIDENCE_MISMATCH", ownerRole: "ENGINEERING",
       message: "The closed revision is not bound to the current independently passing Guard report.", fallback: engineeringFallback });
+  if (!verifyPublicationChangeSet(changeSet)
+    || changeSet.changeSetHash !== closure.authority.publicationChangeSetHash
+    || publicationArtifact.publication.changeSetHash !== changeSet.changeSetHash
+    || publicationArtifact.publication.certificateHash !== publicationArtifact.publication.certificate.certificateHash
+    || !verifyPublicationCertificate(publicationArtifact.publication.certificate, guard, changeSet)) {
+    softwareBlockers.push({ code: "PUBLICATION_CHANGE_SET_MISMATCH", ownerRole: "ENGINEERING",
+      message: "The reviewed definition and operational diff is not bound to the exact publication certificate.",
+      fallback: engineeringFallback });
+  }
   if (closure.publishedRevision < 1 || closure.operationalRevision < closure.publishedRevision || closure.liveVersion < 1)
     softwareBlockers.push({ code: "INVALID_REVISION_CHAIN", ownerRole: "ENGINEERING",
       message: "The published, operational and live revision chain is incomplete.", fallback: engineeringFallback });

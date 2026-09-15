@@ -7,6 +7,7 @@ import {
 import { certify } from "./certification.js";
 import { independentlyExpectedContestCount } from "./graph.js";
 import { independentlyValidateAdvancementPaths } from "./guard-path-reconstruction.js";
+import { verifyPublicationChangeSet, type PublicationChangeSet } from "./publication-change-set.js";
 import type { CompetitionGraph, ScheduleSolution, SimulationRun } from "./types.js";
 
 export type CompetitionGuardSeverity =
@@ -116,7 +117,7 @@ export interface CompetitionGuardReport {
 
 export interface PublicationCertificate {
   readonly schemaVersion: "1.0.0";
-  readonly certificateVersion: "1.0.0";
+  readonly certificateVersion: "1.1.0";
   readonly tournamentId: string;
   readonly tournamentRevision: number;
   readonly sourceDefinitionHash: string;
@@ -127,6 +128,7 @@ export interface PublicationCertificate {
   readonly rulesetVersionsHash: string;
   readonly rulePackHashes: readonly string[];
   readonly requirementCoverageHash: string;
+  readonly changeSetHash: string;
   readonly guardReportHash: string;
   readonly certificationHash: string;
   readonly acknowledgedFindingCodes: readonly string[];
@@ -139,6 +141,7 @@ export interface PublicationCertificateRequest {
   readonly tournamentId: string;
   readonly tournamentRevision: number;
   readonly report: CompetitionGuardReport;
+  readonly changeSet: PublicationChangeSet;
   readonly acknowledgedFindingCodes: readonly string[];
   readonly issuedBy: string;
   readonly issuedAt: string;
@@ -357,9 +360,16 @@ export function createPublicationCertificate(request: PublicationCertificateRequ
   if (canonicalHash(acknowledgedFindingCodes) !== canonicalHash(request.report.requiredAcknowledgementCodes)) {
     throw new Error("Every and only required operational Guard finding must be acknowledged");
   }
+  if (!verifyPublicationChangeSet(request.changeSet)
+    || request.changeSet.toRevision !== request.tournamentRevision
+    || request.changeSet.definitionHash !== request.report.binding.sourceDefinitionHash
+    || request.changeSet.specHash !== request.report.binding.specHash
+    || request.changeSet.scheduleHash !== request.report.binding.scheduleHash) {
+    throw new Error("Publication change set must be intact and bound to the exact guarded revision");
+  }
   const body = {
     schemaVersion: "1.0.0" as const,
-    certificateVersion: "1.0.0" as const,
+    certificateVersion: "1.1.0" as const,
     tournamentId: request.tournamentId,
     tournamentRevision: request.tournamentRevision,
     sourceDefinitionHash: request.report.binding.sourceDefinitionHash,
@@ -370,6 +380,7 @@ export function createPublicationCertificate(request: PublicationCertificateRequ
     rulesetVersionsHash: request.report.binding.rulesetVersionsHash,
     rulePackHashes: [...request.report.binding.rulePackHashes],
     requirementCoverageHash: request.report.binding.requirementCoverageHash,
+    changeSetHash: request.changeSet.changeSetHash,
     guardReportHash: request.report.reportHash,
     certificationHash: request.report.certificationHash,
     acknowledgedFindingCodes,
@@ -382,11 +393,14 @@ export function createPublicationCertificate(request: PublicationCertificateRequ
 export function verifyPublicationCertificate(
   certificate: PublicationCertificate,
   report?: CompetitionGuardReport,
+  changeSet?: PublicationChangeSet,
 ): boolean {
   const { certificateHash, ...body } = certificate;
   if (canonicalHash(body) !== certificateHash) return false;
-  if (!report) return true;
+  if (!report && !changeSet) return true;
+  if (!report || !changeSet) return false;
   return verifyCompetitionGuardReport(report)
+    && verifyPublicationChangeSet(changeSet)
     && report.status === "PASSED"
     && report.integrityGrade === "CERTIFIED"
     && certificate.guardReportHash === report.reportHash
@@ -398,6 +412,11 @@ export function verifyPublicationCertificate(
     && certificate.rulesetVersionsHash === report.binding.rulesetVersionsHash
     && canonicalHash(certificate.rulePackHashes) === canonicalHash(report.binding.rulePackHashes)
     && certificate.requirementCoverageHash === report.binding.requirementCoverageHash
+    && certificate.changeSetHash === changeSet.changeSetHash
+    && changeSet.toRevision === certificate.tournamentRevision
+    && changeSet.definitionHash === report.binding.sourceDefinitionHash
+    && changeSet.specHash === report.binding.specHash
+    && changeSet.scheduleHash === report.binding.scheduleHash
     && certificate.certificationHash === report.certificationHash
     && canonicalHash(certificate.acknowledgedFindingCodes) === canonicalHash(report.requiredAcknowledgementCodes);
 }

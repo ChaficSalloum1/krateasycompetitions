@@ -15,6 +15,7 @@ import {
   type CompetitionGuardReport,
   type PublicationCertificate,
 } from "./competition-guard.js";
+import { createPublicationChangeSet, type PublicationChangeSet } from "./publication-change-set.js";
 
 export type PlatformRole = "OWNER" | "CLUB_ADMIN" | "TOURNAMENT_DIRECTOR" | "OPERATOR" | "OFFICIAL" | "VIEWER";
 
@@ -66,6 +67,7 @@ export interface PlatformTournament { readonly id: string; readonly clubId: stri
   readonly status: TournamentLifecycleStatus; readonly revisions: readonly PlatformTournamentRevision[]; readonly createdAt: string;
   readonly updatedAt: string; readonly approvedBy?: string; readonly approvedAt?: string; readonly approvedRevision?: number;
   readonly approvedDefinitionHash?: string; readonly approvedArtifactSetHash?: string; readonly approvedGuardReportHash?: string;
+  readonly approvedChangeSetHash?: string;
   readonly publishedBy?: string; readonly publishedCertificateHash?: string;
   readonly duplicatedFromTournamentId?: string }
 export type FormatVersionStatus = "DRAFT" | "APPROVED" | "DEPRECATED";
@@ -124,7 +126,8 @@ export interface PlatformLiveChangeProposal { readonly id: string; readonly tour
   readonly createdBy: string; readonly createdAt: string; readonly approved?: ApprovedLiveChange;
   readonly decidedBy?: string; readonly decidedAt?: string }
 export interface PlatformPublicationRecord { readonly tournamentId: string; readonly tournamentRevision: number;
-  readonly definitionHash: string; readonly report: CompetitionGuardReport; readonly certificate: PublicationCertificate;
+  readonly definitionHash: string; readonly report: CompetitionGuardReport; readonly changeSet: PublicationChangeSet;
+  readonly certificate: PublicationCertificate;
   readonly assessedBy: string; readonly assessedAt: string }
 
 export interface AuthoritativePublicationArtifacts {
@@ -484,6 +487,7 @@ function publicationOutboxMetadata(record: PlatformPublicationRecord): NonNullab
     tournamentId: record.tournamentId,
     tournamentRevision: record.tournamentRevision,
     definitionHash: record.definitionHash,
+    changeSetHash: record.changeSet.changeSetHash,
     guardReportHash: record.report.reportHash,
     certificateHash: record.certificate.certificateHash,
   } } as unknown as JsonValue };
@@ -513,11 +517,20 @@ function independentlyEvaluateAuthoritativeArtifacts(
     ...(artifacts.simulation === undefined ? {} : { simulation: artifacts.simulation }) });
 }
 
-function authoritativeArtifactSetHash(artifacts: Readonly<AuthoritativePublicationArtifacts>): string {
+function publicationChangeSetFor(tournament: PlatformTournament,
+  artifacts: Readonly<AuthoritativePublicationArtifacts>, report: CompetitionGuardReport): Readonly<PublicationChangeSet> {
+  const latest = tournament.revisions.at(-1)!;
+  return createPublicationChangeSet({ fromRevision: null, toRevision: latest.revision,
+    definition: latest.definition, specHash: report.binding.specHash, schedule: artifacts.schedule });
+}
+
+function authoritativeArtifactSetHash(artifacts: Readonly<AuthoritativePublicationArtifacts>,
+  changeSet: Readonly<PublicationChangeSet>): string {
   return canonicalHash({ organizationId: artifacts.organizationId, tournamentId: artifacts.tournamentId,
     tournamentRevision: artifacts.tournamentRevision, definitionHash: artifacts.definitionHash,
     compiledBy: artifacts.compiledBy, compiledAt: artifacts.compiledAt, specHash: artifacts.specHash,
     graphHash: artifacts.graphHash, scheduleHash: artifacts.scheduleHash,
+    changeSetHash: changeSet.changeSetHash,
     ...(artifacts.simulationHash === undefined ? {} : { simulationHash: artifacts.simulationHash }) });
 }
 
@@ -978,8 +991,10 @@ function eventsFor(state: OrganizationPlatformState, command: OrganizationPlatfo
       organizationId: command.organizationId, tournamentId: tournament.id,
       tournamentRevision: latest.revision, definitionHash: latest.definitionHash,
     });
-    if (tournament.approvedArtifactSetHash !== authoritativeArtifactSetHash(publicationArtifacts)
-      || tournament.approvedGuardReportHash !== report.reportHash) {
+    const changeSet = publicationChangeSetFor(tournament, publicationArtifacts, report);
+    if (tournament.approvedArtifactSetHash !== authoritativeArtifactSetHash(publicationArtifacts, changeSet)
+      || tournament.approvedGuardReportHash !== report.reportHash
+      || tournament.approvedChangeSetHash !== changeSet.changeSetHash) {
       throw new Error("Publication requires the exact approved artifact set and Guard report");
     }
     if (report.status !== "PASSED") {
@@ -987,9 +1002,11 @@ function eventsFor(state: OrganizationPlatformState, command: OrganizationPlatfo
         .map(({ sourceCode, message }) => `${sourceCode} ${message}`).join("; ")}`);
     }
     const certificate = createPublicationCertificate({ tournamentId: tournament.id, tournamentRevision: latest.revision, report,
-      acknowledgedFindingCodes: command.acknowledgedFindingCodes, issuedBy: command.actorUserId, issuedAt: command.occurredAt });
+      changeSet, acknowledgedFindingCodes: command.acknowledgedFindingCodes,
+      issuedBy: command.actorUserId, issuedAt: command.occurredAt });
     const record: PlatformPublicationRecord = { tournamentId: tournament.id, tournamentRevision: latest.revision,
-      definitionHash: latest.definitionHash, report, certificate, assessedBy: command.actorUserId, assessedAt: command.occurredAt };
+      definitionHash: latest.definitionHash, report, changeSet, certificate,
+      assessedBy: command.actorUserId, assessedAt: command.occurredAt };
     const published: PlatformTournament = { ...tournament, status: "PUBLISHED", updatedAt: command.occurredAt,
       publishedBy: command.actorUserId, publishedCertificateHash: certificate.certificateHash };
     return [
@@ -1008,7 +1025,8 @@ function eventsFor(state: OrganizationPlatformState, command: OrganizationPlatfo
   if (!allowed[current.status].includes(command.status)) throw new Error(`Invalid tournament lifecycle transition ${current.status} -> ${command.status}`);
   const latest = current.revisions.at(-1)!;
   if (command.status === "APPROVED" && latest.createdBy === command.actorUserId) throw new Error("Approval requires a different active member from the latest revision author");
-  let approvalEvidence: { readonly artifactSetHash: string; readonly guardReportHash: string } | undefined;
+  let approvalEvidence: { readonly artifactSetHash: string; readonly guardReportHash: string;
+    readonly changeSetHash: string } | undefined;
   if (command.status === "APPROVED") {
     if (!publicationArtifacts) throw new Error("Authoritative publication artifacts are unavailable for approval");
     if (publicationArtifacts.compiledBy === command.actorUserId) throw new Error("Approval requires a different active member from the compiler");
@@ -1017,12 +1035,15 @@ function eventsFor(state: OrganizationPlatformState, command: OrganizationPlatfo
     if (report.status !== "PASSED") throw new Error(`Competition Guard blocked approval: ${report.findings
       .filter(({ severity }) => severity === "CRITICAL" || severity === "INTEGRITY")
       .map(({ sourceCode, message }) => `${sourceCode} ${message}`).join("; ")}`);
-    approvalEvidence = { artifactSetHash: authoritativeArtifactSetHash(publicationArtifacts), guardReportHash: report.reportHash };
+    const changeSet = publicationChangeSetFor(current, publicationArtifacts, report);
+    approvalEvidence = { artifactSetHash: authoritativeArtifactSetHash(publicationArtifacts, changeSet),
+      guardReportHash: report.reportHash, changeSetHash: changeSet.changeSetHash };
   }
   const tournament: PlatformTournament = { ...current, status: command.status, updatedAt: command.occurredAt,
     ...(command.status === "APPROVED" ? { approvedBy: command.actorUserId, approvedAt: command.occurredAt,
       approvedRevision: latest.revision, approvedDefinitionHash: latest.definitionHash,
-      approvedArtifactSetHash: approvalEvidence!.artifactSetHash, approvedGuardReportHash: approvalEvidence!.guardReportHash } : {}) };
+      approvedArtifactSetHash: approvalEvidence!.artifactSetHash, approvedGuardReportHash: approvalEvidence!.guardReportHash,
+      approvedChangeSetHash: approvalEvidence!.changeSetHash } : {}) };
   return [{ type: "TOURNAMENT_STATUS_CHANGED", payload: { tournament } as unknown as JsonValue }];
 }
 
@@ -1077,7 +1098,7 @@ export function createOrganizationPlatform(store: EventStoreAdapter, options: Or
         const record = state.publicationRecords[tournament.id]?.at(-1);
         if (!record) return { tournamentId: tournament.id, tournamentRevision: latest.revision, status: "UNCERTIFIED" };
         const current = record.tournamentRevision === latest.revision && record.definitionHash === latest.definitionHash
-          && verifyPublicationCertificate(record.certificate, record.report);
+          && verifyPublicationCertificate(record.certificate, record.report, record.changeSet);
         if (!current) return { tournamentId: tournament.id, tournamentRevision: latest.revision, status: "STALE",
           certificateHash: record.certificate.certificateHash, guardReportHash: record.report.reportHash, assessedAt: record.assessedAt };
         return { tournamentId: tournament.id, tournamentRevision: latest.revision,

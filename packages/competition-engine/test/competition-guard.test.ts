@@ -11,6 +11,7 @@ import {
 } from "../src/competition-guard.js";
 import { createCompetitionGuardPreflight } from "../src/competition-guard-preflight.js";
 import { createEntrants } from "../src/graph.js";
+import { createPublicationChangeSet, verifyPublicationChangeSet } from "../src/publication-change-set.js";
 import { runScenario } from "../src/scenario.js";
 
 const reference = (): TournamentSpec => compileDefinition(structuredClone(playAndKonnectDefinition), {
@@ -97,6 +98,32 @@ test("historical Guard reports stay readable but require current revalidation", 
   assert.equal(preflight.detailed.accounting.reconciled, false);
 });
 
+test("the publication change set deterministically exposes semantic and operational revision impact", () => {
+  const spec = reference();
+  const scenario = runScenario(spec, createEntrants(spec), "publication-change-set");
+  const schedule = structuredClone(scenario.schedule);
+  const changed = schedule.contests[0]!;
+  const original = scenario.schedule.contests[0]!;
+  changed.resourceId = `${original.resourceId}.changed`;
+  changed.start = new Date(Date.parse(original.start) + 60_000).toISOString();
+  changed.end = new Date(Date.parse(original.end) + 60_000).toISOString();
+  const reviewedImpact = { previewHash: "a".repeat(64), semanticChanges: [],
+    operationalImpact: ["Recompile the exact schedule before publication."] };
+  const input = { fromRevision: 1, toRevision: 2, previousDefinition: spec, definition: spec,
+    specHash: spec.metadata.compiledSpecHash, previousSchedule: scenario.schedule, schedule, reviewedImpact } as const;
+  const first = createPublicationChangeSet(input);
+  const replay = createPublicationChangeSet(input);
+
+  assert.deepEqual(replay, first);
+  assert.deepEqual(first.semanticChanges, []);
+  assert.deepEqual(first.operationalChanges.reassignedContestIds, [original.contestId]);
+  assert.deepEqual(first.operationalChanges.retimedContestIds, [original.contestId]);
+  assert.deepEqual(first.operationalChanges.durationChangedContestIds, []);
+  assert.equal(first.reviewedImpact?.previewHash, reviewedImpact.previewHash);
+  assert.equal(verifyPublicationChangeSet(first), true);
+  assert.equal(verifyPublicationChangeSet({ ...first, changeSetHash: "0".repeat(64) }), false);
+});
+
 test("a publication certificate binds the passing Guard report and explicit operational acknowledgements", () => {
   const spec = reference();
   const scenario = runScenario(spec, createEntrants(spec), "guard-certificate");
@@ -104,10 +131,13 @@ test("a publication certificate binds the passing Guard report and explicit oper
     sourceDefinitionHash: canonicalHash(spec), spec, graph: scenario.graph,
     schedule: scenario.schedule, ...(scenario.simulation ? { simulation: scenario.simulation } : {}),
   });
+  const changeSet = createPublicationChangeSet({ fromRevision: null, toRevision: 1,
+    definition: spec, specHash: report.binding.specHash, schedule: scenario.schedule });
   const certificate = createPublicationCertificate({
     tournamentId: "tournament.guard",
-    tournamentRevision: 3,
+    tournamentRevision: 1,
     report,
+    changeSet,
     acknowledgedFindingCodes: report.requiredAcknowledgementCodes,
     issuedBy: "user.certifier",
     issuedAt: "2026-09-12T10:00:00.000Z",
@@ -115,8 +145,9 @@ test("a publication certificate binds the passing Guard report and explicit oper
 
   assert.equal(certificate.guardReportHash, report.reportHash);
   assert.equal(certificate.sourceDefinitionHash, canonicalHash(spec));
-  assert.equal(certificate.tournamentRevision, 3);
-  assert.equal(verifyPublicationCertificate(certificate, report), true);
+  assert.equal(certificate.tournamentRevision, 1);
+  assert.equal(certificate.changeSetHash, changeSet.changeSetHash);
+  assert.equal(verifyPublicationCertificate(certificate, report, changeSet), true);
 });
 
 test("the Guard independently binds the complete schedule artefact instead of trusting a stored solver hash", () => {
@@ -155,8 +186,10 @@ test("the Guard blocks a source definition mismatch and will not issue a certifi
 
   assert.equal(report.status, "BLOCKED");
   assert.ok(report.findings.some(({ sourceCode }) => sourceCode === "KCG001"));
+  const changeSet = createPublicationChangeSet({ fromRevision: null, toRevision: 1,
+    definition: spec, specHash: report.binding.specHash, schedule: scenario.schedule });
   assert.throws(() => createPublicationCertificate({ tournamentId: "tournament.guard", tournamentRevision: 1, report,
-    acknowledgedFindingCodes: [], issuedBy: "user.certifier", issuedAt: "2026-09-12T10:00:00.000Z" }),
+    changeSet, acknowledgedFindingCodes: [], issuedBy: "user.certifier", issuedAt: "2026-09-12T10:00:00.000Z" }),
   /intact, passing Competition Guard report/);
 });
 
@@ -262,16 +295,21 @@ test("certificate acknowledgements are exact and tampering is detectable", () =>
   const report = evaluateCompetitionGuard({ sourceDefinitionHash: canonicalHash(spec), spec,
     graph: scenario.graph, schedule: scenario.schedule,
     ...(scenario.simulation ? { simulation: scenario.simulation } : {}) });
+  const changeSet = createPublicationChangeSet({ fromRevision: null, toRevision: 1,
+    definition: spec, specHash: report.binding.specHash, schedule: scenario.schedule });
 
   assert.throws(() => createPublicationCertificate({ tournamentId: "tournament.guard", tournamentRevision: 1, report,
-    acknowledgedFindingCodes: [...report.requiredAcknowledgementCodes, "UNREQUIRED"], issuedBy: "user.certifier",
+    changeSet, acknowledgedFindingCodes: [...report.requiredAcknowledgementCodes, "UNREQUIRED"], issuedBy: "user.certifier",
     issuedAt: "2026-09-12T10:00:00.000Z" }), /Every and only required operational Guard finding/);
   const certificate = createPublicationCertificate({ tournamentId: "tournament.guard", tournamentRevision: 1, report,
-    acknowledgedFindingCodes: report.requiredAcknowledgementCodes, issuedBy: "user.certifier",
+    changeSet, acknowledgedFindingCodes: report.requiredAcknowledgementCodes, issuedBy: "user.certifier",
     issuedAt: "2026-09-12T10:00:00.000Z" });
   const tampered = { ...certificate, tournamentRevision: certificate.tournamentRevision + 1 };
-  assert.equal(verifyPublicationCertificate(tampered, report), false);
+  assert.equal(verifyPublicationCertificate(tampered, report, changeSet), false);
   const tamperedReport = { ...report, accounting: { ...report.accounting,
     requiredContestCount: report.accounting.requiredContestCount + 1 } };
-  assert.equal(verifyPublicationCertificate(certificate, tamperedReport), false);
+  assert.equal(verifyPublicationCertificate(certificate, tamperedReport, changeSet), false);
+  const tamperedChangeSet = { ...changeSet, operationalChanges: { ...changeSet.operationalChanges,
+    addedContestIds: changeSet.operationalChanges.addedContestIds.slice(1) } };
+  assert.equal(verifyPublicationCertificate(certificate, report, tamperedChangeSet), false);
 });

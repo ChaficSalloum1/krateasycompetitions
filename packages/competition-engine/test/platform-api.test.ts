@@ -96,4 +96,8 @@ test("the operator API atomically publishes only the exact server-bound approved
   assert.equal(state.tournaments["tournament.api"]?.status, "PUBLISHED");
   assert.equal(state.publicationRecords["tournament.api"]?.at(-1)?.definitionHash, definitionHash);
   assert.equal(state.publicationRecords["tournament.api"]?.at(-1)?.report.binding.sourceDefinitionHash, definitionHash);
+  assert.equal(state.publicationRecords["tournament.api"]?.at(-1)?.certificate.changeSetHash,
+    state.publicationRecords["tournament.api"]?.at(-1)?.changeSet.changeSetHash);
+  assert.equal(state.tournaments["tournament.api"]?.approvedChangeSetHash,
+    state.publicationRecords["tournament.api"]?.at(-1)?.changeSet.changeSetHash);
 });
