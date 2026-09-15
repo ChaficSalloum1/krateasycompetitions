@@ -393,13 +393,10 @@ export function clientApiResponse(path: string): unknown | undefined {
 function journeyClientApiResponse(path: string, journey: CompetitionJourney): unknown | undefined {
   const snapshots = journey.list();
   if (path === "/v1/tournaments") {
-    const reference = compilerClientApi().portfolio;
-    return immutable({ ...reference, items: [
-      ...snapshots.map((snapshot) => ({ id: snapshot.id, name: snapshot.name, revision: snapshot.revision,
+    return immutable({ apiVersion: CLIENT_API_VERSION, items:
+      snapshots.map((snapshot) => ({ id: snapshot.id, name: snapshot.name, revision: snapshot.revision,
         certificationStatus: ["PUBLISHED", "CLOSED"].includes(snapshot.status) && snapshot.compiled?.guardStatus === "PASSED"
-          ? "CERTIFIED" as const : "REJECTED" as const })),
-      ...reference.items.filter(({ id }) => !snapshots.some((snapshot) => snapshot.id === id)),
-    ] });
+          ? "CERTIFIED" as const : "REJECTED" as const })) });
   }
   const match = /^\/v1\/tournaments\/([^/]+)\/(blueprint|schedule|operations|findings|certification)$/.exec(path);
   if (!match) return undefined;
@@ -1166,7 +1163,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           json(response, access.status, access.body);
           return;
         }
-        const value = journeyClientApiResponse(request.url, competitionJourney) ?? clientApiResponse(request.url);
+        const value = journeyClientApiResponse(request.url, competitionJourney);
         if (value !== undefined) json(response, 200, value);
         else json(response, 404, { error: "not_found" });
         return;

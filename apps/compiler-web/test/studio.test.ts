@@ -5,6 +5,7 @@ import { compilerHtml } from "../src/ui.js";
 import { playerHtml } from "../src/player-view.js";
 import { participantOperationsHtml, venueDisplayHtml } from "../src/attention-views.js";
 import { apiAccessDecision, clientApiResponse, compileOrganiserPrompt, compilerClientApi, compilerReadiness, compilerWorkspace, createCompilerServer, interpretApiPayload, readJsonRequestBody } from "../src/server.js";
+import { CompetitionJourney } from "../src/competition-journey.js";
 import { runReferenceDemo } from "../src/demo.js";
 import { createPlatformDemo } from "../src/platform-demo.js";
 
@@ -225,6 +226,28 @@ test("the HTTP route projection exposes the v1 read contract consumed by the App
   assert.equal(operations.summary.now, 1);
   assert.ok(operations.items.some(({ status }) => status === "BLOCKED"));
   assert.equal(clientApiResponse("/v1/tournaments/unknown/schedule"), undefined);
+});
+
+test("connected v1 tournament reads never fall back to reference-demo truth", async () => {
+  const server = createCompilerServer({ competitionJourney: new CompetitionJourney({ organizationId: "org.connected" }) });
+  const get = (url: string) => new Promise<{ status: number; body: unknown }>((resolve) => {
+    const request = Readable.from([]) as never;
+    Object.assign(request, { method: "GET", url, headers: {} });
+    let status = 0;
+    server.emit("request", request, { writeHead: (value: number) => { status = value; }, end: (encoded = "") => {
+      resolve({ status, body: JSON.parse(encoded) });
+    } } as never);
+  });
+
+  assert.deepEqual(await get("/v1/tournaments"), { status: 200, body: { apiVersion: "1.0", items: [] } });
+  for (const section of ["blueprint", "schedule", "operations", "findings", "certification"]) {
+    assert.deepEqual(await get(`/v1/tournaments/play-and-konnect.2026/${section}`), {
+      status: 404, body: { error: "not_found" },
+    });
+    assert.deepEqual(await get(`/v1/tournaments/unknown/${section}`), {
+      status: 404, body: { error: "not_found" },
+    });
+  }
 });
 
 test("the Studio platform demo is a real multi-club portfolio and accepts idempotent tournament creation", async () => {
