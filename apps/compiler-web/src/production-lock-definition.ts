@@ -24,6 +24,12 @@ function sourceRoot(workbench: CompetitionWorkbenchProjection): Record<string, u
   return null;
 }
 
+export function isProductionLockWorkbench(workbench: CompetitionWorkbenchProjection): boolean {
+  const root = sourceRoot(workbench);
+  return Boolean(root && asRecord(root.rules) && asRecord(root.pools) && asRecord(root.finalCourtAssignments)
+    && Array.isArray(root.schedule) && Array.isArray(root.audit));
+}
+
 function idFor(label: string): string {
   const id = label.toLowerCase().replace(/s$/, "").replace(/[^a-z0-9]+/g, "-");
   return id || "division";

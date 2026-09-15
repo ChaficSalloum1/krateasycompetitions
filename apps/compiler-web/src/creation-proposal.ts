@@ -7,6 +7,15 @@ export const creationFormats = [
 ] as const;
 
 export type CreationFormat = typeof creationFormats[number];
+export const connectedScoringPolicies = ["head_to_head_total_score_no_draw"] as const;
+export const connectedTiebreakPolicies = ["wins_score_difference_score_for_manual"] as const;
+export const connectedWithdrawalPolicies = ["preserve_played_walkover_future"] as const;
+export const connectedDrawPolicies = ["seeded_input_order"] as const;
+
+export type ConnectedScoringPolicy = typeof connectedScoringPolicies[number];
+export type ConnectedTiebreakPolicy = typeof connectedTiebreakPolicies[number];
+export type ConnectedWithdrawalPolicy = typeof connectedWithdrawalPolicies[number];
+export type ConnectedDrawPolicy = typeof connectedDrawPolicies[number];
 export type CreationSource =
   | { readonly mode: "language"; readonly text: string }
   | { readonly mode: "quick"; readonly value: unknown }
@@ -30,7 +39,12 @@ export interface CompetitionBlueprint {
   readonly matchDurationMinutes: number | null;
   readonly startsAt: string | null;
   readonly endsAt: string | null;
+  readonly timezone: string | null;
   readonly priority: "finish_on_time" | "fair_recovery" | "minimum_disruption" | null;
+  readonly scoringPolicy: ConnectedScoringPolicy | null;
+  readonly tiebreakPolicy: ConnectedTiebreakPolicy | null;
+  readonly withdrawalPolicy: ConnectedWithdrawalPolicy | null;
+  readonly drawPolicy: ConnectedDrawPolicy | null;
 }
 
 export interface CreationQuestion {
@@ -57,6 +71,7 @@ export interface CreationProposal {
 const allowedKeys = new Set([
   "name", "sport", "participantUnit", "participantCount", "resourceCount", "resourceLabel", "format", "poolSize",
   "qualifiersPerPool", "minimumMatches", "minimumRestMinutes", "matchDurationMinutes", "startsAt", "endsAt", "priority",
+  "timezone", "scoringPolicy", "tiebreakPolicy", "withdrawalPolicy", "drawPolicy",
 ]);
 const unitAliases: Readonly<Record<string, CompetitionBlueprint["participantUnit"]>> = {
   pair: "pairs", pairs: "pairs", team: "teams", teams: "teams", player: "players", players: "players",
@@ -89,9 +104,33 @@ function integer(value: unknown, minimum: number, maximum: number): number | nul
   return typeof value === "number" && Number.isSafeInteger(value) && value >= minimum && value <= maximum ? value : null;
 }
 
-function timestamp(value: unknown): string | null {
-  if (typeof value !== "string" || !value.trim() || !Number.isFinite(Date.parse(value))) return null;
-  return new Date(value).toISOString();
+function timezone(value: unknown): string | null {
+  const candidate = cleanString(value, 100);
+  if (!candidate) return null;
+  try { new Intl.DateTimeFormat("en", { timeZone: candidate }).format(new Date(0)); return candidate; }
+  catch { return null; }
+}
+
+function timestamp(value: unknown, timeZone: string | null): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const candidate = value.trim();
+  const local = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(candidate);
+  if (local && timeZone) {
+    const requested = Date.UTC(Number(local[1]), Number(local[2]) - 1, Number(local[3]), Number(local[4]),
+      Number(local[5]), Number(local[6] ?? 0));
+    const offsetAt = (instant: number) => {
+      const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone, hourCycle: "h23", year: "numeric",
+        month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+        .formatToParts(new Date(instant)).map(({ type, value: part }) => [type, part]));
+      return Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour),
+        Number(parts.minute), Number(parts.second)) - instant;
+    };
+    let instant = requested - offsetAt(requested);
+    instant = requested - offsetAt(instant);
+    return new Date(instant).toISOString();
+  }
+  if (!Number.isFinite(Date.parse(candidate))) return null;
+  return new Date(candidate).toISOString();
 }
 
 function fromObject(value: unknown): { blueprint: CompetitionBlueprint; warnings: string[]; rejected?: string } {
@@ -103,13 +142,24 @@ function fromObject(value: unknown): { blueprint: CompetitionBlueprint; warnings
   const format = typeof record.format === "string" ? formatAliases[record.format.toLowerCase()] ?? null : null;
   const priority = record.priority === "finish_on_time" || record.priority === "fair_recovery" || record.priority === "minimum_disruption"
     ? record.priority : null;
+  const scoringPolicy = connectedScoringPolicies.includes(record.scoringPolicy as ConnectedScoringPolicy)
+    ? record.scoringPolicy as ConnectedScoringPolicy : null;
+  const tiebreakPolicy = connectedTiebreakPolicies.includes(record.tiebreakPolicy as ConnectedTiebreakPolicy)
+    ? record.tiebreakPolicy as ConnectedTiebreakPolicy : null;
+  const withdrawalPolicy = connectedWithdrawalPolicies.includes(record.withdrawalPolicy as ConnectedWithdrawalPolicy)
+    ? record.withdrawalPolicy as ConnectedWithdrawalPolicy : null;
+  const drawPolicy = connectedDrawPolicies.includes(record.drawPolicy as ConnectedDrawPolicy)
+    ? record.drawPolicy as ConnectedDrawPolicy : null;
+  const timeZone = timezone(record.timezone);
   const blueprint: CompetitionBlueprint = {
     name: cleanString(record.name), sport: cleanString(record.sport, 60)?.toLowerCase() ?? null, participantUnit: unit,
     participantCount: integer(record.participantCount, 2, 100_000), resourceCount: integer(record.resourceCount, 1, 10_000),
     resourceLabel: cleanString(record.resourceLabel, 40)?.toLowerCase() ?? null, format,
     poolSize: integer(record.poolSize, 2, 256), qualifiersPerPool: integer(record.qualifiersPerPool, 1, 256),
     minimumMatches: integer(record.minimumMatches, 1, 10_000), minimumRestMinutes: integer(record.minimumRestMinutes, 0, 1_440),
-    matchDurationMinutes: integer(record.matchDurationMinutes, 1, 1_440), startsAt: timestamp(record.startsAt), endsAt: timestamp(record.endsAt), priority,
+    matchDurationMinutes: integer(record.matchDurationMinutes, 1, 1_440), startsAt: timestamp(record.startsAt, timeZone),
+    endsAt: timestamp(record.endsAt, timeZone), timezone: timeZone, priority,
+    scoringPolicy, tiebreakPolicy, withdrawalPolicy, drawPolicy,
   };
   const warnings: string[] = [];
   for (const [key, raw, parsed] of [
@@ -122,13 +172,19 @@ function fromObject(value: unknown): { blueprint: CompetitionBlueprint; warnings
   if (record.participantUnit !== undefined && !unit) warnings.push("participantUnit must be pairs, teams, players, or athletes.");
   if (record.format !== undefined && !format) warnings.push("format is not a registered competition format.");
   if (record.priority !== undefined && !priority) warnings.push("priority must be finish_on_time, fair_recovery, or minimum_disruption.");
+  if (record.timezone !== undefined && !blueprint.timezone) warnings.push("timezone must be a registered IANA timezone.");
+  if (record.scoringPolicy !== undefined && !scoringPolicy) warnings.push("scoringPolicy is not registered for connected compilation.");
+  if (record.tiebreakPolicy !== undefined && !tiebreakPolicy) warnings.push("tiebreakPolicy is not registered for connected compilation.");
+  if (record.withdrawalPolicy !== undefined && !withdrawalPolicy) warnings.push("withdrawalPolicy is not registered for connected compilation.");
+  if (record.drawPolicy !== undefined && !drawPolicy) warnings.push("drawPolicy is not registered for connected compilation.");
   return { blueprint, warnings };
 }
 
 function emptyBlueprint(): CompetitionBlueprint {
   return { name: null, sport: null, participantUnit: null, participantCount: null, resourceCount: null, resourceLabel: null,
     format: null, poolSize: null, qualifiersPerPool: null, minimumMatches: null, minimumRestMinutes: null,
-    matchDurationMinutes: null, startsAt: null, endsAt: null, priority: null };
+    matchDurationMinutes: null, startsAt: null, endsAt: null, timezone: null, priority: null,
+    scoringPolicy: null, tiebreakPolicy: null, withdrawalPolicy: null, drawPolicy: null };
 }
 
 function fromLanguage(text: string): { blueprint: CompetitionBlueprint; warnings: string[]; rejected?: string } {
@@ -160,6 +216,14 @@ function fromLanguage(text: string): { blueprint: CompetitionBlueprint; warnings
   const start = text.match(/\bstart(?:s|ing)?(?:\s+(?:on|at))?\s+(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?)?)/i);
   const end = text.match(/\b(?:end|finish)(?:s|ing)?(?:\s+by|\s+(?:on|at))?\s+(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?)?)/i);
   if (start) value.startsAt = start[1]!.replace(" ", "T"); if (end) value.endsAt = end[1]!.replace(" ", "T");
+  const zone = text.match(/\btimezone\s+([A-Za-z_]+\/[A-Za-z_]+)\b/i); if (zone) value.timezone = zone[1];
+  if (/\btotal[- ]score\b[^.!?\n]{0,32}\bno[- ]draws?\b/i.test(text))
+    value.scoringPolicy = "head_to_head_total_score_no_draw";
+  if (/\btie(?:break| break)s?\b[^.!?\n]{0,96}\bwins?\b[^.!?\n]{0,48}\bscore difference\b[^.!?\n]{0,48}\bscore for\b[^.!?\n]{0,48}\bmanual\b/i.test(text))
+    value.tiebreakPolicy = "wins_score_difference_score_for_manual";
+  if (/\bpreserve played\b[^.!?\n]{0,64}\bfuture\b[^.!?\n]{0,32}\bwalkovers?\b/i.test(text))
+    value.withdrawalPolicy = "preserve_played_walkover_future";
+  if (/\bseeded input order\b/i.test(text)) value.drawPolicy = "seeded_input_order";
   if (/\bfair(?:ness| recovery)?\b/i.test(text)) value.priority = "fair_recovery";
   else if (/\b(?:minimum|minimise|minimize)\s+(?:changes?|disruption)\b/i.test(text)) value.priority = "minimum_disruption";
   else if (/\bfinish\s+on\s+time\b/i.test(text)) value.priority = "finish_on_time";
@@ -195,6 +259,13 @@ export function createCompetitionProposal(source: CreationSource): Readonly<Crea
     questions.push(question("endsAt", "Choose a finish time after the start time.", "The event window is currently impossible."));
   if (blueprint.matchDurationMinutes === null) questions.push(question("matchDurationMinutes", "How long should one match slot be?", "Duration is required for a schedule, including changeover if applicable."));
   if (blueprint.minimumRestMinutes === null) questions.push(question("minimumRestMinutes", "What minimum rest must a participant receive?", "Rest is a hard fairness constraint, not a hidden default."));
+  if (blueprint.format === "round_robin" || blueprint.format === "single_elimination") {
+    if (!blueprint.timezone) questions.push(question("timezone", "Which IANA timezone governs this competition?", "Local reporting and hard-stop times need an explicit civil-time authority."));
+    if (!blueprint.scoringPolicy) questions.push(question("scoringPolicy", "Which registered scoring policy decides a match?", "Scoring semantics cannot be inferred from the sport name."));
+    if (!blueprint.tiebreakPolicy) questions.push(question("tiebreakPolicy", "How are tied standings or match outcomes resolved?", "A tied result cannot silently choose an advancing entrant."));
+    if (!blueprint.withdrawalPolicy) questions.push(question("withdrawalPolicy", "What happens to played and future matches after withdrawal?", "Operational repair needs an explicit preservation policy."));
+    if (!blueprint.drawPolicy) questions.push(question("drawPolicy", "How is the initial draw ordered?", "Entrant order and seeding cannot be random or implicit."));
+  }
   if (blueprint.format === "pools_to_knockout") {
     if (!blueprint.poolSize) questions.push(question("poolSize", "What pool size should the compiler target?", "Pool size changes match guarantees and event duration."));
     if (!blueprint.qualifiersPerPool) questions.push(question("qualifiersPerPool", "How many advance from each pool?", "Progression cannot be invented silently."));

@@ -726,7 +726,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
       const journeyPage = !production && /^\/competitions\/([^/?#]+)$/.exec(request.url ?? "");
       if (journeyPage && request.method === "GET") {
         const competitionId = decodeURIComponent(journeyPage[1]!);
-        if (!["PUBLISHED", "CLOSED"].includes(competitionJourney.read(competitionId)?.status ?? "")) {
+        if (!competitionJourney.read(competitionId)) {
           json(response, 404, { apiVersion: "1.0", error: "journey_not_found" });
           return;
         }

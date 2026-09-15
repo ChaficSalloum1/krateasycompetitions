@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { canonicalHash, semanticDiff, type SemanticChange } from "@tournament-os/tournament-schema";
-import type { CreationSource } from "./creation-proposal.js";
+import { createCompetitionProposal, type CompetitionBlueprint, type CreationSource } from "./creation-proposal.js";
 import { ingestCreationSource } from "./creation-source-ingestion.js";
 
 export interface WorkbenchSourceDocument {
@@ -258,6 +258,47 @@ function analyseStAlbans(source: WorkbenchSourceDocument, shaped: NonNullable<Re
   };
 }
 
+const blueprintRuleFields = new Set<keyof CompetitionBlueprint>([
+  "sport", "participantUnit", "format", "scoringPolicy", "tiebreakPolicy", "withdrawalPolicy", "drawPolicy",
+  "minimumRestMinutes", "matchDurationMinutes", "priority", "timezone",
+]);
+
+function analyseBlueprintSources(sources: readonly CreationSource[], documents: readonly WorkbenchSourceDocument[]): CompetitionWorkbenchProjection | null {
+  const candidates = sources.map((source, index) => ({ source, document: documents[index]!, proposal: createCompetitionProposal(source) }))
+    .filter(({ document, proposal }) => document.status === "ACCEPTED" && proposal.understood.length > 0);
+  const primary = candidates[0];
+  if (!primary) return null;
+  const understoodFacts: WorkbenchFact[] = [];
+  const rules: WorkbenchRule[] = [];
+  const conflicts: CompetitionWorkbenchProjection["conflicts"][number][] = [];
+  const byField = new Map<string, WorkbenchFact | WorkbenchRule>();
+  for (const candidate of candidates) {
+    for (const [field, value] of Object.entries(candidate.proposal.blueprint) as [keyof CompetitionBlueprint, CompetitionBlueprint[keyof CompetitionBlueprint]][]) {
+      if (value === null) continue;
+      const id = `blueprint.${field}`; const path = `/blueprint/${field}`;
+      const sourcePath = candidate.source.mode === "language" ? `/interpreted/${field}` : `/${field}`;
+      const incoming = blueprintRuleFields.has(field)
+        ? rule(candidate.document, id, path, value, sourcePath)
+        : fact(candidate.document, id, path, value, sourcePath);
+      const existing = byField.get(id);
+      if (!existing) {
+        byField.set(id, incoming);
+        ("kind" in incoming ? rules : understoodFacts).push(incoming);
+      } else if (canonicalHash(existing.value) === canonicalHash(incoming.value)) {
+        (existing.provenance as { sourceId: string; sourceHash: string; sourcePath: string }[]).push(...incoming.provenance);
+      } else conflicts.push({ id: `conflict.${id}.${candidate.document.id}`, paths: [path],
+        description: `Source ${candidate.document.id} disagrees with ${existing.provenance[0]?.sourceId ?? "the primary source"} about ${field}.` });
+    }
+  }
+  return {
+    sources: [...documents], understoodFacts, rules, assumptions: [], conflicts,
+    missingDecisions: primary.proposal.questions.map(({ field, prompt }) => ({ id: String(field), path: `/blueprint/${String(field)}`, prompt, critical: true })),
+    unsupportedSemantics: documents.filter(({ status }) => status === "QUARANTINED").map((document) => ({
+      id: `quarantine.${document.id}`, path: `/sources/${document.id}`, description: document.findings.join(" "), blocking: true,
+    })), untrustedClaims: [], definitionVersion: 1, pendingImpact: null,
+  };
+}
+
 export function analyseCompetitionSources(sources: readonly CreationSource[], receivedAt: string): CompetitionWorkbenchProjection {
   const documents = sources.map((source, index) => {
     const document = documentFor(source, receivedAt);
@@ -297,6 +338,8 @@ export function analyseCompetitionSources(sources: readonly CreationSource[], re
           description: document.findings.join(" "), blocking: true })) };
     }
   }
+  const blueprint = analyseBlueprintSources(sources, documents);
+  if (blueprint) return blueprint;
   const firstRosterIndex = sources.findIndex((source, index) => documents[index]?.status === "ACCEPTED"
     && ingestCreationSource(source).entrants.length > 0);
   const roster = firstRosterIndex >= 0 ? ingestCreationSource(sources[firstRosterIndex]!).entrants : [];
@@ -315,13 +358,20 @@ function decisionMap(projection: CompetitionWorkbenchProjection): Record<string,
   return Object.fromEntries(projection.assumptions.map(({ id, value }) => [id, String(value)]));
 }
 
-function operationalImpact(edits: readonly StructuredWorkbenchEdit[]): string[] {
+function requiredDecisionsFor(projection: CompetitionWorkbenchProjection): readonly WorkbenchDecision[] {
+  return projection.rules.some(({ id }) => id === "progression.paths") ? requiredDecisions : [];
+}
+
+function operationalImpact(projection: CompetitionWorkbenchProjection, edits: readonly StructuredWorkbenchEdit[]): string[] {
   const ids = new Set(edits.map(({ id }) => id));
   const impacts: string[] = [];
   if (["qualification", "normalisation", "scoring", "tiebreak"].some((id) => ids.has(id)))
     impacts.push("Changes competition semantics and requires graph, schedule, simulation and Guard regeneration.");
-  if (["event-date", "timezone"].some((id) => ids.has(id)))
-    impacts.push("Changes the operating calendar and requires a 108-fixture recompilation against court availability and the hard stop.");
+  if (["event-date", "timezone"].some((id) => ids.has(id))) {
+    const scope = projection.rules.some(({ id }) => id === "progression.paths")
+      ? "a 108-fixture recompilation" : "a full authoritative recompilation";
+    impacts.push(`Changes the operating calendar and requires ${scope} against resource availability and the hard stop.`);
+  }
   if (ids.has("event-name")) impacts.push("Changes the edition label while retaining the source competition memory and immutable prior event.");
   if (ids.has("withdrawal")) impacts.push("Changes live disruption adjudication and repair behaviour; completed results remain immutable.");
   if (ids.has("approval-authority")) impacts.push("Changes who may approve and publish; proposer self-approval remains prohibited.");
@@ -343,7 +393,7 @@ export function planWorkbenchEdit(projection: CompetitionWorkbenchProjection, ex
     return path ? { ...change, path } : change;
   });
   const body = { expectedDraftVersion, editedBy, edits: [...edits].sort((a, b) => a.id.localeCompare(b.id)),
-    semanticDiff: semantic, operationalImpact: operationalImpact(edits) };
+    semanticDiff: semantic, operationalImpact: operationalImpact(projection, edits) };
   return { ...body, previewHash: canonicalHash(body) };
 }
 
@@ -357,7 +407,7 @@ export function applyWorkbenchEdit(projection: CompetitionWorkbenchProjection, p
     return { id, path, value, provenance: provenance(indexedSource, `/edits/${id}`), kind: "ORGANISER_DECISION" as const };
   });
   return { ...projection, sources: [...projection.sources, indexedSource], assumptions,
-    missingDecisions: requiredDecisions.filter(({ id }) => !(id in decisions)),
+    missingDecisions: requiredDecisionsFor(projection).filter(({ id }) => !(id in decisions)),
     definitionVersion: projection.definitionVersion + 1, pendingImpact: {
       previewHash: preview.previewHash,
       semantic: preview.semanticDiff,
@@ -384,7 +434,7 @@ export function rebaseWorkbenchSources(projection: CompetitionWorkbenchProjectio
     return available.splice(existingIndex, 1)[0]!;
   });
   return { ...rebased, sources: preservedSources, assumptions: projection.assumptions,
-    missingDecisions: requiredDecisions.filter(({ id }) => !(id in decisions)),
+    missingDecisions: requiredDecisionsFor(rebased).filter(({ id }) => !(id in decisions)),
     definitionVersion: projection.definitionVersion + 1 };
 }
 
@@ -394,6 +444,7 @@ export function recognisedCompetitionName(projection: CompetitionWorkbenchProjec
   for (const source of projection.sources) {
     const root = record(source.normalized);
     if (typeof root?.event === "string") return root.event;
+    if (typeof root?.name === "string") return root.name;
     if (source.kind === "json" && typeof source.original === "string") {
       try { const legacy = record(JSON.parse(source.original)); if (typeof legacy?.event === "string") return legacy.event; }
       catch { /* A preserved invalid source has no recognised name. */ }

@@ -101,7 +101,7 @@ const assignmentsFrom = (schedule: ScheduleSolution): OperationalAssignment[] =>
   .map(({ contestId, resourceId, start, end }) => ({ contestId, resourceId, start, end }))
   .sort((left, right) => left.start.localeCompare(right.start) || left.contestId.localeCompare(right.contestId));
 
-export function liveDefinitionFromPublished(tournamentId: string, graph: CompetitionGraph,
+export function liveDefinitionFromPublished(tournamentId: string, spec: TournamentSpec, graph: CompetitionGraph,
   schedule: ScheduleSolution): LiveOperationsDefinition {
   const scheduleByContest = new Map(schedule.contests.map((contest) => [contest.contestId, contest]));
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
@@ -129,17 +129,22 @@ export function liveDefinitionFromPublished(tournamentId: string, graph: Competi
     existing.add(edge.fromContestId);
     dependencies.set(edge.toContestId, existing);
   }
+  const qualificationStructureIds = new Set(spec.qualificationPolicies.map(({ destinationStructureId }) => destinationStructureId));
+  const qualificationStageIds = new Set(spec.competitionStructures
+    .filter(({ id }) => qualificationStructureIds.has(id)).flatMap(({ stageIds }) => stageIds));
   const contests = graph.nodes.filter(({ kind }) => kind === "contest").map((node) => {
     const assignment = scheduleByContest.get(node.id);
     if (!assignment) throw new Error(`live_activation_missing_assignment:${node.id}`);
+    const hasAuthoritativeFixedEntrants = node.slots.every((slot) => slot.type === "entrant")
+      && !qualificationStageIds.has(node.stageId);
     return {
       contestId: node.id,
       entrantIds: [...new Set([...assignment.possibleEntrantIds, ...entrantsForNode(node.id),
         ...(!node.poolId ? (possibleByDivision.get(node.divisionId) ?? []) : [])])].sort(),
-      ...(node.poolId && node.slots.every((slot) => slot.type === "entrant")
+      ...(hasAuthoritativeFixedEntrants
         ? { fixedEntrantIds: node.slots.map((slot) => (slot as { type: "entrant"; entrantId: string }).entrantId)
           .sort() as [string, string] } : {}),
-      ...(!node.poolId ? { requiresEntrantResolution: true } : {}),
+      ...(!hasAuthoritativeFixedEntrants ? { requiresEntrantResolution: true } : {}),
       courtId: assignment.resourceId,
       dependencyContestIds: [...(dependencies.get(node.id) ?? [])].sort(),
       scheduledStart: assignment.start,
@@ -149,9 +154,9 @@ export function liveDefinitionFromPublished(tournamentId: string, graph: Competi
   return { tournamentId, courts: [...new Set(schedule.contests.map(({ resourceId }) => resourceId))].sort(), contests };
 }
 
-export function activatePublishedLiveState(tournamentId: string, graph: CompetitionGraph,
+export function activatePublishedLiveState(tournamentId: string, spec: TournamentSpec, graph: CompetitionGraph,
   schedule: ScheduleSolution): LiveOperationsState {
-  return createLiveOperationsState(liveDefinitionFromPublished(tournamentId, graph, schedule));
+  return createLiveOperationsState(liveDefinitionFromPublished(tournamentId, spec, graph, schedule));
 }
 
 function submitRequired(state: LiveOperationsState, command: LiveOperationsCommand): LiveOperationsState {

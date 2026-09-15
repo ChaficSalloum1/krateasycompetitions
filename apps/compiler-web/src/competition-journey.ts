@@ -49,8 +49,10 @@ import {
   workbenchSourceDocument,
   workbenchDecisionValues,
 } from "./competition-workbench.js";
-import { definitionFromProductionLock, entrantsFromProductionLock, participantNamesFromProductionLock,
+import { definitionFromProductionLock, entrantsFromProductionLock, isProductionLockWorkbench, participantNamesFromProductionLock,
   verifiedScheduleFromProductionLock } from "./production-lock-definition.js";
+import { connectedBlueprintFindings, connectedBlueprintFromWorkbench,
+  definitionFromConnectedBlueprint } from "./generic-blueprint-definition.js";
 import {
   activatePublishedLiveState,
   independentlyVerifyNoShowOption,
@@ -344,6 +346,15 @@ function supportedMilestoneFindings(blueprint: CompetitionBlueprint): string[] {
   return [...new Set(findings)].sort();
 }
 
+function connectedJourneyFindings(blueprint: CompetitionBlueprint): string[] {
+  return blueprint.format === "pools_to_knockout"
+    ? supportedMilestoneFindings(blueprint) : [...connectedBlueprintFindings(blueprint)];
+}
+
+function findingsForWorkbench(workbench: CompetitionWorkbenchProjection, blueprint: CompetitionBlueprint): string[] {
+  return isProductionLockWorkbench(workbench) ? [] : connectedJourneyFindings(blueprint);
+}
+
 function makeRecordHash(record: Omit<StoredJourneyRecord, "recordHash">): string {
   return canonicalHash(record);
 }
@@ -382,6 +393,22 @@ function evidenceBundleForRecord(record: StoredJourneyRecord): CompetitionEviden
     operationalPublications: record.live.publicationHistory ?? [], live: record.live.state,
     operations: record.live.operations, authoritativeRecord: record, recordHash: record.recordHash,
   });
+}
+
+function authoritativeEntrants(record: StoredJourneyRecord): Record<string, ReturnType<typeof createEntrants>[string]> | null {
+  if (!record.compiled) return null;
+  return (record.workbench ? entrantsFromProductionLock(record.workbench) : null) ?? createEntrants(record.compiled.spec);
+}
+
+function authoritativeParticipantNames(record: StoredJourneyRecord): Readonly<Record<string, string>> {
+  const imported = record.workbench ? participantNamesFromProductionLock(record.workbench) : {};
+  if (Object.keys(imported).length > 0) return imported;
+  const entrants = authoritativeEntrants(record);
+  if (!entrants) return {};
+  const label = record.proposal.blueprint.participantUnit === "pairs" ? "Pair"
+    : record.proposal.blueprint.participantUnit === "teams" ? "Team"
+      : record.proposal.blueprint.participantUnit === "athletes" ? "Athlete" : "Player";
+  return Object.fromEntries(Object.values(entrants).flat().map((entrant, index) => [entrant.id, `${label} ${index + 1}`]));
 }
 
 const validParticipantCredentialTimestamp = (value: string): boolean => {
@@ -458,7 +485,7 @@ function verifyRecord(record: StoredJourneyRecord): boolean {
   if (!record.live.operations || !verifyOperationalSafetyState(record.live.operations)) return false;
   const replay = replayLiveOperationsEvents(record.live.state.definition, record.live.state.events);
   if (!replay.valid || replay.state.proofHash !== record.live.state.proofHash) return false;
-  const progressionEntrants = record.workbench ? entrantsFromProductionLock(record.workbench) : null;
+  const progressionEntrants = authoritativeEntrants(record);
   if (record.compiled && progressionEntrants && replay.state.version > 0
     && !verifyLiveProgression(record.compiled.spec, record.compiled.graph, progressionEntrants, replay.state)) return false;
   if (record.live.proposal && !verifyNoShowProposal(record.live.proposal)) return false;
@@ -548,14 +575,16 @@ function statusOf(record: StoredJourneyRecord): CompetitionJourneyStatus {
 function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
   const compiled = record.compiled;
   const workbench = record.workbench ?? analyseCompetitionSources(record.sources ?? [record.source], record.createdAt);
-  const previewAssumptions = playAndKonnectDefinition.assumptions ?? [];
   const sourceParticipantCount = workbench.understoodFacts.find(({ id }) => id === "entrants.total")?.value;
-  const effectiveBlueprint: CompetitionBlueprint = typeof sourceParticipantCount === "number" ? {
+  const effectiveBlueprint: CompetitionBlueprint = isProductionLockWorkbench(workbench) && typeof sourceParticipantCount === "number" ? {
     ...record.proposal.blueprint,
     name: recognisedCompetitionName(workbench), sport: "padel", participantUnit: "pairs",
     participantCount: sourceParticipantCount, resourceCount: 7, resourceLabel: "courts", format: "pools_to_knockout",
     matchDurationMinutes: 30,
-  } : record.proposal.blueprint;
+  } : connectedBlueprintFromWorkbench(record.proposal.blueprint, workbench);
+  const previewDefinition = definitionFromProductionLock(workbench)
+    ?? definitionFromConnectedBlueprint(effectiveBlueprint, record.sources ?? [record.source])
+    ?? (record.supportFindings.length === 0 ? playAndKonnectDefinition : null);
   return {
     apiVersion: "1.0",
     id: record.id,
@@ -571,9 +600,9 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
     supportFindings: record.supportFindings,
     workbench,
     approvalRequired: true,
-    assumptions: (compiled?.spec.assumptions ?? (record.supportFindings.length === 0 ? previewAssumptions : [])).map(({ id, rulePath, origin, knowledge, approved, critical }) =>
+    assumptions: (compiled?.spec.assumptions ?? previewDefinition?.assumptions ?? []).map(({ id, rulePath, origin, knowledge, approved, critical }) =>
       ({ id, rulePath, origin, knowledge, approved, critical })),
-    requirements: compiled?.spec.requirements ?? (record.supportFindings.length === 0 ? playAndKonnectDefinition.requirements : []),
+    requirements: compiled?.spec.requirements ?? previewDefinition?.requirements ?? [],
     compiled: compiled ? {
       revision: compiled.revision,
       compiledAt: compiled.compiledAt,
@@ -605,11 +634,13 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
 }
 
 function compileReferenceRevision(record: StoredJourneyRecord, compiledAt: string): CompiledJourneyRevision {
-  const blueprint = record.proposal.blueprint;
+  const workbench = record.workbench ?? analyseCompetitionSources(record.sources ?? [record.source], record.createdAt);
+  const blueprint = connectedBlueprintFromWorkbench(record.proposal.blueprint, workbench);
   const productionLockDefinition = record.workbench ? definitionFromProductionLock(record.workbench) : null;
-  if (!productionLockDefinition && (!blueprint.startsAt || !blueprint.endsAt)) throw new Error("journey_not_ready");
+  const connectedBlueprintDefinition = definitionFromConnectedBlueprint(blueprint, record.sources ?? [record.source]);
+  if (!productionLockDefinition && !connectedBlueprintDefinition && (!blueprint.startsAt || !blueprint.endsAt)) throw new Error("journey_not_ready");
   const base = structuredClone(playAndKonnectDefinition);
-  const definition: TournamentDefinition = productionLockDefinition ?? {
+  const definition: TournamentDefinition = productionLockDefinition ?? connectedBlueprintDefinition ?? {
     ...base,
     scheduling: { ...base.scheduling, start: blueprint.startsAt!, finishBy: blueprint.endsAt! },
     resources: base.resources.map((resource, index) => index === 0 ? { ...resource,
@@ -708,7 +739,7 @@ export class CompetitionJourney {
     while (this.records.has(id)) { suffix += 1; id = `${base}.${proposal.proposalHash.slice(0, 10)}.${suffix}`; }
     const record = sealRecord({ id, organizationId: this.organizationId, draftVersion: 1, createdBy, createdAt: timestamp, updatedAt: timestamp,
       source, sources: [source], proposal, workbench,
-      supportFindings: workbench.understoodFacts.length ? [] : supportedMilestoneFindings(proposal.blueprint) });
+      supportFindings: findingsForWorkbench(workbench, proposal.blueprint) });
     this.records.set(id, record);
     this.persist();
     return snapshotOf(record);
@@ -733,7 +764,7 @@ export class CompetitionJourney {
       sources,
       proposal,
       workbench,
-      supportFindings: workbench.understoodFacts.length ? [] : supportedMilestoneFindings(proposal.blueprint),
+      supportFindings: findingsForWorkbench(workbench, proposal.blueprint),
     });
     this.records.set(id, revised);
     this.persist();
@@ -871,7 +902,7 @@ export class CompetitionJourney {
     const live: JourneyLiveState = { baseRevision: expectedRevision, activatedBy, activatedAt, delivery: [],
       participantRevisions: {}, contestRevisions: {},
       operations: createOperationalSafetyState(this.operationalAuthorityAssignments),
-      state: activatePublishedLiveState(id, compiled.graph, compiled.schedule) };
+      state: activatePublishedLiveState(id, compiled.spec, compiled.graph, compiled.schedule) };
     const revised = sealRecord({ ...withoutSeal(current), updatedAt: activatedAt, live });
     this.records.set(id, revised);
     this.persist();
@@ -890,7 +921,7 @@ export class CompetitionJourney {
     const result = submitLiveOperationsCommand(live.state, command);
     if (!result.accepted) throw new Error(`live_command_rejected:${result.findings.map(({ code }) => code).join(",")}`);
     if (result.idempotentReplay) return snapshotOf(current);
-    const progressionEntrants = entrantsFromProductionLock(current.workbench!);
+    const progressionEntrants = authoritativeEntrants(current);
     if (!progressionEntrants) throw new Error("live_progression_roster_unavailable");
     const progression = advanceLiveProgression(current.compiled!.spec, current.compiled!.graph,
       progressionEntrants, result.state, command.occurredAt);
@@ -918,7 +949,7 @@ export class CompetitionJourney {
     const contestRevisions = { ...live.contestRevisions,
       ...Object.fromEntries([...touchedContestIds].map((contestId) => [contestId, expectedRevision])) };
     const outbox = new InMemoryTransactionalOutbox(current.organizationId, live.delivery);
-    const participantNames = participantNamesFromProductionLock(current.workbench!);
+    const participantNames = authoritativeParticipantNames(current);
     const assignments = live.publication?.operationalAssignments ?? current.compiled!.schedule.contests;
     const committedEvent = acceptedEvents.at(-1)!;
     for (const participantId of [...touchedEntrantIds].sort()) {
@@ -956,7 +987,7 @@ export class CompetitionJourney {
     const acceptedEvent = result.state.events.at(-1)!;
     const outbox = new InMemoryTransactionalOutbox(current.organizationId, live.delivery);
     if (acceptedEvent.command.kind === "TRANSITION_MODE") {
-      const participantNames = participantNamesFromProductionLock(current.workbench!);
+      const participantNames = authoritativeParticipantNames(current);
       const participantIds = [...new Set(live.state.definition.contests.flatMap(({ entrantIds }) => entrantIds))].sort();
       const assignments = live.publication?.operationalAssignments ?? current.compiled!.schedule.contests;
       for (const participantId of participantIds) {
@@ -1053,7 +1084,7 @@ export class CompetitionJourney {
             competitionName: recognisedCompetitionName(current.workbench!) ?? current.proposal.blueprint.name ?? "Competition",
             publishedRevision: expectedRevision, operationalRevision: expectedRevision + 1,
             affectedParticipantIds: proposal.affectedEntrantIds, participantId: recipientEntrantId,
-            participantNames: participantNamesFromProductionLock(current.workbench!), state: option.proposedLiveState,
+            participantNames: authoritativeParticipantNames(current), state: option.proposedLiveState,
             assignments: option.operationalAssignments, operation: live.operations.publicStatus }) },
       })),
     };
@@ -1213,7 +1244,7 @@ export class CompetitionJourney {
             competitionName: recognisedCompetitionName(current.workbench!) ?? current.proposal.blueprint.name ?? "Competition",
             publishedRevision: current.publication!.revision, operationalRevision: expectedOperationalRevision + 1,
             affectedParticipantIds: proposal.affectedEntrantIds, participantId: recipientEntrantId,
-            participantNames: participantNamesFromProductionLock(current.workbench!), state: proposedLiveState,
+            participantNames: authoritativeParticipantNames(current), state: proposedLiveState,
             assignments: proposal.operationalAssignments, operation: live.operations.publicStatus }) },
       })),
     };
@@ -1594,7 +1625,7 @@ export class CompetitionJourney {
       publishedRevision: current.publication!.revision, operationalRevision: input.expectedOperationalRevision,
       affectedParticipantIds: live.publication?.affectedEntrantIds ?? [], participantId: grant.participantId,
       participantRevisions: live.participantRevisions,
-      participantNames: participantNamesFromProductionLock(current.workbench!), state: live.state,
+      participantNames: authoritativeParticipantNames(current), state: live.state,
       assignments: live.publication?.operationalAssignments ?? current.compiled!.schedule.contests,
       operation: live.operations.publicStatus });
   }
@@ -1608,7 +1639,7 @@ export class CompetitionJourney {
       publishedRevision: current.publication!.revision, operationalRevision: input.expectedOperationalRevision,
       affectedContestIds: live.publication?.affectedContestIds ?? [],
       contestRevisions: live.contestRevisions,
-      participantNames: participantNamesFromProductionLock(current.workbench!), state: live.state,
+      participantNames: authoritativeParticipantNames(current), state: live.state,
       assignments: live.publication?.operationalAssignments ?? current.compiled!.schedule.contests,
       operation: live.operations.publicStatus });
   }
@@ -1619,7 +1650,7 @@ export class CompetitionJourney {
     const live = this.requireProjectedLive(current, input.expectedOperationalRevision);
     if (!Number.isFinite(Date.parse(input.at)) || new Date(Date.parse(input.at)).toISOString() !== input.at)
       throw new Error("invalid_projection_time");
-    const participantNames = participantNamesFromProductionLock(current.workbench!);
+    const participantNames = authoritativeParticipantNames(current);
     const participantIds = [...new Set(live.state.definition.contests.flatMap(({ entrantIds }) => entrantIds))].sort();
     const assignments = live.publication?.operationalAssignments ?? current.compiled!.schedule.contests;
     const participants = participantIds.map((participantId) => {
@@ -1664,7 +1695,7 @@ export class CompetitionJourney {
     if (!Number.isFinite(expiry) || new Date(expiry).toISOString() !== input.expiresAt
       || expiry <= Date.parse(generatedAt) || expiry > Date.parse(generatedAt) + 24 * 60 * 60_000)
       throw new Error("invalid_offline_pack_expiry");
-    const participantNames = participantNamesFromProductionLock(current.workbench!);
+    const participantNames = authoritativeParticipantNames(current);
     const participantIds = [...new Set(live.state.definition.contests.flatMap(({ entrantIds }) => entrantIds))].sort();
     const assignments = live.publication?.operationalAssignments ?? current.compiled!.schedule.contests;
     const competitionName = recognisedCompetitionName(current.workbench!) ?? current.proposal.blueprint.name ?? "Competition";
@@ -1886,7 +1917,7 @@ export function competitionJourneyHtml(competitionId: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Krateasy competition</title><style>
   :root{color-scheme:light;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#f4f6f2;color:#17201d}*{box-sizing:border-box;min-width:0}html{font-size:100%;scroll-behavior:smooth}body{margin:0;overflow-wrap:anywhere}.skip{position:absolute;left:-9999px;top:8px;z-index:100;background:#fff;color:#17201d;padding:12px 16px;border:2px solid currentColor;border-radius:8px}.skip:focus{left:8px}:focus-visible{outline:3px solid #c95635;outline-offset:3px}.shell{max-width:1100px;margin:auto;padding:32px 22px 64px}a{color:#315d4b;min-height:44px;display:inline-flex;align-items:center}.eyebrow{font-size:.78rem;text-transform:uppercase;letter-spacing:.12em;color:#577064}.hero,.card{background:#fff;border:1px solid #dce3dc;border-radius:20px;box-shadow:0 10px 30px #1c3a2d0c}.hero{padding:28px;margin:18px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:14px}.card{padding:18px}.metric{font-size:2rem;font-weight:720}.ok{color:#19734a}.blocked{color:#a23b28}.schedule,.repeat{margin-top:18px}.schedule{overflow:auto}.repeat form{display:grid;grid-template-columns:1fr 180px auto;gap:12px;align-items:end}.field{display:grid;gap:6px;font-weight:650}.field input{min-height:44px;border:1px solid #9aa9a1;border-radius:9px;padding:9px 11px;font:inherit}.repeat button{min-height:44px;border:0;border-radius:9px;padding:9px 15px;background:#315d4b;color:#fff;font:inherit;font-weight:700}.repeat button:disabled{opacity:.55}.repeat .result{grid-column:1/-1;margin:0}.success{color:#19734a}table{width:100%;border-collapse:collapse;background:#fff}caption{text-align:left;font-size:1.5rem;font-weight:700;padding:0 0 16px}th,td{text-align:left;padding:11px;border-bottom:1px solid #e5e9e5;white-space:nowrap}code{font-size:.78rem;overflow-wrap:anywhere}.muted{color:#617068}.error{padding:18px;background:#fff1ee;color:#8b2c1f;border-radius:12px}@media(max-width:600px){.shell{padding:20px 14px}.hero{padding:20px}.repeat form{grid-template-columns:1fr}}@media(max-width:320px){.shell{padding-inline:10px}.hero,.card{padding:14px}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}@media(prefers-contrast:more){.hero,.card{border:2px solid #17201d}.muted,.eyebrow{color:#3f4e47}}@media(forced-colors:active){.hero,.card,.error,.skip{border:2px solid CanvasText}}@media print{body{background:white}.skip,.back,.repeat{display:none}.shell{max-width:none;padding:0}.hero,.card{box-shadow:none;break-inside:avoid}}
-  </style></head><body><a class="skip" href="#main">Skip to published competition</a><main id="main" tabindex="-1" class="shell"><a class="back" href="/">← Competitions</a> · <a class="back" href="/competitions/${encodeURIComponent(competitionId)}/preflight">Open Guard pre-flight</a><section id="app" role="status" aria-live="polite" aria-atomic="true"><p>Loading authoritative revision…</p></section></main>
+  </style></head><body><a class="skip" href="#main">Skip to competition</a><main id="main" tabindex="-1" class="shell"><a class="back" href="/">← Competitions</a><section id="app" role="status" aria-live="polite" aria-atomic="true"><p>Loading authoritative revision…</p></section></main>
   <script>const id=${encodedId};const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  fetch('/v1/competition-journey/'+encodeURIComponent(id)).then(async r=>{const v=await r.json();if(!r.ok)throw Error(v.error||'Not found');return v}).then(v=>{const c=v.compiled;const closed=v.closure?'<div class="card"><div class="eyebrow">Final closure</div><div class="metric ok">'+esc(v.closure.resultSummary.total)+'</div><p>settled results · 0 unresolved</p><p><code>'+esc(v.closure.closureHash.slice(0,16))+'</code></p><a href="/v1/competition-journey/'+encodeURIComponent(id)+'/closure-bundle?closure='+encodeURIComponent(v.closure.closureHash)+'">Open machine and human evidence bundle</a></div>':'';const repeat=v.closure?'<section class="card repeat" aria-labelledby="duplicate-title"><div class="eyebrow">Next edition</div><h2 id="duplicate-title">Create a clean edition</h2><p>Carry the exact source and approved decision provenance into a new draft. Results, live state, approval and publication are never copied.</p><form id="duplicate-form"><label class="field" for="duplicate-name">New competition name<input id="duplicate-name" name="name" required minlength="2" autocomplete="off"></label><label class="field" for="duplicate-date">Event date<input id="duplicate-date" name="eventDate" required type="date"></label><button type="submit">Create clean draft</button><p class="result muted" id="duplicate-status" role="status" aria-live="polite" aria-atomic="true">The server will bind this request to the current authoritative closure.</p></form></section>':'';document.title=v.name+' · Krateasy';document.querySelector('#app').removeAttribute('role');document.querySelector('#app').innerHTML='<div class="hero"><div class="eyebrow">Immutable published competition revision</div><h1>'+esc(v.name)+'</h1><p class="muted">'+esc(v.id)+' · revision '+v.revision+' · '+esc(v.status)+'</p></div><div class="grid"><div class="card"><div class="eyebrow">Guard</div><div class="metric '+(c?.guardStatus==='PASSED'?'ok':'blocked')+'">'+esc(c?.guardStatus||'Not run')+'</div><p>'+esc(c?.guardReportHash?.slice(0,16)||'No proof yet')+'</p></div><div class="card"><div class="eyebrow">Contest accounting</div><div class="metric">'+esc(c?.actualContestCount??'—')+'</div><p>'+esc(c?.scheduledContestCount??0)+' scheduled</p></div><div class="card"><div class="eyebrow">Publication</div><div class="metric">'+esc(v.publication?'Bound':'Pending')+'</div><p>'+esc(v.publication?.certificateHash?.slice(0,16)||'Independent approval required')+'</p></div>'+closed+'</div>'+repeat+(c?'<div class="schedule card"><table><caption>Published schedule</caption><thead><tr><th scope="col">Contest</th><th scope="col">Resource</th><th scope="col">Start</th><th scope="col">End</th></tr></thead><tbody>'+c.schedule.map(x=>'<tr><td><code>'+esc(x.contestId)+'</code></td><td>'+esc(x.resourceId)+'</td><td>'+esc(x.start)+'</td><td>'+esc(x.end)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="card"><h2>Needs input</h2><p>'+esc(v.supportFindings.concat(v.questions.map(q=>q.prompt)).join(' · '))+'</p></div>');const form=document.querySelector('#duplicate-form');if(form)form.addEventListener('submit',async event=>{event.preventDefault();const button=form.querySelector('button'),status=document.querySelector('#duplicate-status'),name=document.querySelector('#duplicate-name').value.trim(),eventDate=document.querySelector('#duplicate-date').value;if(!name||!eventDate)return;button.disabled=true;status.className='result muted';status.textContent='Creating authoritative clean draft…';try{const response=await fetch('/v1/competition-journey/'+encodeURIComponent(id)+'/duplicate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({expectedClosureHash:v.closure.closureHash,name,eventDate})}),created=await response.json();if(!response.ok)throw Error(created.error||'Duplicate was not created');status.className='result success';status.innerHTML='Clean draft created. <a href="/competitions/'+encodeURIComponent(created.id)+'">Open '+esc(created.name)+' →</a>';button.textContent='Draft created'}catch(error){status.className='result error';status.textContent='Duplicate stopped safely: '+error.message;button.disabled=false}})}).catch(e=>document.querySelector('#app').innerHTML='<p class="error" role="alert">'+esc(e.message)+'</p>');</script></body></html>`;
+  fetch('/v1/competition-journey/'+encodeURIComponent(id)).then(async r=>{const v=await r.json();if(!r.ok)throw Error(v.error||'Not found');return v}).then(v=>{const c=v.compiled,published=Boolean(v.publication),stateLabel=published?'Immutable published competition revision':'Authoritative competition draft',revisionLabel=published?'revision '+v.revision:'draft version '+v.draftVersion,preflight=c?'<a class="back" href="/competitions/'+encodeURIComponent(id)+'/preflight">Open Guard pre-flight</a>':'';const closed=v.closure?'<div class="card"><div class="eyebrow">Final closure</div><div class="metric ok">'+esc(v.closure.resultSummary.total)+'</div><p>settled results · 0 unresolved</p><p><code>'+esc(v.closure.closureHash.slice(0,16))+'</code></p><a href="/v1/competition-journey/'+encodeURIComponent(id)+'/closure-bundle?closure='+encodeURIComponent(v.closure.closureHash)+'">Open machine and human evidence bundle</a></div>':'';const repeat=v.closure?'<section class="card repeat" aria-labelledby="duplicate-title"><div class="eyebrow">Next edition</div><h2 id="duplicate-title">Create a clean edition</h2><p>Carry the exact source and approved decision provenance into a new draft. Results, live state, approval and publication are never copied.</p><form id="duplicate-form"><label class="field" for="duplicate-name">New competition name<input id="duplicate-name" name="name" required minlength="2" autocomplete="off"></label><label class="field" for="duplicate-date">Event date<input id="duplicate-date" name="eventDate" required type="date"></label><button type="submit">Create clean draft</button><p class="result muted" id="duplicate-status" role="status" aria-live="polite" aria-atomic="true">The server will bind this request to the current authoritative closure.</p></form></section>':'';document.title=v.name+' · Krateasy';document.querySelector('#app').removeAttribute('role');document.querySelector('#app').innerHTML='<div class="hero"><div class="eyebrow">'+esc(stateLabel)+'</div><h1>'+esc(v.name)+'</h1><p class="muted">'+esc(v.id)+' · '+esc(revisionLabel)+' · '+esc(v.status)+'</p>'+preflight+'</div><div class="grid"><div class="card"><div class="eyebrow">Guard</div><div class="metric '+(c?.guardStatus==='PASSED'?'ok':'blocked')+'">'+esc(c?.guardStatus||'Not run')+'</div><p>'+esc(c?.guardReportHash?.slice(0,16)||'No proof yet')+'</p></div><div class="card"><div class="eyebrow">Contest accounting</div><div class="metric">'+esc(c?.actualContestCount??'—')+'</div><p>'+esc(c?.scheduledContestCount??0)+' scheduled</p></div><div class="card"><div class="eyebrow">Publication</div><div class="metric">'+esc(v.publication?'Bound':'Pending')+'</div><p>'+esc(v.publication?.certificateHash?.slice(0,16)||'Independent approval required')+'</p></div>'+closed+'</div>'+repeat+(c?'<div class="schedule card"><table>'+(published?'<caption>Published schedule</caption>':'<caption>Candidate schedule</caption>')+'<thead><tr><th scope="col">Contest</th><th scope="col">Resource</th><th scope="col">Start</th><th scope="col">End</th></tr></thead><tbody>'+c.schedule.map(x=>'<tr><td><code>'+esc(x.contestId)+'</code></td><td>'+esc(x.resourceId)+'</td><td>'+esc(x.start)+'</td><td>'+esc(x.end)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="card"><h2>'+(v.status==='DRAFT'?'Ready for compiler review':'Needs input')+'</h2><p>'+esc(v.supportFindings.concat(v.questions.map(q=>q.prompt)).join(' · ')||'The draft is complete and ready for compiler review.')+'</p></div>');const form=document.querySelector('#duplicate-form');if(form)form.addEventListener('submit',async event=>{event.preventDefault();const button=form.querySelector('button'),status=document.querySelector('#duplicate-status'),name=document.querySelector('#duplicate-name').value.trim(),eventDate=document.querySelector('#duplicate-date').value;if(!name||!eventDate)return;button.disabled=true;status.className='result muted';status.textContent='Creating authoritative clean draft…';try{const response=await fetch('/v1/competition-journey/'+encodeURIComponent(id)+'/duplicate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({expectedClosureHash:v.closure.closureHash,name,eventDate})}),created=await response.json();if(!response.ok)throw Error(created.error||'Duplicate was not created');status.className='result success';status.innerHTML='Clean draft created. <a href="/competitions/'+encodeURIComponent(created.id)+'">Open '+esc(created.name)+' →</a>';button.textContent='Draft created'}catch(error){status.className='result error';status.textContent='Duplicate stopped safely: '+error.message;button.disabled=false}})}).catch(e=>document.querySelector('#app').innerHTML='<p class="error" role="alert">'+esc(e.message)+'</p>');</script></body></html>`;
 }

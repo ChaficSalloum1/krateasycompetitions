@@ -176,6 +176,16 @@ async function post(server: ReturnType<typeof createCompilerServer>, url: string
   });
 }
 
+async function get(server: ReturnType<typeof createCompilerServer>, url: string) {
+  const request = Readable.from([]) as never;
+  Object.assign(request, { method: "GET", url, headers: {} });
+  return new Promise<{ status: number; body: string }>((resolve) => {
+    let status = 0;
+    server.emit("request", request, { writeHead: (next: number) => { status = next; },
+      end: (encoded = "") => resolve({ status, body: String(encoded) }) } as never);
+  });
+}
+
 test("the connected creator previews and saves imports through the authoritative journey", async () => {
   const journey = new CompetitionJourney({ now: () => "2026-09-15T10:00:00.000Z" });
   const server = createCompilerServer({ competitionJourney: journey }); const text = stringify(sourceValue, { lineWidth: 0 });
@@ -184,6 +194,9 @@ test("the connected creator previews and saves imports through the authoritative
   assert.equal(preview.body.workbench.understoodFacts.find((fact: { id: string }) => fact.id === "fixtures.total").value, 108);
   const saved = await post(server, "/v1/competition-journey", { source: { mode: "yaml", text } });
   assert.equal(saved.status, 201); assert.equal(saved.body.name, "Encourt Padel & Wellness Club St Albans");
+  const draftPage = await get(server, `/competitions/${encodeURIComponent(saved.body.id)}`);
+  assert.equal(draftPage.status, 200);
+  assert.ok(draftPage.body.includes("Authoritative competition draft"));
   assert.equal(journey.list().length, 1);
   server.close();
 });
