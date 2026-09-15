@@ -4,6 +4,12 @@ import CryptoKit
 
 @MainActor
 final class AppShellTests: XCTestCase {
+    func testDefaultAppContainsOnlyTheConnectedAuthoritativeWorkspace() {
+        let sessions = defaultWorkspaceSessions()
+        XCTAssertEqual(sessions.map(\.workspace.id), ["local-compiler"])
+        XCTAssertEqual(sessions.map { $0.client.workspaceKind }, [.connected])
+    }
+
     func testNavigationIdentifiersAreStableAndIncludeAssociatedIdentifiers() {
         XCTAssertEqual(OrganiserSection.allCases.map(\.id), [
             "today", "operations", "event", "schedule", "participants", "competition",

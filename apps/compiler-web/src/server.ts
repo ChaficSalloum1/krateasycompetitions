@@ -24,6 +24,7 @@ import { createCompetitionProposal, parseCreationProposalPayload } from "./creat
 import { CompetitionJourney, competitionJourneyHtml, parseConnectedLiveCommand, parseCreationSource,
   type CompetitionJourneyOptions } from "./competition-journey.js";
 import { renderCompetitionGuardPreflight } from "./guard-preflight-view.js";
+import { renderCompetitionPortfolio } from "./competition-portfolio-view.js";
 import { analyseCompetitionSources, recognisedCompetitionName } from "./competition-workbench.js";
 import { playerHtml } from "./player-view.js";
 import { participantRecoveryHtml } from "./participant-recovery-view.js";
@@ -672,7 +673,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end(playerHtml);
         return;
       }
-      if ((request.url === "/lab" || request.url?.startsWith("/lab?")) && request.method === "GET") {
+      if (!production && (request.url === "/lab" || request.url?.startsWith("/lab?")) && request.method === "GET") {
         response.writeHead(200, {
           "content-type": "text/html; charset=utf-8",
           "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
@@ -682,7 +683,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end(compilerHtml);
         return;
       }
-      if (request.url === "/" && request.method === "GET") {
+      if (!production && request.url === "/demo" && request.method === "GET") {
         response.writeHead(200, {
           "content-type": "text/html; charset=utf-8",
           "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
@@ -690,6 +691,19 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           "referrer-policy": "no-referrer",
         });
         response.end(productHtml);
+        return;
+      }
+      if (request.url === "/" && request.method === "GET") {
+        if (production) {
+          json(response, 503, { apiVersion: "1.0", error: "pilot_web_projection_not_configured" });
+          return;
+        }
+        response.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+          "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
+        });
+        response.end(renderCompetitionPortfolio(competitionJourney.list()));
         return;
       }
       const preflightPage = !production && /^\/competitions\/([^/?#]+)\/preflight$/.exec(request.url ?? "");
@@ -1170,7 +1184,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           return;
         }
       }
-      if (request.url === "/api/interpret" && request.method === "POST") {
+      if (!production && request.url === "/api/interpret" && request.method === "POST") {
         json(response, 200, interpretApiPayload(await readJsonRequestBody(request)));
         return;
       }
@@ -1186,7 +1200,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         else json(response, 404, { error: "not_found" });
         return;
       }
-      if ((request.url === "/api/demo" || request.url === "/api/workspace") && request.method === "GET") {
+      if (!production && (request.url === "/api/demo" || request.url === "/api/workspace") && request.method === "GET") {
         const workspace = compilerWorkspace();
         const { scenario } = workspace;
         if (request.url === "/api/workspace") json(response, 200, workspace);

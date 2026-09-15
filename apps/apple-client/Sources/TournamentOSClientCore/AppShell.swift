@@ -886,7 +886,7 @@ public struct TournamentOSAppShell: View {
 
     public init() {
         _model = State(initialValue: TournamentOSAppModel(
-            workspaces: demoWorkspaceSessions(), draftStorage: .standard,
+            workspaces: defaultWorkspaceSessions(), draftStorage: .standard,
             offlineJournalDirectory: defaultOfflineJournalDirectory()
         ))
     }
@@ -1147,7 +1147,7 @@ fileprivate enum DemoWorkspaceProfile: Sendable {
     }
 }
 
-private func demoWorkspaceSessions() -> [TournamentWorkspaceSession] {
+func defaultWorkspaceSessions() -> [TournamentWorkspaceSession] {
     [
         TournamentWorkspaceSession(
             workspace: CompetitionWorkspaceSummaryDTO(
@@ -1157,6 +1157,11 @@ private func demoWorkspaceSessions() -> [TournamentWorkspaceSession] {
             client: URLSessionTournamentAPIClient(baseURL: localCompilerBaseURL(),
                 trustedOfflinePackPublicKey: configuredOfflinePackPublicKey())
         ),
+    ]
+}
+
+private func referenceDemoWorkspaceSessions() -> [TournamentWorkspaceSession] {
+    [
         TournamentWorkspaceSession(
             workspace: CompetitionWorkspaceSummaryDTO(
                 id: "play-and-konnect", name: "Play & Konnect", kind: .club,
