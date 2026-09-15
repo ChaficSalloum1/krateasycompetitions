@@ -125,6 +125,10 @@ test("canonical web product separates the lifecycle from the advanced workbench"
   assert.ok(creatorHtml.includes("/v1/competition-journey"));
   assert.ok(creatorHtml.includes("dataTransfer.files[0]"));
   assert.ok(creatorHtml.includes("Choose a '+({json:'JSON'"));
+  assert.ok(creatorHtml.includes("Workspace connection interrupted"));
+  assert.ok(creatorHtml.includes("Source needs a smaller review unit"));
+  assert.ok(creatorHtml.includes("Technical details"));
+  assert.equal(creatorHtml.includes("Stopped safely:"), false);
   assert.equal(creatorHtml.includes("/api/platform-demo/commands"), false);
   assert.ok(creatorHtml.includes("@media(max-width:580px)"));
   assert.ok(productHtml.includes("@media(max-width:650px)"));

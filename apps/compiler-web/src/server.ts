@@ -580,8 +580,17 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           json(response, 415, { apiVersion: "1.0", error: "unsupported_media_type" });
           return;
         }
-        const source = parseCreationSource(await readJsonRequestBody(request, 8_388_608));
-        const proposal = createCompetitionProposal(source); const workbench = analyseCompetitionSources([source], serverNow());
+        const body = await readJsonRequestBody(request, 8_388_608);
+        const bundle = body && typeof body === "object" && !Array.isArray(body) && "source" in body
+          ? body as { source: unknown; supportingSources?: unknown }
+          : null;
+        if (bundle && (Object.keys(bundle).some((key) => key !== "source" && key !== "supportingSources")
+          || (bundle.supportingSources !== undefined && (!Array.isArray(bundle.supportingSources) || bundle.supportingSources.length > 7))))
+          throw new Error("invalid_creation_source_bundle");
+        const source = parseCreationSource(bundle ? bundle.source : body);
+        const supportingSources = Array.isArray(bundle?.supportingSources) ? bundle.supportingSources : [];
+        const sources = [source, ...supportingSources.map(parseCreationSource)];
+        const proposal = createCompetitionProposal(source); const workbench = analyseCompetitionSources(sources, serverNow());
         const accepted = workbench.sources[0]?.status === "ACCEPTED";
         const participantCount = workbench.understoodFacts.find(({ id }) => id === "entrants.total")?.value;
         json(response, 200, { ...proposal, status: accepted ? "NEEDS_INPUT" : "REJECTED",
@@ -754,9 +763,13 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
       if (!production && request.url === "/v1/competition-journey" && request.method === "POST") {
         const body = await readJsonRequestBody(request, 8_388_608);
         if (!body || typeof body !== "object" || Array.isArray(body)
-          || Object.keys(body as Record<string, unknown>).some((key) => key !== "source")
+          || Object.keys(body as Record<string, unknown>).some((key) => key !== "source" && key !== "supportingSources")
           || !("source" in body)) throw new Error("invalid_journey_command");
-        json(response, 201, competitionJourney.create(parseCreationSource((body as { source: unknown }).source)));
+        const command = body as { source: unknown; supportingSources?: unknown };
+        if (command.supportingSources !== undefined && (!Array.isArray(command.supportingSources) || command.supportingSources.length > 7))
+          throw new Error("invalid_journey_command");
+        json(response, 201, competitionJourney.createWithSources([parseCreationSource(command.source),
+          ...(command.supportingSources ?? []).map(parseCreationSource)]));
         return;
       }
       const journeyRequestUrl = new URL(request.url ?? "/", "http://local.invalid");

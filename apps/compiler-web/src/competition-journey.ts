@@ -777,16 +777,23 @@ export class CompetitionJourney {
   }
 
   public create(source: CreationSource, createdBy = "local.organiser"): CompetitionJourneySnapshot {
+    return this.createWithSources([source], createdBy);
+  }
+
+  /** Creates one draft from a complete source bundle; persistence happens only after every source is parsed. */
+  public createWithSources(sources: readonly CreationSource[], createdBy = "local.organiser"): CompetitionJourneySnapshot {
+    if (sources.length === 0 || sources.length > 8) throw new Error("invalid_creation_source_bundle");
+    const source = sources[0]!;
     const proposal = createCompetitionProposal(source);
     const timestamp = this.canonicalNow();
-    const workbench = analyseCompetitionSources([source], timestamp);
+    const workbench = analyseCompetitionSources(sources, timestamp);
     const name = recognisedCompetitionName(workbench) ?? proposal.blueprint.name;
     const base = (name ?? "competition").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "competition";
     let id = `${base}.${proposal.proposalHash.slice(0, 10)}`;
     let suffix = 1;
     while (this.records.has(id)) { suffix += 1; id = `${base}.${proposal.proposalHash.slice(0, 10)}.${suffix}`; }
     const record = sealRecord({ id, organizationId: this.organizationId, draftVersion: 1, createdBy, createdAt: timestamp, updatedAt: timestamp,
-      source, sources: [source], proposal, workbench,
+      source, sources: [...sources], proposal, workbench,
       supportFindings: findingsForWorkbench(workbench, proposal.blueprint) });
     this.records.set(id, record);
     this.persist();

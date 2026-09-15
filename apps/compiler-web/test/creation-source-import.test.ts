@@ -201,6 +201,27 @@ test("the connected creator previews and saves imports through the authoritative
   server.close();
 });
 
+test("a primary definition and corroborating roster enter one atomic, hash-preserving draft", async () => {
+  const journey = new CompetitionJourney({ now: () => "2026-09-15T10:00:00.000Z" });
+  const server = createCompilerServer({ competitionJourney: journey });
+  const preview = await post(server, "/api/competition-source-preview", {
+    source: { mode: "json", text: fixture }, supportingSources: [{ mode: "csv", text: entrantCsv() }],
+  });
+  assert.equal(preview.status, 200);
+  assert.equal(preview.body.workbench.sources.length, 2);
+  assert.equal(preview.body.workbench.conflicts.length, 0);
+
+  const saved = await post(server, "/v1/competition-journey", {
+    source: { mode: "json", text: fixture }, supportingSources: [{ mode: "csv", text: entrantCsv() }],
+  });
+  assert.equal(saved.status, 201);
+  assert.equal(saved.body.draftVersion, 1);
+  assert.equal(saved.body.workbench.sources.length, 2);
+  assert.equal(journey.list().length, 1);
+  assert.deepEqual(saved.body.workbench.sources.map((source: { kind: string }) => source.kind), ["json", "csv"]);
+  server.close();
+});
+
 test("the connected web draft appends a generic roster into the same authoritative workbench", async () => {
   const journey = new CompetitionJourney({ now: () => "2026-09-15T10:00:00.000Z", organizationId: "org.web" });
   const server = createCompilerServer({ competitionJourney: journey });
