@@ -50,6 +50,7 @@ import {
   type CompetitionWorkbenchProjection,
   type StructuredWorkbenchEdit,
   type StructuredWorkbenchEditPreview,
+  type StructuredEditReview,
   workbenchSourceDocument,
   workbenchDecisionValues,
 } from "./competition-workbench.js";
@@ -272,6 +273,12 @@ export interface CompetitionJourneySnapshot {
     critical: boolean;
   }[];
   readonly requirements: TournamentSpec["requirements"];
+  /**
+   * J2 · Competition Design. A read-only map derived by the server from the
+   * same canonical definition the compiler will consume. It is deliberately
+   * not a client-editable graph DTO.
+   */
+  readonly structureMap: CompetitionStructureMap;
   readonly compiled: null | {
     revision: number;
     compiledAt: string;
@@ -304,6 +311,32 @@ export interface CompetitionJourneySnapshot {
   readonly closure: CompetitionClosure | null;
   readonly duplication: JourneyDuplication | null;
   readonly webPath: string;
+}
+
+export interface CompetitionStructureMap {
+  readonly definitionAvailable: boolean;
+  readonly nodes: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly kind: "POOL" | "PLAY_IN" | "CUP" | "BRACKET" | "OTHER";
+    readonly expectedEntrants: number | null;
+    readonly poolCount: number | null;
+    readonly poolSizes: readonly number[];
+  }[];
+  readonly edges: readonly {
+    readonly id: string;
+    readonly sourceStageId: string;
+    readonly destinationStructureId: string;
+    readonly destinationStageIds: readonly string[];
+    readonly outputCount: number;
+    readonly selectorSummary: string;
+    readonly normalization: string | null;
+    readonly warnings: readonly {
+      readonly code: "INVALID_EDGE" | "INCOMPLETE_EDGE" | "CONSEQUENTIAL_EDGE";
+      readonly message: string;
+    }[];
+  }[];
+  readonly unavailableReason: string | null;
 }
 
 export interface CompetitionJourneyOptions {
@@ -613,6 +646,85 @@ function statusOf(record: StoredJourneyRecord): CompetitionJourneyStatus {
   return "NEEDS_INPUT";
 }
 
+function selectorSummary(selectors: TournamentDefinition["qualificationPolicies"][number]["selectors"]): string {
+  return selectors.map((selector) => {
+    if (selector.type === "pool_position") return `pool position ${selector.position}`;
+    if (selector.type === "best_n_across_pools") return `best ${selector.count} at position ${selector.poolPosition ?? "any"}`;
+    if (selector.type === "top_n" || selector.type === "bottom_n") return `${selector.type.replace("_", " ")} ${selector.count}`;
+    if (selector.type === "remainder" || selector.type === "pool_winners") return selector.type.replace("_", " ");
+    return selector.type.replaceAll("_", " ");
+  }).join("; ");
+}
+
+function structureMapFor(definition: TournamentDefinition | null, unavailableReason: string | null): CompetitionStructureMap {
+  if (!definition) return { definitionAvailable: false, nodes: [], edges: [], unavailableReason };
+  const structures = new Map(definition.competitionStructures.map((structure) => [structure.id, structure]));
+  const stages = new Map(definition.stages.map((stage) => [stage.id, stage]));
+  const nodes = definition.stages.map((stage) => ({
+    id: stage.id,
+    label: stage.label,
+    kind: stage.pool ? "POOL" as const : stage.playIn ? "PLAY_IN" as const
+      : stage.bracket ? (stage.primitive === "consolation" ? "CUP" as const : "BRACKET" as const) : "OTHER" as const,
+    expectedEntrants: stage.expectedEntrants ?? null,
+    poolCount: stage.pool?.poolCount ?? null,
+    poolSizes: stage.pool?.sizes ?? [],
+  }));
+  const edges = definition.qualificationPolicies.map((policy) => {
+    const source = stages.get(policy.sourceStageId);
+    const destination = structures.get(policy.destinationStructureId);
+    const warnings: CompetitionStructureMap["edges"][number]["warnings"][number][] = [];
+    if (!source) warnings.push({ code: "INVALID_EDGE", message: `Source stage '${policy.sourceStageId}' is not present in this definition.` });
+    if (!destination) warnings.push({ code: "INVALID_EDGE", message: `Destination structure '${policy.destinationStructureId}' is not present in this definition.` });
+    if (source?.pool && new Set(source.pool.sizes).size > 1
+      && policy.selectors.some(({ type }) => type === "best_n_across_pools") && !policy.normalization)
+      warnings.push({ code: "INCOMPLETE_EDGE", message: "Unequal pools require an explicit cross-pool normalization policy." });
+    if (destination && policy.outputCount !== destination.targetEntrants)
+      warnings.push({ code: "INVALID_EDGE", message: `This edge supplies ${policy.outputCount} entrants but its destination requires ${destination.targetEntrants}.` });
+    if (warnings.length === 0) warnings.push({ code: "CONSEQUENTIAL_EDGE", message:
+      `Routes ${policy.outputCount} entrants; changing it requires a fresh compiler, Run Assurance and Guard result.` });
+    return {
+      id: policy.id, sourceStageId: policy.sourceStageId, destinationStructureId: policy.destinationStructureId,
+      destinationStageIds: destination?.stageIds ?? [], outputCount: policy.outputCount,
+      selectorSummary: selectorSummary(policy.selectors), normalization: policy.normalization ?? null, warnings,
+    };
+  });
+  return { definitionAvailable: true, nodes, edges, unavailableReason: null };
+}
+
+function countDefinitionContests(definition: TournamentDefinition): number {
+  return definition.stages.reduce((total, stage) => {
+    const pool = stage.pool;
+    if (pool) return total + pool.sizes.reduce((sum, size) => sum + size * (size - 1) / 2 * pool.rounds, 0);
+    if (stage.bracket) return total + Math.max(0, stage.bracket.entrantCount - 1);
+    return total;
+  }, 0);
+}
+
+function reviewStructuredEdit(workbench: CompetitionWorkbenchProjection, preview: StructuredWorkbenchEditPreview,
+  createdAt: string): StructuredEditReview {
+  const source: CreationSource = { mode: "quick", value: { kind: "structured-organiser-edit-preview", edits: preview.edits } };
+  const candidate = applyWorkbenchEdit(workbench, preview, workbenchSourceDocument(source, createdAt));
+  const definition = definitionFromProductionLock(candidate);
+  const affectedMatchCount = definition ? countDefinitionContests(definition) : null;
+  const affectedQualificationCount = definition?.qualificationPolicies.length ?? null;
+  const available = definition !== null;
+  return {
+    changedDecisionIds: preview.edits.map(({ id }) => id).sort(),
+    unchangedDecisionIds: workbench.assumptions.map(({ id }) => id).filter((id) => !preview.edits.some((edit) => edit.id === id)).sort(),
+    affectedMatchCount,
+    affectedQualificationCount,
+    assurance: available
+      ? { status: "PENDING_EXACT_COMPILE", message: "The exact candidate must now be compiled for independent Run Assurance." }
+      : { status: "UNAVAILABLE", message: "The candidate definition remains incomplete; Run Assurance cannot be claimed." },
+    guard: available
+      ? { status: "PENDING_EXACT_COMPILE", message: "Guard runs only against the exact compiled candidate, never this browser proposal." }
+      : { status: "UNAVAILABLE", message: "Guard is unavailable until an exact complete candidate exists." },
+    publication: { possible: false, reason: available
+      ? "Not yet: record this reviewed proposal, compile the exact revision, then pass Run Assurance and Guard before publication."
+      : "No: the proposed definition is incomplete and cannot enter publication review." },
+  };
+}
+
 function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
   const compiled = record.compiled;
   const workbench = record.workbench ?? analyseCompetitionSources(record.sources ?? [record.source], record.createdAt);
@@ -625,7 +737,9 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
   } : connectedBlueprintFromWorkbench(record.proposal.blueprint, workbench);
   const previewDefinition = definitionFromProductionLock(workbench)
     ?? definitionFromConnectedBlueprint(effectiveBlueprint, record.sources ?? [record.source])
-    ?? (record.supportFindings.length === 0 ? playAndKonnectDefinition : null);
+    ?? (record.supportFindings.length === 0 && workbench.missingDecisions.length === 0
+      && workbench.conflicts.length === 0 && !workbench.unsupportedSemantics.some(({ blocking }) => blocking)
+      ? playAndKonnectDefinition : null);
   return {
     apiVersion: "1.0",
     id: record.id,
@@ -644,6 +758,8 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
     assumptions: (compiled?.spec.assumptions ?? previewDefinition?.assumptions ?? []).map(({ id, rulePath, origin, knowledge, approved, critical }) =>
       ({ id, rulePath, origin, knowledge, approved, critical })),
     requirements: compiled?.spec.requirements ?? previewDefinition?.requirements ?? [],
+    structureMap: structureMapFor(compiled?.spec ?? previewDefinition,
+      previewDefinition || compiled ? null : "The canonical definition is incomplete; resolve the listed design decisions before its structure can be derived."),
     compiled: compiled ? {
       revision: compiled.revision,
       compiledAt: compiled.compiledAt,
@@ -865,7 +981,8 @@ export class CompetitionJourney {
     if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
     if (current.approval) throw new Error("approved_revision_is_immutable");
     const workbench = current.workbench ?? analyseCompetitionSources(current.sources ?? [current.source], current.createdAt);
-    return planWorkbenchEdit(workbench, expectedDraftVersion, edits, editedBy);
+    const preview = planWorkbenchEdit(workbench, expectedDraftVersion, edits, editedBy);
+    return { ...preview, review: reviewStructuredEdit(workbench, preview, current.createdAt) };
   }
 
   public applyStructuredEdit(id: string, expectedDraftVersion: number, edits: readonly StructuredWorkbenchEdit[],

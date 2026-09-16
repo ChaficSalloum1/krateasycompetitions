@@ -66,6 +66,18 @@ export interface StructuredWorkbenchEditPreview {
   readonly semanticDiff: readonly SemanticChange[];
   readonly operationalImpact: readonly string[];
   readonly previewHash: string;
+  /** Added by CompetitionJourney after it derives the candidate definition. */
+  readonly review?: StructuredEditReview;
+}
+
+export interface StructuredEditReview {
+  readonly changedDecisionIds: readonly string[];
+  readonly unchangedDecisionIds: readonly string[];
+  readonly affectedMatchCount: number | null;
+  readonly affectedQualificationCount: number | null;
+  readonly assurance: { readonly status: "PENDING_EXACT_COMPILE" | "UNAVAILABLE"; readonly message: string };
+  readonly guard: { readonly status: "PENDING_EXACT_COMPILE" | "UNAVAILABLE"; readonly message: string };
+  readonly publication: { readonly possible: false; readonly reason: string };
 }
 
 const registeredDecisionValues: Readonly<Record<string, (value: string) => boolean>> = {

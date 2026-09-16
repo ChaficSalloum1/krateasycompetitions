@@ -129,6 +129,41 @@ test("structured edits fail closed on unregistered policy values and a changed p
   assert.equal(journey.read(draft.id)?.draftVersion, draft.draftVersion);
 });
 
+test("Structure Map and its hash-bound proposal are server-derived, stale-safe, and replay-safe", () => {
+  const journey = new CompetitionJourney({ now: () => "2026-09-14T10:00:00.000Z" });
+  const draft = journey.create({ mode: "json", text: fixture }, "st-albans.organiser");
+  assert.equal(draft.structureMap.definitionAvailable, false);
+  assert.match(draft.structureMap.unavailableReason ?? "", /incomplete/i);
+
+  const preview = journey.planStructuredEdit(draft.id, draft.draftVersion, decisions, "st-albans.organiser");
+  assert.equal(preview.review?.affectedMatchCount, 108);
+  assert.equal(preview.review?.affectedQualificationCount, 6);
+  assert.equal(preview.review?.assurance.status, "PENDING_EXACT_COMPILE");
+  assert.equal(preview.review?.guard.status, "PENDING_EXACT_COMPILE");
+  assert.equal(preview.review?.publication.possible, false);
+  assert.throws(() => journey.applyStructuredEdit(draft.id, draft.draftVersion, decisions,
+    "f".repeat(64), "st-albans.organiser"), /structured_edit_preview_mismatch/);
+  assert.equal(journey.read(draft.id)?.draftVersion, draft.draftVersion, "forgery must not mutate");
+
+  const applied = journey.applyStructuredEdit(draft.id, draft.draftVersion, decisions, preview.previewHash, "st-albans.organiser");
+  assert.equal(applied.structureMap.definitionAvailable, true);
+  assert.equal(applied.structureMap.nodes.filter(({ kind }) => kind === "POOL").length, 3);
+  assert.equal(applied.structureMap.edges.length, 6);
+  assert.equal(applied.structureMap.edges.every(({ warnings }) => warnings.some(({ code }) => code === "CONSEQUENTIAL_EDGE")), true);
+  assert.throws(() => journey.applyStructuredEdit(draft.id, draft.draftVersion, decisions,
+    preview.previewHash, "st-albans.organiser"), /journey_version_conflict/);
+  assert.throws(() => journey.planStructuredEdit(draft.id, draft.draftVersion, decisions, "st-albans.organiser"),
+    /journey_version_conflict/);
+
+  const compiled = journey.compile(applied.id, applied.draftVersion);
+  assert.equal(compiled.compiled?.guardStatus, "PASSED");
+  const published = journey.approve(compiled.id, compiled.revision, "separate.approver",
+    compiled.compiled?.requiredAcknowledgementCodes ?? []);
+  assert.equal(published.status, "PUBLISHED");
+  assert.throws(() => journey.applyStructuredEdit(published.id, published.draftVersion, decisions,
+    preview.previewHash, "st-albans.organiser"), /approved_revision_is_immutable/);
+});
+
 test("golden compilation is deterministic and never trusts forged source audit claims", () => {
   const value = JSON.parse(fixture) as { audit: Array<{ pass: boolean; detail: string }> };
   value.audit = value.audit.map((claim) => ({ ...claim, pass: true, detail: "client says this passed" }));
