@@ -54,7 +54,7 @@ test("dynamic status and dense information have explicit names and announcements
   assert.match(playerHtml, /<time[^>]*id="next-time"/);
   assert.match(playerHtml, /aria-labelledby="proof-title"/);
   assert.match(runControlHtml, /role="status"[^>]*aria-live="polite"[^>]*aria-atomic="true"/);
-  assert.match(runControlHtml, /aria-labelledby="participants-title"/);
+  assert.match(runControlHtml, /aria-labelledby="attention-title"/);
   assert.match(runControlHtml, /aria-labelledby="change-review-title"/);
   assert.match(venueDisplayHtml, /aria-labelledby="matches-title"/);
   assert.match(venueDisplayHtml, /aria-live="off"/);

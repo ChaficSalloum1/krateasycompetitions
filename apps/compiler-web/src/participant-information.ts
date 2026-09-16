@@ -119,6 +119,23 @@ export interface OrganiserLiveProjection {
     readonly revision: number;
     readonly projectionHash: string;
   }[];
+  /** Staff-only control data. These IDs are the live runtime's fixture sides, never a name lookup. */
+  readonly controlContests: readonly {
+    readonly contestId: string;
+    readonly courtId: string;
+    readonly scheduledStart: string;
+    readonly status: PublicLiveContestProjection["status"];
+    readonly sidesResolved: boolean;
+    readonly sides: readonly { readonly entrantId: string; readonly displayName: string }[];
+  }[];
+  /** Existing runtime control-room queues, projected for the Run Control surface. */
+  readonly attention: readonly {
+    readonly kind: "NOW" | "NEXT" | "LATE" | "BLOCKED" | "NEEDS_ATTENTION";
+    readonly contestId: string;
+    readonly courtId: string;
+    readonly scheduledStart: string;
+    readonly reasons: readonly string[];
+  }[];
   readonly deliveryEvidence: readonly {
     readonly messageId: string;
     readonly recipientParticipantId: string;

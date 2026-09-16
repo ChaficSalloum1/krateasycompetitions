@@ -31,6 +31,7 @@ import {
   type OutboxDeliveryStore,
   type OutboxMessage,
   runAuthoritativeRestoreDrill,
+  deriveLiveControlRoom,
 } from "@tournament-os/competition-engine";
 import {
   createCompetitionProposal,
@@ -1719,6 +1720,31 @@ export class CompetitionJourney {
         projectionHash: projection.projectionHash };
     });
     const publicProjection = this.readPublicLive(input);
+    const publicContests = new Map(publicProjection.contests.map((contest) => [contest.contestId, contest]));
+    const controlContests = live.state.definition.contests.map((contest) => {
+      const publicContest = publicContests.get(contest.contestId);
+      if (!publicContest) throw new Error("organiser_control_contest_missing_public_projection");
+      const resolved = live.state.resolvedEntrants[contest.contestId] ?? [];
+      return { contestId: contest.contestId,
+        courtId: live.state.contests[contest.contestId]?.actualCourtId ?? contest.courtId,
+        scheduledStart: contest.scheduledStart,
+        status: publicContest.status,
+        sidesResolved: resolved.length === 2,
+        sides: resolved.map((entrantId) => ({ entrantId,
+          displayName: participantNames[entrantId] ?? entrantId })) };
+    }).filter(({ sidesResolved }) => sidesResolved);
+    const controlRoom = deriveLiveControlRoom(live.state, input.at);
+    const attention = [
+      ...controlRoom.now.map((row) => ({ kind: "NOW" as const, ...row, reasons: [] })),
+      ...controlRoom.next.map((row) => ({ kind: "NEXT" as const, ...row, reasons: [] })),
+      ...controlRoom.late.map((row) => ({ kind: "LATE" as const, ...row,
+        reasons: [`${row.minutesLate} minutes late`] })),
+      ...controlRoom.blocked.map((row) => ({ kind: "BLOCKED" as const, contestId: row.contestId,
+        courtId: row.courtId, scheduledStart: row.scheduledStart,
+        reasons: row.reasons.map((reason) => `${reason.code}: ${reason.subjectIds.join(", ")}`) })),
+      ...controlRoom.unreported.map((row) => ({ kind: "NEEDS_ATTENTION" as const, ...row,
+        reasons: ["Result receipt is missing"] })),
+    ];
     const deliveryEvidence = live.delivery.map((message) => ({ messageId: message.id,
       recipientParticipantId: String((message.payload as Record<string, unknown>).recipientEntrantId ?? ""),
       status: message.status, attempts: message.attempts,
@@ -1734,7 +1760,8 @@ export class CompetitionJourney {
     const body = { apiVersion: "1.0" as const, organizationId: input.organizationId,
       public: publicProjection, liveVersion: live.state.version, stateProofHash: live.state.proofHash,
       authorityAssignments: live.operations.authorityAssignments, incidents: live.operations.incidents,
-      restartClearances: live.operations.restartClearances, participants, deliveryEvidence, accessEvidence };
+      restartClearances: live.operations.restartClearances, participants, controlContests, attention,
+      deliveryEvidence, accessEvidence };
     return { ...body, projectionHash: canonicalHash(body) };
   }
 

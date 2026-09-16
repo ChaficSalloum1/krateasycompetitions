@@ -152,6 +152,22 @@ test("live command replay is idempotent and the connected boundary rejects privi
     commandId: "bypass", expectedVersion: 1 }, "server.actor", now), /invalid_live_command/);
 });
 
+test("Run Control projection exposes only runtime-owned fixture sides and attention queues", () => {
+  const journey = new CompetitionJourney({ now: () => now });
+  const base = published(journey);
+  const active = journey.activateLive(base.id, base.revision, "operator.lead");
+  const projection = journey.readOrganiserLive({ organizationId: "org.local", competitionId: base.id,
+    expectedOperationalRevision: base.revision, at: now });
+  const fixture = active.live!.state.definition.contests.find(({ contestId }) =>
+    active.live!.state.resolvedEntrants[contestId]?.length === 2)!;
+  const control = projection.controlContests.find(({ contestId }) => contestId === fixture.contestId)!;
+  assert.deepEqual(control.sides.map(({ entrantId }) => entrantId), active.live!.state.resolvedEntrants[fixture.contestId],
+    "score and walkover controls must bind to the live definition, never matching labels");
+  assert.ok(projection.attention.some(({ kind }) => kind === "NEXT") || projection.attention.some(({ kind }) => kind === "BLOCKED"));
+  assert.throws(() => journey.readOrganiserLive({ organizationId: "other-org", competitionId: base.id,
+    expectedOperationalRevision: base.revision, at: now }), /journey_not_found/);
+});
+
 test("restart independently rejects a re-hashed envelope with a forged live event", () => {
   const directory = mkdtempSync(join(tmpdir(), "krateasy-live-replay-firewall-"));
   const storagePath = join(directory, "journey.json");
