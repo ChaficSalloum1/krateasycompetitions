@@ -1,120 +1,163 @@
-# TournamentOS Jobs-to-be-Done Product Lens
+# Krateasy Competitions Product-System Lens
 
-## 1. Prove a proposed format is runnable
+**Status:** Product-system authority for customer experience, surface placement and feature admission
+**Date:** 16 September 2026
+**Companion authorities:** [`PRD-Krateasy-Competitions-Execution-Control.md`](../PRD-Krateasy-Competitions-Execution-Control.md), [`PILOT-CRITICAL-EXECUTION-PLAN.md`](../PILOT-CRITICAL-EXECUTION-PLAN.md), and [`requirements-traceability.md`](./requirements-traceability.md)
 
-When I receive a tournament idea expressed in informal language, I want every
-rule, assumption, and missing decision made visible, so I can approve a format
-without discovering contradictions during the event.
+## 1. One product, one truth
 
-Acceptance criteria:
+**Krateasy Competitions** is the product. It helps an organiser turn imperfect event information into a competition they can understand, publish, run, recover and defend.
 
-1. Every meaningful source clause has a coverage status.
-2. Critical defaults require traceable, approved provenance.
-3. Type and cardinality errors appear before scheduling.
-4. Unsupported constructs remain unresolved instead of being approximated.
-5. The organiser can inspect simple, detailed, and technical rule views.
-6. Certification states facts proved, never a confidence percentage.
+**TournamentOS** is the internal deterministic competition core. It is not a separate customer product, a second organiser workflow, or an alternative source of truth.
 
-## 2. Compare viable alternatives under real constraints
+The product promise is:
 
-When venue capacity or event rules change, I want to compare the exact impact of
-each option, so I can make a defensible tradeoff without corrupting the approved
-plan.
+> Describe or import the competition. Krateasy makes the rules explicit, proves the plan is runnable, publishes one trustworthy version, and helps the organiser recover when reality changes.
 
-Acceptance criteria:
+AI may interpret, suggest and explain. It never decides standings, qualification, schedule legality, Guard certification or publication. Those remain deterministic and independently verifiable.
 
-1. Changes create a proposed immutable revision.
-2. Semantic diff identifies every affected formal path.
-3. Unaffected rules are explicitly preserved.
-4. Each scenario uses the production competition and scheduling engine.
-5. Feasibility, finish time, participation, and policy violations are compared.
-6. No repair or scenario becomes active without approval.
+## 2. The only lifecycle
 
-## 3. Build a fair draw that can be defended
+```text
+Sources and organiser decisions
+        ↓
+Competition Design
+        ↓
+Certified Plan
+        ↓
+Published Promise
+        ↓
+Live Operation
+        ↓
+Closed Evidence Record
+        ↓
+Clean Edition for the next competition
+```
 
-When qualifiers become known, I want earned protection and rematch preferences
-applied deterministically, so I can explain the draw to participants.
+The technical layers remain distinct:
 
-Acceptance criteria:
+| Product language | Technical authority | May change it |
+|---|---|---|
+| Competition Design | Canonical `TournamentDefinition` / compiled `TournamentSpec`, source provenance and approved decisions | Organiser proposal, then approval |
+| Certified Plan | Graph, draw, schedule, simulation and independent Run Assurance evidence | Compiler; Guard validates |
+| Published Promise | Exact approved artefact set and publication certificate | Guarded atomic publication only |
+| Live Operation | Operational revisions, assignments, incidents and actual results | Strict server-owned commands and approved repairs |
+| Closed Evidence Record | Close certificate, replay, export and restore bundle | Guarded close/restore workflow |
 
-1. Qualification, seeding, topology, placement, and scheduling remain separate.
-2. Every qualifier carries standings and tiebreak evidence.
-3. Byes are assigned according to declared protection priority.
-4. Candidate placements and unavoidable conflicts are reported.
-5. Random draws store algorithm, seed, input, and output.
-6. Replaying the same inputs produces the same draw and proof hash.
+Do not introduce another competition model named “Blueprint.” The existing source-intake `CompetitionBlueprint` is a bounded input DTO; the canonical definition remains `TournamentDefinition` / `TournamentSpec`.
 
-## 4. Keep the event moving when reality changes
+## 3. The five north-star jobs
 
-When a court closes, a player withdraws, or a match overruns, I want safe repair
-options based on current truth, so I can recover quickly without creating illegal
-participant paths.
+### J1 — Make my event runnable
 
-Acceptance criteria:
+**When** I have registrations, venue facts, rules and preferences in several formats, **I want** Krateasy to turn them into one editable Competition Design, **so I can** create a complete competition without modelling brackets or schedules manually.
 
-1. Definition, approved plan, operational expectation, and actual results remain distinct.
-2. Live commands pass through the invariant firewall.
-3. Existing results are never silently overwritten.
-4. Partial rescheduling respects completed matches and explicit locks.
-5. Repairs show affected participants and downstream matches.
-6. Every operational decision is replayable from the audit log.
+Success means sources, conflicts, missing decisions, assumptions and provenance are visible; the organiser can edit the design; and unsupported semantics stay unresolved rather than being guessed.
 
-## 5. Understand any consequential decision
+### J2 — Approve a plan I can defend
 
-When someone challenges a qualifier, court assignment, or start time, I want an
-exact derivation and counterfactual explanation, so I can answer with evidence
-rather than intuition.
+**When** Krateasy proposes pools, qualification, brackets and a schedule, **I want** to understand the proof, trade-offs and consequences, **so I can** publish a plan without discovering a contradiction during the event.
 
-Acceptance criteria:
+Success means the Run Assurance report independently verifies structure, qualification, bracket paths, contest accounting, capacity and scheduling; semantic/operational diffs are visible; and publication requires a fresh Guard decision.
 
-1. Objects link to their source rule and version.
-2. Qualification shows comparison set, values, and tie-resolution path.
-3. Scheduling explains dependencies, rest, availability, and resource conflicts.
-4. “Why not?” returns every blocking hard constraint and earliest legal time.
-5. Failed requirements include a concrete counterexample path.
-6. Proof objects are machine-readable and hash-verifiable.
+### J3 — Keep the event moving
 
-## 6. Operate from the right device without changing truth
+**When** the competition is live, **I want** one operational view of what needs attention, **so I can** check in people, run contests and record results without conflicting versions of the event.
 
-When I move between planning at a Mac, managing courts on an iPad, and responding
-on an iPhone, I want each device to support the job appropriate to its context,
-so I can stay effective without fragmented state.
+Success means the control room, participant `/next`, public display and Mac client read the same published and operational heads; commands are idempotent, permissioned and replayable; and proof is available without obscuring the next action.
 
-Acceptance criteria:
+### J4 — Recover safely when reality changes
 
-1. All clients consume the same versioned API and certification objects.
-2. Mac and iPad provide dense graph, table, timeline, and inspector workspaces.
-3. iPhone prioritises check-in, next actions, score entry, alerts, and quick explanations.
-4. Navigation adapts without hiding the current tournament or validation state.
-5. Offline actions are queued, conflict-checked, and visibly reconciled.
-6. Accessibility and keyboard operation are tested as release gates.
+**When** a pair withdraws, a court closes, a match overruns or a score is corrected, **I want** safe, explained repair options, **so I can** preserve known truth and recover without creating an illegal competition.
 
-## 7. Reproduce and audit the tournament later
+Success means completed and in-progress truth is preserved; impact and affected people are explicit; repairs are deterministic candidates, not AI assertions; the relevant Run Assurance checks re-run; and a separately approved revision is the only way to change live public truth.
 
-When a dispute or operational review happens after the event, I want to replay the
-exact rules, random choices, schedule, and commands, so I can establish what the
-system knew and why it acted.
+### J5 — Finish, explain and repeat
 
-Acceptance criteria:
+**When** the event ends or a decision is challenged, **I want** a complete evidence record and a clean next edition, **so I can** close the event confidently, audit it later and reuse the work.
 
-1. Specs, rulesets, adapters, compiler, and solver versions are pinned.
-2. Revisions and results are append-only and linked by hashes.
-3. Random choices use stored seeds and algorithms.
-4. Event replay reconstructs the same state and proof hashes.
-5. Corrections remain separate from original facts.
-6. Export contains a human report and machine certification bundle.
+Success means every required contest has a governed terminal state, results and advancement replay from source facts, exports are verifiable, restore is proven, and duplication starts a new clean design rather than copying live history.
 
-## 8. Extend the system without weakening safety
+Participant `/next` is the customer promise generated by J3 and J4; it is not a separate competition model.
 
-When a new sport or unusual format is requested, I want a registered deterministic
-extension boundary, so the system can grow without executing arbitrary rules or
-adding product-specific branches.
+## 4. Product surfaces, not feature islands
 
-Acceptance criteria:
+There are four primary surfaces. Every customer-facing feature belongs to one of them.
 
-1. Capability is classified as native, composable, extension-required, or unsupported.
-2. Extensions declare immutable identifiers, versions, inputs, and outputs.
-3. No imported prose becomes executable code.
-4. New metrics and transitions are pure and deterministic.
-5. Conformance, property, replay, and mutation tests are mandatory.
-6. Generic engine packages contain no event-name branches.
+| Surface | Primary jobs | What it contains | What it must not become |
+|---|---|---|---|
+| **Organiser Studio** | J1, J2 | Sources, Design, Structure Map, Scenario comparison, Publish Review | A raw engine console or a second competition truth |
+| **Run Control** | J3, J4 | Now/Next/Attention, score entry, incidents, Change Review and approval | A collection of administrative pages or an unguarded edit tool |
+| **Participant and public web** | J3, J4 | Personal next action, venue display and privacy-minimal recovery | An organiser aggregate view or an unversioned schedule |
+| **Close and Integrity Receipt** | J5 | Close review, evidence, replay, export, restore and clean duplication | A marketing claim detached from the actual event history |
+
+The Mac is a resilient professional client of these same surfaces: dense Studio/Run Control when connected, signed offline truth and a durable command journal when disconnected. It is not a second product.
+
+Structure Map, Scenario Lab, Publish Review and Change Review are contextual modes inside Studio or Run Control. They are not separate applications or top-level navigation silos.
+
+## 5. System-design contract
+
+```text
+Untrusted sources / organiser edits / AI interpretation
+                    ↓
+          Competition Design proposal
+                    ↓
+    Compiler and scheduler create candidate artefacts
+                    ↓
+ Run Assurance independently derives evidence and findings
+                    ↓
+ Guard applies the relevant policy at a protected command
+                    ↓
+  Atomic authoritative revision or explicit non-commit
+                    ↓
+ Live Runtime records operational and actual facts
+                    ↓
+ Run Assurance + Guard re-evaluate only the affected scope
+```
+
+Run Assurance is the user-facing proof capability. It includes definition, roster, pool, qualification, bracket, schedule, dependency, runtime, result, completion and historical assurance. The **Guard** is the enforcement kernel at mutation boundaries; it does not replace domain logic or silently repair an invalid state.
+
+Hard invariants, governed operational policies and optimisation preferences must always remain visibly separate:
+
+| Category | Example | Behaviour |
+|---|---|---|
+| Hard invariant | A possible participant cannot occupy two courts at once | Block; no override makes it valid |
+| Governed policy | Minimum rest or a fixed final court | May require named authority and an explicit non-standard revision where policy permits |
+| Optimisation preference | Earlier finish, fewer court moves, lower wait | Compare and explain; never masquerade as correctness |
+
+The detailed six-level Guard severity policy remains the technical authority. The product may present it as four clear decisions: **ready**, **review warning**, **approval required**, or **blocked**.
+
+## 6. Product-flexibility envelope
+
+The first product claim is deliberately narrow and evidence-based:
+
+- St Albans multi-division pools-to-Konnect/Tower event;
+- six-pair round robin; and
+- eight-pair single elimination.
+
+These prove that the same lifecycle is not a fixture-specific path. They do not authorise claims for Swiss, double elimination, arbitrary sport semantics, individuals or team journeys unless a registered policy and connected end-to-end evidence exists.
+
+Examples in product copy are illustrative only. Event counts, duration policies and names always derive from the selected Competition Design; they must never become hard-coded product assumptions.
+
+## 7. Feature-admission rule
+
+A feature may enter the pilot only if its owner can answer all four questions:
+
+1. Which of J1–J5 does it improve?
+2. Which lifecycle state does it read or change?
+3. Which authoritative revision, command or event gives it truth?
+4. Which of the four product surfaces contains it?
+
+If any answer is unclear, the work is deferred, moved to an advanced/reference surface, or first resolved through a product/architecture decision record. No feature enters merely because the engine can support it.
+
+## 8. Delivery focus after the connected system
+
+The remaining pilot work is primarily operational rather than compiler breadth:
+
+1. make real provider failure trigger the declared fallback;
+2. complete emergency, disconnect and paper-to-restored-system rehearsals with named staff;
+3. complete named assistive-technology, print and outdoor/mobile inspection;
+4. document support ownership, limitations and rollback; and
+5. obtain the independent human approvals required by the release authority.
+
+The implementation plan owns those gates. The traceability ledger remains the evidence source. This document prevents either from turning the product into a collection of disconnected capabilities.

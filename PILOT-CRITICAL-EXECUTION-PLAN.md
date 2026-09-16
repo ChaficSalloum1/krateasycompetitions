@@ -12,6 +12,19 @@ This document remains the version-controlled authority for the St Albans deploym
 
 The current product-flexibility gate is St Albans plus a six-pair round robin and an eight-pair single-elimination competition. These are evidence envelopes, not hard-coded product templates. Passing them does not authorise claims for Swiss, double elimination, other sports or any semantics without a connected registered policy and executable proof.
 
+### Product-composition gate
+
+The connected implementation is admitted to the pilot only as **Krateasy Competitions**, not as a collection of compiler capabilities. [`docs/jobs-to-be-done.md`](./docs/jobs-to-be-done.md) governs this gate.
+
+Every active pilot item must identify:
+
+1. one of the five organiser jobs: make the event runnable, approve a defensible plan, keep the event moving, recover safely, or finish/explain/repeat;
+2. one lifecycle state: Competition Design, Certified Plan, Published Promise, Live Operation, or Closed Evidence Record;
+3. one authoritative revision/command/event boundary; and
+4. one primary surface: Organiser Studio, Run Control, participant/public web, or Close & Integrity Receipt.
+
+Advanced, reference and demo capabilities remain explicitly isolated. No new engine, competition model, surface or feature island may enter the pilot without satisfying this rule.
+
 ## 1. Pilot definition
 
 “Pilot-ready” means a trained organiser can run a controlled real event with a documented manual fallback. It does not mean every preserved multi-sport, league, federation or commercial capability is productised.
@@ -105,7 +118,7 @@ Use two-week sprints as planning boxes, not promises. Re-estimate after each exi
 A story enters a sprint only when it has:
 
 1. A stable requirement ID from `docs/requirements-traceability.md`.
-2. A named user job and owning surface.
+2. A named user job, lifecycle state and owning primary surface, as defined in `docs/jobs-to-be-done.md`.
 3. Exact authoritative input, command and event boundaries.
 4. Acceptance criteria for normal, invalid, stale, duplicate, offline and recovery states as applicable.
 5. Dependencies and migration impact identified.

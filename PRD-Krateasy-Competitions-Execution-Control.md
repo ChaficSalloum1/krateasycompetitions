@@ -47,6 +47,17 @@ The correction is not a new product or engine. It is one connected application j
 - The Mac app is an optional professional/offline client of the same competition truth. It is not a separate product or engine.
 - “Universe” remains an architectural concept. In customer language it is an isolated organisation workspace.
 
+### 3.3.1 Product-system lens
+
+[`docs/jobs-to-be-done.md`](./docs/jobs-to-be-done.md) is the authority for the customer jobs, lifecycle language, surface placement and feature-admission rule. It does not replace the canonical schema, compiler, Guard or runtime; it makes their product relationship explicit:
+
+```text
+Sources and organiser decisions → Competition Design → Certified Plan
+→ Published Promise → Live Operation → Closed Evidence Record → Clean next edition
+```
+
+Krateasy Competitions has four primary surfaces: Organiser Studio, Run Control, participant/public web, and Close & Integrity Receipt. Structure Map, Scenario Lab, Publish Review and Change Review are modes within those surfaces, never separate products. TournamentOS remains the internal deterministic core.
+
 ### 3.4 Authoritative source set
 
 The main implementation task must read these sources. This PRD does not replace their detail.
@@ -81,6 +92,8 @@ Use these terms consistently:
 - **Competition:** one tournament, league, cup, ladder, heat programme, or other governed competition and its revisions.
 - **Organisation workspace:** one strongly isolated owner of clubs, people, places, competitions, formats, settings, and history.
 - **Existing competition core:** the shared deterministic implementation. Do not introduce a second “TournamentOS engine.”
+- **Competition Design:** the organiser-visible, editable representation of sources, decisions and formal competition definition. The canonical technical definition remains `TournamentDefinition` / `TournamentSpec`; do not introduce another parallel blueprint model.
+- **Run Assurance:** the independently derived evidence that a definition, plan or live state is coherent and executable.
 - **Guard:** the independent deterministic correctness boundary.
 - **Proposal:** never authoritative.
 - **Approved revision:** reviewed and authorised, but not necessarily published.
@@ -493,4 +506,3 @@ These assumptions must not become irreversible platform work before observation 
 Send the path to this PRD, not the contents of several competing prompts. Use this message:
 
 > Read `/Users/chaficsalloum/Documents/ChatGPT/Krateasy Tournaments Compiler/PRD-Krateasy-Competitions-Execution-Control.md` first, then read every authoritative source A1–A9 listed inside it. Continue in the existing implementation repository; do not create another product, engine or parallel rewrite. Before further feature expansion, create the decomposed requirements traceability matrix and audit the runtime implementation against it. Preserve the original compiler, Guard, safeguards, multi-sport/format, leagues/seasons and organisation-workspace capability set. Use the Jobs × Bier charter to simplify and sequence the customer experience, not to delete technical scope. Then implement the first missing vertical slice needed for one newly created competition to complete the connected lifecycle under one identity and revision chain. Report conflicts rather than resolving them silently.
-
