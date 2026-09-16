@@ -99,6 +99,10 @@ for (const fixture of fixtures) test(`${fixture.name} uses the same authoritativ
     const preview = journey.planStructuredEdit(draft.id, draft.draftVersion,
       [{ id: "event-name", value: `${fixture.name} — reviewed` }], "organiser.author");
     assert.ok(preview.semanticDiff.some(({ path }) => path === "/identity/name"));
+    assert.deepEqual(preview.review?.matchCount,
+      { before: expectedContests, after: expectedContests, delta: 0, unavailableReason: null });
+    assert.deepEqual(preview.review?.qualificationCount,
+      { before: 0, after: 0, delta: 0, unavailableReason: null });
     const reviewed = journey.applyStructuredEdit(draft.id, draft.draftVersion,
       [{ id: "event-name", value: `${fixture.name} — reviewed` }], preview.previewHash, "organiser.author");
     assert.equal(reviewed.name, `${fixture.name} — reviewed`);

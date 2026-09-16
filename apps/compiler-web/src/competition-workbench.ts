@@ -73,11 +73,18 @@ export interface StructuredWorkbenchEditPreview {
 export interface StructuredEditReview {
   readonly changedDecisionIds: readonly string[];
   readonly unchangedDecisionIds: readonly string[];
-  readonly affectedMatchCount: number | null;
-  readonly affectedQualificationCount: number | null;
+  readonly matchCount: StructuredCountDelta;
+  readonly qualificationCount: StructuredCountDelta;
   readonly assurance: { readonly status: "PENDING_EXACT_COMPILE" | "UNAVAILABLE"; readonly message: string };
   readonly guard: { readonly status: "PENDING_EXACT_COMPILE" | "UNAVAILABLE"; readonly message: string };
   readonly publication: { readonly possible: false; readonly reason: string };
+}
+
+export interface StructuredCountDelta {
+  readonly before: number | null;
+  readonly after: number | null;
+  readonly delta: number | null;
+  readonly unavailableReason: string | null;
 }
 
 const registeredDecisionValues: Readonly<Record<string, (value: string) => boolean>> = {

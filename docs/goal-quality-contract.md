@@ -88,11 +88,14 @@ tests where its invariant demands them.
 From the QA worktree, run:
 
 ```sh
-npm run qa:goal-gate -- --goal "Run Control incident safety" --baseline <pre-goal-commit> --rehearsal rehearse:run-control-options-browser
+npm run qa:goal-gate -- --goal "Run Control incident safety" --baseline <pre-goal-commit> --rehearsal rehearse:run-control-options-browser --artifact output/playwright/run-control-options-browser.json
 ```
 
 The gate runs repository checks, Apple checks, protocol model checking, and
-each supplied rehearsal. It writes a local JSON report under `output/qa/`.
+each supplied rehearsal. Every declared `--artifact` must be generated during
+that gate run: the gate accepts artifact paths only under `output/`, removes the
+prior ignored copy before running its checks/rehearsals, then embeds the newly
+generated parsed evidence and SHA-256 in the local JSON report under `output/qa/`.
 That report is review material; a release/pilot decision must additionally
 preserve the relevant durable evidence or CI artefact.
 

@@ -136,8 +136,14 @@ test("Structure Map and its hash-bound proposal are server-derived, stale-safe, 
   assert.match(draft.structureMap.unavailableReason ?? "", /incomplete/i);
 
   const preview = journey.planStructuredEdit(draft.id, draft.draftVersion, decisions, "st-albans.organiser");
-  assert.equal(preview.review?.affectedMatchCount, 108);
-  assert.equal(preview.review?.affectedQualificationCount, 6);
+  assert.deepEqual(preview.review?.matchCount, {
+    before: null, after: 108, delta: null,
+    unavailableReason: "The current canonical definition is incomplete, so the match-count delta cannot be derived.",
+  });
+  assert.deepEqual(preview.review?.qualificationCount, {
+    before: null, after: 6, delta: null,
+    unavailableReason: "The current canonical definition is incomplete, so the qualification-count delta cannot be derived.",
+  });
   assert.equal(preview.review?.assurance.status, "PENDING_EXACT_COMPILE");
   assert.equal(preview.review?.guard.status, "PENDING_EXACT_COMPILE");
   assert.equal(preview.review?.publication.possible, false);
@@ -162,6 +168,17 @@ test("Structure Map and its hash-bound proposal are server-derived, stale-safe, 
   assert.equal(published.status, "PUBLISHED");
   assert.throws(() => journey.applyStructuredEdit(published.id, published.draftVersion, decisions,
     preview.previewHash, "st-albans.organiser"), /approved_revision_is_immutable/);
+});
+
+test("structure review derives explicit zero deltas when both canonical definitions are available", () => {
+  const journey = new CompetitionJourney({ now: () => "2026-09-14T10:00:00.000Z" });
+  const draft = journey.create({ mode: "json", text: fixture }, "st-albans.organiser");
+  const initial = journey.planStructuredEdit(draft.id, draft.draftVersion, decisions, "st-albans.organiser");
+  const applied = journey.applyStructuredEdit(draft.id, draft.draftVersion, decisions, initial.previewHash, "st-albans.organiser");
+  const preview = journey.planStructuredEdit(applied.id, applied.draftVersion,
+    [{ id: "event-name", value: "St Albans reviewed edition" }], "st-albans.organiser");
+  assert.deepEqual(preview.review?.matchCount, { before: 108, after: 108, delta: 0, unavailableReason: null });
+  assert.deepEqual(preview.review?.qualificationCount, { before: 6, after: 6, delta: 0, unavailableReason: null });
 });
 
 test("golden compilation is deterministic and never trusts forged source audit claims", () => {

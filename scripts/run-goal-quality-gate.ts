@@ -3,9 +3,10 @@
  * product logic: each goal contributes focused rehearsal scripts while this
  * command records the repeatable shared checks and their exact seed/commit.
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -19,10 +20,11 @@ const goal = value("--goal");
 const baseline = value("--baseline");
 const seed = value("--seed") ?? "20260916";
 const rehearsals = values("--rehearsal");
+const artifactPaths = values("--artifact");
 const evidencePath = value("--evidence") ?? resolve(root, "output/qa/goal-quality-gate.json");
 
 if (!goal || !baseline) {
-  console.error("Usage: npm run qa:goal-gate -- --goal <name> --baseline <commit> [--seed <seed>] [--rehearsal <npm-script>]...");
+  console.error("Usage: npm run qa:goal-gate -- --goal <name> --baseline <commit> [--seed <seed>] [--rehearsal <npm-script>]... [--artifact <path>]...");
   process.exit(2);
 }
 
@@ -56,11 +58,38 @@ const checks: Array<[string, string, readonly string[]]> = [
 ];
 
 const results: Result[] = [];
+const retainedArtifacts: Array<{ path: string; sha256: string; evidence: unknown }> = [];
+const outputRoot = resolve(root, "output");
+const artifactTargets = artifactPaths.map((artifactPath) => {
+  const absolutePath = resolve(root, artifactPath);
+  if (!absolutePath.startsWith(`${outputRoot}${sep}`)) throw new Error(`artifact_path_outside_output:${artifactPath}`);
+  return { artifactPath, absolutePath };
+});
+for (const { absolutePath } of artifactTargets) {
+  try { await unlink(absolutePath); }
+  catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+  }
+}
+const artifactGenerationStartedAt = Date.now();
 for (const [label, command, commandArgs] of checks) {
   const result = await run(label, command, commandArgs);
   results.push(result);
   if (label === "clean working tree" && result.status === "PASSED" && result.output.trim()) {
     results[results.length - 1] = { ...result, status: "FAILED", output: result.output };
+  }
+}
+for (const { artifactPath, absolutePath } of artifactTargets) {
+  try {
+    const [raw, metadata] = await Promise.all([readFile(absolutePath, "utf8"), stat(absolutePath)]);
+    if (metadata.mtimeMs < artifactGenerationStartedAt) throw new Error("artifact_was_not_generated_by_this_gate");
+    const evidence = JSON.parse(raw) as unknown;
+    const sha256 = createHash("sha256").update(raw).digest("hex");
+    retainedArtifacts.push({ path: artifactPath, sha256, evidence });
+    results.push({ label: `artifact:${artifactPath}`, command: ["retain-artifact", artifactPath], status: "PASSED", output: sha256 });
+  } catch (error) {
+    results.push({ label: `artifact:${artifactPath}`, command: ["retain-artifact", artifactPath], status: "FAILED",
+      output: error instanceof Error ? error.message : String(error) });
   }
 }
 const head = await run("head", "git", ["rev-parse", "HEAD"]);
@@ -72,6 +101,7 @@ const report = {
   commit: head.output.trim(),
   seed,
   rehearsals,
+  retainedArtifacts,
   status: results.every(({ status }) => status === "PASSED") ? "PASSED" : "FAILED",
   results: results.map(({ label, command, status, output }) => ({ label, command, status, output })),
 };

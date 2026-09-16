@@ -656,7 +656,8 @@ function selectorSummary(selectors: TournamentDefinition["qualificationPolicies"
   }).join("; ");
 }
 
-function structureMapFor(definition: TournamentDefinition | null, unavailableReason: string | null): CompetitionStructureMap {
+export function projectCompetitionStructureMap(definition: TournamentDefinition | null,
+  unavailableReason: string | null): CompetitionStructureMap {
   if (!definition) return { definitionAvailable: false, nodes: [], edges: [], unavailableReason };
   const structures = new Map(definition.competitionStructures.map((structure) => [structure.id, structure]));
   const stages = new Map(definition.stages.map((stage) => [stage.id, stage]));
@@ -700,19 +701,47 @@ function countDefinitionContests(definition: TournamentDefinition): number {
   }, 0);
 }
 
+function countDelta(before: number | null, after: number | null, label: string) {
+  if (before !== null && after !== null) return { before, after, delta: after - before, unavailableReason: null };
+  const missing = before === null && after === null ? "current and proposed" : before === null ? "current" : "proposed";
+  return { before, after, delta: null,
+    unavailableReason: `The ${missing} canonical definition is incomplete, so the ${label} delta cannot be derived.` };
+}
+
+function canonicalDesignFor(blueprint: CompetitionBlueprint, workbench: CompetitionWorkbenchProjection,
+  sources: readonly CreationSource[], supportFindings: readonly string[]) {
+  const sourceParticipantCount = workbench.understoodFacts.find(({ id }) => id === "entrants.total")?.value;
+  const effectiveBlueprint: CompetitionBlueprint = isProductionLockWorkbench(workbench) && typeof sourceParticipantCount === "number" ? {
+    ...blueprint,
+    name: recognisedCompetitionName(workbench), sport: "padel", participantUnit: "pairs",
+    participantCount: sourceParticipantCount, resourceCount: 7, resourceLabel: "courts", format: "pools_to_knockout",
+    matchDurationMinutes: 30,
+  } : connectedBlueprintFromWorkbench(blueprint, workbench);
+  const definition = definitionFromProductionLock(workbench)
+    ?? definitionFromConnectedBlueprint(effectiveBlueprint, sources)
+    ?? (supportFindings.length === 0 && workbench.missingDecisions.length === 0
+      && workbench.conflicts.length === 0 && !workbench.unsupportedSemantics.some(({ blocking }) => blocking)
+      ? playAndKonnectDefinition : null);
+  return { effectiveBlueprint, definition };
+}
+
 function reviewStructuredEdit(workbench: CompetitionWorkbenchProjection, preview: StructuredWorkbenchEditPreview,
-  createdAt: string): StructuredEditReview {
+  createdAt: string, blueprint: CompetitionBlueprint, sources: readonly CreationSource[], supportFindings: readonly string[],
+  compiledDefinition: TournamentDefinition | null): StructuredEditReview {
   const source: CreationSource = { mode: "quick", value: { kind: "structured-organiser-edit-preview", edits: preview.edits } };
   const candidate = applyWorkbenchEdit(workbench, preview, workbenchSourceDocument(source, createdAt));
-  const definition = definitionFromProductionLock(candidate);
-  const affectedMatchCount = definition ? countDefinitionContests(definition) : null;
-  const affectedQualificationCount = definition?.qualificationPolicies.length ?? null;
-  const available = definition !== null;
+  const currentDefinition = compiledDefinition ?? canonicalDesignFor(blueprint, workbench, sources, supportFindings).definition;
+  const proposedDefinition = canonicalDesignFor(blueprint, candidate, [...sources, source], supportFindings).definition;
+  const currentMatchCount = currentDefinition ? countDefinitionContests(currentDefinition) : null;
+  const proposedMatchCount = proposedDefinition ? countDefinitionContests(proposedDefinition) : null;
+  const currentQualificationCount = currentDefinition?.qualificationPolicies.length ?? null;
+  const proposedQualificationCount = proposedDefinition?.qualificationPolicies.length ?? null;
+  const available = proposedDefinition !== null;
   return {
     changedDecisionIds: preview.edits.map(({ id }) => id).sort(),
     unchangedDecisionIds: workbench.assumptions.map(({ id }) => id).filter((id) => !preview.edits.some((edit) => edit.id === id)).sort(),
-    affectedMatchCount,
-    affectedQualificationCount,
+    matchCount: countDelta(currentMatchCount, proposedMatchCount, "match-count"),
+    qualificationCount: countDelta(currentQualificationCount, proposedQualificationCount, "qualification-count"),
     assurance: available
       ? { status: "PENDING_EXACT_COMPILE", message: "The exact candidate must now be compiled for independent Run Assurance." }
       : { status: "UNAVAILABLE", message: "The candidate definition remains incomplete; Run Assurance cannot be claimed." },
@@ -728,18 +757,8 @@ function reviewStructuredEdit(workbench: CompetitionWorkbenchProjection, preview
 function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
   const compiled = record.compiled;
   const workbench = record.workbench ?? analyseCompetitionSources(record.sources ?? [record.source], record.createdAt);
-  const sourceParticipantCount = workbench.understoodFacts.find(({ id }) => id === "entrants.total")?.value;
-  const effectiveBlueprint: CompetitionBlueprint = isProductionLockWorkbench(workbench) && typeof sourceParticipantCount === "number" ? {
-    ...record.proposal.blueprint,
-    name: recognisedCompetitionName(workbench), sport: "padel", participantUnit: "pairs",
-    participantCount: sourceParticipantCount, resourceCount: 7, resourceLabel: "courts", format: "pools_to_knockout",
-    matchDurationMinutes: 30,
-  } : connectedBlueprintFromWorkbench(record.proposal.blueprint, workbench);
-  const previewDefinition = definitionFromProductionLock(workbench)
-    ?? definitionFromConnectedBlueprint(effectiveBlueprint, record.sources ?? [record.source])
-    ?? (record.supportFindings.length === 0 && workbench.missingDecisions.length === 0
-      && workbench.conflicts.length === 0 && !workbench.unsupportedSemantics.some(({ blocking }) => blocking)
-      ? playAndKonnectDefinition : null);
+  const { effectiveBlueprint, definition: previewDefinition } = canonicalDesignFor(record.proposal.blueprint, workbench,
+    record.sources ?? [record.source], record.supportFindings);
   return {
     apiVersion: "1.0",
     id: record.id,
@@ -758,7 +777,7 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
     assumptions: (compiled?.spec.assumptions ?? previewDefinition?.assumptions ?? []).map(({ id, rulePath, origin, knowledge, approved, critical }) =>
       ({ id, rulePath, origin, knowledge, approved, critical })),
     requirements: compiled?.spec.requirements ?? previewDefinition?.requirements ?? [],
-    structureMap: structureMapFor(compiled?.spec ?? previewDefinition,
+    structureMap: projectCompetitionStructureMap(compiled?.spec ?? previewDefinition,
       previewDefinition || compiled ? null : "The canonical definition is incomplete; resolve the listed design decisions before its structure can be derived."),
     compiled: compiled ? {
       revision: compiled.revision,
@@ -982,7 +1001,8 @@ export class CompetitionJourney {
     if (current.approval) throw new Error("approved_revision_is_immutable");
     const workbench = current.workbench ?? analyseCompetitionSources(current.sources ?? [current.source], current.createdAt);
     const preview = planWorkbenchEdit(workbench, expectedDraftVersion, edits, editedBy);
-    return { ...preview, review: reviewStructuredEdit(workbench, preview, current.createdAt) };
+    return { ...preview, review: reviewStructuredEdit(workbench, preview, current.createdAt, current.proposal.blueprint,
+      current.sources ?? [current.source], current.supportFindings, current.compiled?.spec ?? null) };
   }
 
   public applyStructuredEdit(id: string, expectedDraftVersion: number, edits: readonly StructuredWorkbenchEdit[],

@@ -1,0 +1,17 @@
+[
+  {
+    "code": "INVALID_EDGE",
+    "edgeId": "advanced.qual.main",
+    "mutation": "OUTPUT_COUNT_MISMATCH"
+  },
+  {
+    "code": "INCOMPLETE_EDGE",
+    "edgeId": "intermediate.qual.main",
+    "mutation": "REMOVE_NORMALIZATION"
+  },
+  {
+    "code": "CONSEQUENTIAL_EDGE",
+    "edgeId": "beginner.qual.consolation",
+    "mutation": "NONE"
+  }
+]

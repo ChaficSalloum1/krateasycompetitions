@@ -10,6 +10,8 @@ The executable gate is `apps/compiler-web/src/pilot-release-readiness.ts`. It ve
 
 The connected software rehearsal is executable and green. The production provider, venue, human rehearsal, named accessibility inspection, support assignment, production persistence and final role approvals remain external facts. No person or acceptance record is invented in this repository.
 
+The Organiser Studio Structure Map closure remains local engineering evidence only. Its deterministic browser artifact records rendered stable node/edge identities, warning codes, before/after/delta review values, the exact preview hash and resulting guarded revision; the independent goal-gate report embeds that artifact and its SHA-256. This does not satisfy or alter any external authority gate below.
+
 ## Evidence attachment contract
 
 Each authority record must contain:
@@ -68,6 +70,12 @@ Run:
 ```sh
 npx tsc -b --pretty false
 node --import tsx --test apps/compiler-web/test/competition-close-journey.test.ts
+```
+
+For the bounded Structure Map engineering evidence, run from the independent QA worktree:
+
+```sh
+npm run qa:goal-gate -- --goal "Organiser Studio structure revision closure" --baseline 17fbbb7 --rehearsal rehearse:organiser-structure-map-browser --artifact output/playwright/organiser-structure-map-browser.json
 ```
 
 The golden test closes all 108 St Albans fixtures, exports and verifies the exact bundle, proves an empty manifest is blocked with every required owner/fallback, proves forged scope evidence remains blocked, proves input ordering cannot change the manifest, and demonstrates that only a complete fresh exact-scope acceptance set can produce `READY`.
