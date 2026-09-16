@@ -64,8 +64,9 @@ test("participant and public surfaces consume authoritative revision-scoped proj
 });
 
 test("Run Control keeps guarded Change Review inside the existing live-operation surface", () => {
-  for (const expected of ["Change Review", "no-show-preview", "no-show-approve", "expectedRevision", "expectedLiveVersion",
-    "proposalHash", "separately attributed director approval", "Nothing changed"]) assert.ok(runControlHtml.includes(expected));
+  for (const expected of ["Change Review", "no-show-preview", "no-show-approve", "court-outage-preview", "court-outage-approve",
+    "delay-preview", "delay-approve", "expectedRevision", "expectedLiveVersion", "proposalHash",
+    "separately attributed director approval", "Nothing changed"]) assert.ok(runControlHtml.includes(expected));
   assert.doesNotMatch(runControlHtml, /guardInput|simulation|schedule\s*:/i);
 });
 
