@@ -1099,10 +1099,12 @@ export class CompetitionJourney {
     const proposal = live.proposal;
     if (!proposal || proposal.proposalHash !== expectedProposalHash || !verifyNoShowProposal(proposal))
       throw new Error("no_show_proposal_mismatch");
+    if (typeof expectedOptionHash !== "string" || !expectedOptionHash.trim()) throw new Error("no_show_option_hash_required");
+    const option = proposal.options.find((candidate) => candidate.strategy === strategy && candidate.optionHash === expectedOptionHash);
+    if (!option) throw new Error("no_show_option_not_found");
     if (live.publication) {
       if (live.publication.proposalHash === proposal.proposalHash && live.publication.approvedBy === approvedBy
-        && proposal.options.some(({ strategy: candidate, optionHash }) => candidate === strategy
-          && optionHash === live.publication!.optionHash)) return snapshotOf(current);
+        && option.optionHash === live.publication.optionHash) return snapshotOf(current);
       throw new Error("live_revision_already_published");
     }
     if (live.state.proofHash !== proposal.baseLiveStateProofHash) throw new Error("stale_live_proposal");
@@ -1110,9 +1112,6 @@ export class CompetitionJourney {
     if (!Number.isFinite(Date.parse(approvedAt)) || new Date(Date.parse(approvedAt)).toISOString() !== approvedAt)
       throw new Error("invalid_no_show_approval_time");
     if (approvedAt < proposal.proposedAt) throw new Error("stale_no_show_approval_time");
-    if (typeof expectedOptionHash !== "string" || !expectedOptionHash.trim()) throw new Error("no_show_option_hash_required");
-    const option = proposal.options.find((candidate) => candidate.strategy === strategy && candidate.optionHash === expectedOptionHash);
-    if (!option) throw new Error("no_show_option_not_found");
     const compiled = current.compiled!;
     const artifacts = { spec: compiled.spec, graph: compiled.graph, schedule: compiled.schedule,
       ...(compiled.simulation ? { simulation: compiled.simulation } : {}) };

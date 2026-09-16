@@ -18,4 +18,8 @@ const contest = current.live!.state.definition.contests.find(({ contestId }) => 
 for (const entrantId of contest.entrantIds) current = journey.submitLiveCommand(published.id, 1, { kind: "CHECK_IN", entrantId, commandId: "browser.checkin." + entrantId, expectedVersion: current.live!.state.version, actorId: "operator.lead", occurredAt: at } as never);
 const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId, now: () => at });
 const port = Number(process.env.PORT ?? 4178);
-server.listen(port, "127.0.0.1", () => process.stdout.write(JSON.stringify({ organiserUrl: "http://127.0.0.1:" + port + "/attention?competition=" + encodeURIComponent(published.id) + "&revision=1", contestId: contest.contestId, entrantId: contest.entrantIds[0] }) + "\n"));
+server.listen(port, "127.0.0.1", () => {
+  const address = server.address();
+  const actualPort = typeof address === "object" && address ? address.port : port;
+  process.stdout.write(JSON.stringify({ organiserUrl: "http://127.0.0.1:" + actualPort + "/attention?competition=" + encodeURIComponent(published.id) + "&revision=1", contestId: contest.contestId, entrantId: contest.entrantIds[0] }) + "\n");
+});

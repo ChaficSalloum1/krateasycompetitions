@@ -106,6 +106,10 @@ test("a no-show preserves actual truth, Guards deterministic options, and publis
 
     const restarted = new CompetitionJourney({ storagePath });
     assert.deepEqual(restarted.read(base.id), repaired);
+    assert.throws(() => restarted.approveNoShow(base.id, base.revision, proposal.live!.proposal!.proposalHash,
+      undefined as unknown as string, "RELEASE_WALKOVER_SLOTS", "tournament.director", now), /no_show_option_hash_required/);
+    assert.throws(() => restarted.approveNoShow(base.id, base.revision, proposal.live!.proposal!.proposalHash,
+      "forged-option-hash", "RELEASE_WALKOVER_SLOTS", "tournament.director", now), /no_show_option_not_found/);
     assert.deepEqual(restarted.approveNoShow(base.id, base.revision, proposal.live!.proposal!.proposalHash,
       proposal.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "tournament.director", now), repaired, "approval replay must be idempotent");
   } finally {
@@ -224,6 +228,18 @@ test("the connected HTTP journey previews and separately approves a server-owned
     strategy: "RELEASE_WALKOVER_SLOTS" });
   assert.equal(approved.status, 200);
   assert.equal(approved.body.live.publication.revision, 2);
+  const replayMissing = await post(server, `${root}/no-show-approve`, { expectedRevision: base.revision,
+    expectedProposalHash: preview.body.live.proposal.proposalHash, strategy: "RELEASE_WALKOVER_SLOTS" });
+  assert.equal(replayMissing.status, 400);
+  const replayForged = await post(server, `${root}/no-show-approve`, { expectedRevision: base.revision,
+    expectedProposalHash: preview.body.live.proposal.proposalHash, expectedOptionHash: "forged-option-hash",
+    strategy: "RELEASE_WALKOVER_SLOTS" });
+  assert.equal(replayForged.status, 400);
+  const replayed = await post(server, `${root}/no-show-approve`, { expectedRevision: base.revision,
+    expectedProposalHash: preview.body.live.proposal.proposalHash, expectedOptionHash: selected.optionHash,
+    strategy: "RELEASE_WALKOVER_SLOTS" });
+  assert.equal(replayed.status, 200);
+  assert.equal(replayed.body.live.publication.revision, 2);
 
   const forged = await post(server, `${root}/no-show-preview`, { expectedRevision: base.revision,
     expectedLiveVersion: 0, proposalId: "forged", contestId: contest.contestId,

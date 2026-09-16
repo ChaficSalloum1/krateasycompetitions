@@ -14,6 +14,12 @@
     "surface": "/attention?competition=encourt-padel-wellness-club-st-albans.4b6fcaa959&revision=1",
     "serverFixture": "scripts/serve-run-control-options.ts"
   },
+  "checkedInBrowserAutomation": {
+    "command": "npm run rehearse:run-control-options-browser",
+    "source": "scripts/rehearse-run-control-options-browser.ts",
+    "output": "output/playwright/run-control-no-show-option-hash-rehearsal.json",
+    "assertions": ["fresh deterministic local fixture per option", "approval disabled before option selection", "browser request hash equals selected option hash", "operational revision 2"]
+  },
   "browserRuns": [
     {
       "strategy": "KEEP_ANNOUNCED_SLOTS",
