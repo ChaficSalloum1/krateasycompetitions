@@ -12,6 +12,17 @@ The connected software rehearsal is executable and green. The production provide
 
 The Organiser Studio Structure Map closure remains local engineering evidence only. Its deterministic browser artifact records rendered stable node/edge identities, warning codes, before/after/delta review values, the exact preview hash and resulting guarded revision; the independent goal-gate report embeds that artifact and its SHA-256. This does not satisfy or alter any external authority gate below.
 
+The Run Control operational-triage closure is also local engineering evidence
+only. Its deterministic 108-fixture browser rehearsal records urgency/scope
+ordering, dependency-derived fixture collapse and one keyboard-completed
+server-validated live command. A separate routed rehearsal records keyboard
+navigation and page-level reflow at the 640/320 CSS-pixel equivalents of
+200%/400% across Portfolio, Organiser Studio, Run Control and Close Receipt.
+Published Studio presents revision-bound canonical facts before collapsed,
+labelled historical provenance. These automated artifacts do not represent a
+named assistive-technology, outdoor-device or human field acceptance and do
+not satisfy `ACCESSIBILITY_FIELD_ACCEPTANCE`.
+
 ## Evidence attachment contract
 
 Each authority record must contain:
@@ -76,6 +87,13 @@ For the bounded Structure Map engineering evidence, run from the independent QA 
 
 ```sh
 npm run qa:goal-gate -- --goal "Organiser Studio structure revision closure" --baseline 17fbbb7 --rehearsal rehearse:organiser-structure-map-browser --artifact output/playwright/organiser-structure-map-browser.json
+```
+
+For the bounded Run Control triage and routed-accessibility engineering
+evidence, run from the independent QA worktree:
+
+```sh
+npm run qa:goal-gate -- --goal "Run Control operational triage and routed accessibility" --baseline a7f96c1f9d4cb0942e3a9f0ccde25439c939f0f9 --rehearsal rehearse:run-control-operational-triage-browser --rehearsal rehearse:routed-operations-accessibility-browser --artifact output/playwright/run-control-operational-triage.json --artifact output/playwright/routed-operations-accessibility.json --evidence output/qa/run-control-operational-triage.json
 ```
 
 The golden test closes all 108 St Albans fixtures, exports and verifies the exact bundle, proves an empty manifest is blocked with every required owner/fallback, proves forged scope evidence remains blocked, proves input ordering cannot change the manifest, and demonstrates that only a complete fresh exact-scope acceptance set can produce `READY`.

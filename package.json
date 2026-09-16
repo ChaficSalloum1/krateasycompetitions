@@ -18,6 +18,8 @@
     "start": "node --import tsx apps/compiler-web/src/server.ts",
     "rehearse:run-control-options": "node --import tsx scripts/serve-run-control-options.ts",
     "rehearse:run-control-options-browser": "node --import tsx scripts/rehearse-run-control-options-browser.ts",
+    "rehearse:run-control-operational-triage-browser": "node --import tsx scripts/rehearse-run-control-operational-triage-browser.ts",
+    "rehearse:routed-operations-accessibility-browser": "node --import tsx scripts/rehearse-routed-operations-accessibility-browser.ts",
     "rehearse:organiser-structure-map-browser": "node --import tsx scripts/rehearse-organiser-structure-map-browser.ts",
     "start:production": "NODE_ENV=production node apps/compiler-web/dist/src/production-host.js"
   },

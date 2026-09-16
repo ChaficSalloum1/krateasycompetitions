@@ -6,6 +6,8 @@ import { competitionJourneyHtml } from "../src/competition-journey.js";
 import { playerHtml } from "../src/player-view.js";
 import { participantRecoveryHtml } from "../src/participant-recovery-view.js";
 import { renderCompetitionGuardPreflight } from "../src/guard-preflight-view.js";
+import { renderCompetitionPortfolio } from "../src/competition-portfolio-view.js";
+import { renderCloseIntegrityReceipt } from "../src/close-integrity-receipt-view.js";
 
 const preflightHtml = renderCompetitionGuardPreflight({ competitionId: "competition.accessibility",
   competitionName: "Accessible competition", preflight: {
@@ -22,11 +24,13 @@ const preflightHtml = renderCompetitionGuardPreflight({ competitionId: "competit
   } as never });
 
 const coreSurfaces = [
+  ["competition portfolio", renderCompetitionPortfolio([])],
   ["participant next", playerHtml],
   ["participant recovery", participantRecoveryHtml],
   ["Run Control", runControlHtml],
   ["venue display", venueDisplayHtml],
   ["published and closed competition", competitionJourneyHtml("competition.accessibility")],
+  ["Close and Integrity Receipt", renderCloseIntegrityReceipt("competition.accessibility")],
   ["Guard pre-flight", preflightHtml],
 ] as const;
 
