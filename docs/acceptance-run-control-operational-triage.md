@@ -1,7 +1,7 @@
 # Run Control operational triage acceptance matrix
 
 **Baseline:** `a7f96c1f9d4cb0942e3a9f0ccde25439c939f0f9`
-**Status:** delivery candidate; independent acceptance pending
+**Status:** delivery candidate; independent closure acceptance pending
 
 ## Job
 
@@ -54,7 +54,7 @@ the organiser still submits that server-validated command.
 | --- | --- | --- | --- | --- |
 | Few actionable root causes replace a wall of blocked fixtures | Dependency-only blocked fixtures are assigned deterministically to their first unresolved cause; no fixture disappears | Focused triage unit tests cover chains, multiple causes, affected counts and deterministic ordering | Dense 108-fixture routed rehearsal records root-cause count, collapsed descendants and the highest-ranked cause | `output/playwright/run-control-operational-triage.json` |
 | Urgency and scope determine order | Rank is explicit, stable and derived only from existing queue/reason facts; affected scope breaks equal urgency | Unit tests assert incident/check-in/late/result priority and scope tie-breaks | Browser evidence records rendered order, urgency and affected scope | Same retained triage JSON |
-| Every row has the relevant next action | Check-in/call/score/incident buttons only prefill existing controls; submission payload remains produced by the existing command form | View tests assert action mapping and absence of universal incident routing | Keyboard-only rehearsal focuses a contextual action, prefills the existing command, submits it, observes the POST and a new live version | Same retained triage JSON |
+| Every row has the relevant next action | Check-in/call/score/result-receipt buttons prefill existing controls; only exact court/no-show causes enter matching incident review; unsupported causes open evidence without mutation | View tests assert action mapping, exact receipt parsing and absence of universal incident routing | Browser rehearsal proves exact no-show subject binding, non-mutating withdrawal evidence, and keyboard submissions of check-in and result receipt | Same retained triage JSON |
 | Operator copy is readable while identities remain available | Stable IDs and proof hashes remain present, but only inside labelled expandable technical evidence | HTML tests assert primary labels, `<details>` evidence and no ID-led action copy | Browser evidence records evidence disclosure state and accessible action names | Same retained triage JSON |
 | Published/closed Studio never presents draft provenance as unresolved current truth | Revision-bound publication/closure facts precede a labelled historical-provenance disclosure; draft-only wording remains draft-only | Published and closed rendering tests assert ordering, labels and canonical hashes/revisions | Routed rehearsal inspects Studio before Run Control and again through the receipt route | `output/playwright/routed-operations-accessibility.json` |
 | Shipped routes reflow and remain keyboard reachable | Actual Portfolio, Studio, Run Control and Close Receipt routes have no page-level horizontal overflow at 640/320 CSS px, retain visible focus and named landmarks/actions | Routed-server and accessibility source tests remain green | Playwright CLI visits the real routes at 200%/400% equivalents and records viewport/scroll widths and keyboard focus | Same retained routed accessibility JSON |
@@ -78,6 +78,18 @@ retained artifacts and limitations handed off. The goal closes only after an
 independent reviewer refreshes a separate QA worktree to that exact commit,
 runs the goal gate and matrix review, and returns `accepted` with no unresolved
 P1 or P2 finding. Any finding becomes one narrow closure goal.
+
+## Narrow closure goal — contextual action truth
+
+Independent QA of delivery commit `46b6be1c6a355088a0e1c70c5cb6bd9c213c201b`
+returned no P0/P1 and two P2 contextual-action findings. This single closure
+is limited to routing a terminal missing receipt through the existing
+`RECORD_RESULT_RECEIPT` command, binding existing incident review only to an
+exact court/no-show cause and subject, opening technical evidence without
+mutation for unsupported causes, and correcting the duplicate traceability
+number. It adds no command semantics, incident type, workflow or product
+surface. Exit requires a fresh worktree at the closure commit, the exact goal
+gate, and independent acceptance with no unresolved P1/P2.
 
 ## Known limitations retained honestly
 

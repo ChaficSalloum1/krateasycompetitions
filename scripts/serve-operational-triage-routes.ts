@@ -34,6 +34,10 @@ for (const entrantId of closedMode ? participantIds : participantIds.slice(1)) {
   } as never);
 }
 let closedCourtId = "";
+let noShowEntrantId = "";
+let noShowContestId = "";
+let withdrawnEntrantId = "";
+let receiptContestId = "";
 if (closedMode) {
   const terminal = new Set(["COMPLETED", "WALKOVER", "RETIRED"]);
   let progressed = true;
@@ -64,12 +68,40 @@ if (closedMode) {
     expectedLiveVersion: current.live!.state.version, acknowledgedCodes: CLOSE_ACKNOWLEDGEMENTS,
     closedBy: "organiser.closer" });
 } else {
+  const definition = current.live!.state.definition;
+  const leafContests = definition.contests.filter(({ contestId, dependencyContestIds }) =>
+    !(dependencyContestIds ?? []).length && (current.live!.state.resolvedEntrants[contestId]?.length ?? 0) === 2);
+  const noShowContest = leafContests.find(({ contestId }) =>
+    !current.live!.state.resolvedEntrants[contestId]!.includes(missingEntrantId));
+  if (!noShowContest) throw new Error("no_show_seed_contest_unavailable");
+  noShowContestId = noShowContest.contestId;
+  noShowEntrantId = current.live!.state.resolvedEntrants[noShowContestId]![1]!;
+  withdrawnEntrantId = participantIds.find((entrantId) =>
+    entrantId !== missingEntrantId && entrantId !== noShowEntrantId
+    && leafContests.some(({ contestId }) => current.live!.state.resolvedEntrants[contestId]!.includes(entrantId))) ?? "";
+  const receiptContest = leafContests.find(({ contestId }) => {
+    const entrants = current.live!.state.resolvedEntrants[contestId]!;
+    return !entrants.some((entrantId) => [missingEntrantId, noShowEntrantId, withdrawnEntrantId].includes(entrantId));
+  });
+  if (!withdrawnEntrantId || !receiptContest) throw new Error("closure_seed_context_unavailable");
+  receiptContestId = receiptContest.contestId;
+  const submit = (body: Record<string, unknown>, id: string) => {
+    current = journey.submitLiveCommand(published.id, 1, { ...body, commandId: `browser.seed.${id}`,
+      expectedVersion: current.live!.state.version, actorId: "operator.lead", occurredAt: at } as never);
+  };
+  submit({ kind: "DECLARE_NO_SHOW", contestId: noShowContestId, entrantId: noShowEntrantId,
+    reason: "Deterministic rehearsal no-show" }, "no-show");
+  submit({ kind: "WITHDRAW_ENTRANT", entrantId: withdrawnEntrantId,
+    reason: "Deterministic rehearsal withdrawal" }, "withdrawal");
+  const receiptEntrants = current.live!.state.resolvedEntrants[receiptContestId]!;
+  submit({ kind: "START_CONTEST", contestId: receiptContestId, courtId: receiptContest.courtId,
+    startedAt: receiptContest.scheduledStart }, "receipt-start");
+  submit({ kind: "RECORD_SCORE", contestId: receiptContestId,
+    scores: receiptEntrants.map((entrantId, index) => ({ entrantId, value: index === 0 ? 6 : 0 })) }, "receipt-score");
+  submit({ kind: "COMPLETE_CONTEST", contestId: receiptContestId,
+    endedAt: receiptContest.scheduledEnd }, "receipt-complete");
   closedCourtId = current.live!.state.definition.courts[0]!;
-  current = journey.submitLiveCommand(published.id, 1, {
-    kind: "CLOSE_COURT", courtId: closedCourtId, reason: "Deterministic rehearsal outage",
-    commandId: "browser.seed.close-court", expectedVersion: current.live!.state.version,
-    actorId: "operator.lead", occurredAt: at,
-  } as never);
+  submit({ kind: "CLOSE_COURT", courtId: closedCourtId, reason: "Deterministic rehearsal outage" }, "close-court");
 }
 
 const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId, now: () => at });
@@ -88,6 +120,10 @@ server.listen(port, "127.0.0.1", () => {
     competitionId: published.id,
     missingEntrantId,
     closedCourtId,
+    noShowEntrantId,
+    noShowContestId,
+    withdrawnEntrantId,
+    receiptContestId,
     fixtureCount: current.live!.state.definition.contests.length,
     seededLiveVersion: current.live!.state.version,
     closed: closedMode,

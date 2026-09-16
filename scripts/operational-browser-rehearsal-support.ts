@@ -15,6 +15,10 @@ export interface OperationalRouteFixture {
   readonly competitionId: string;
   readonly missingEntrantId: string;
   readonly closedCourtId: string;
+  readonly noShowEntrantId: string;
+  readonly noShowContestId: string;
+  readonly withdrawnEntrantId: string;
+  readonly receiptContestId: string;
   readonly fixtureCount: number;
   readonly seededLiveVersion: number;
   readonly closed: boolean;

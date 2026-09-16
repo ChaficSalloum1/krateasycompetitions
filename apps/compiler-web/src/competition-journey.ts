@@ -2121,6 +2121,10 @@ export function parseConnectedLiveCommand(value: unknown, actorId: string, occur
   if (command.kind === "RECORD_SCORE" && typeof command.contestId === "string" && validScores(command.scores)
     && exact(["kind", "commandId", "expectedVersion", "contestId", "scores"]))
     return { ...audit, kind: "RECORD_SCORE", contestId: command.contestId, scores: command.scores };
+  if (command.kind === "RECORD_RESULT_RECEIPT" && typeof command.contestId === "string"
+    && typeof command.source === "string"
+    && exact(["kind", "commandId", "expectedVersion", "contestId", "source"]))
+    return { ...audit, kind: "RECORD_RESULT_RECEIPT", contestId: command.contestId, source: command.source };
   if (command.kind === "AWARD_WALKOVER" && typeof command.contestId === "string"
     && typeof command.winnerEntrantId === "string" && typeof command.absentEntrantId === "string"
     && typeof command.reason === "string" && exact(["kind", "commandId", "expectedVersion", "contestId",
