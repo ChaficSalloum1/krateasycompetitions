@@ -575,7 +575,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           json(response, 415, { apiVersion: "1.0", error: "unsupported_media_type" });
           return;
         }
-        json(response, 200, parseCreationProposalPayload(await readJsonRequestBody(request, 65_536)));
+        json(response, 200, parseCreationProposalPayload(await readJsonRequestBody(request, 262_144)));
         return;
       }
       if (!production && request.url === "/api/competition-source-preview" && request.method === "POST") {

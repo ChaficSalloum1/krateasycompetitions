@@ -188,7 +188,7 @@ function emptyBlueprint(): CompetitionBlueprint {
 }
 
 function fromLanguage(text: string): { blueprint: CompetitionBlueprint; warnings: string[]; rejected?: string } {
-  if (text.length > 48_000) return { blueprint: emptyBlueprint(), warnings: [], rejected: "Description exceeds the 48,000-character safe review boundary. Attach it as a source file when large-document intake is available; no text was applied." };
+  if (text.length > 256_000) return { blueprint: emptyBlueprint(), warnings: [], rejected: "Description exceeds the 256,000-character safe review boundary. Split it into preserved source documents; no text was applied." };
   const injection = text.match(/\bignore\s+(?:all\s+)?(?:previous|prior|above|system|developer)\s+instructions?\b|\b(?:execute|eval(?:uate)?|run)\s+(?:this\s+)?(?:code|javascript|shell|command|sql)\b|<script\b/i);
   if (injection) return { blueprint: emptyBlueprint(), warnings: [], rejected: "Instructions that attempt to execute code or change compiler authority are rejected." };
   const value: Record<string, unknown> = {};
