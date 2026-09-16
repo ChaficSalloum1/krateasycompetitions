@@ -30,7 +30,13 @@ type Result = { readonly label: string; readonly command: readonly string[]; rea
 
 function run(label: string, command: string, commandArgs: readonly string[]): Promise<Result> {
   return new Promise((resolveResult) => {
-    const child = spawn(command, [...commandArgs], { cwd: root, env: { ...process.env, QA_SEED: seed } });
+    // Playwright CLI sessions can own and terminate their own process group.
+    // Keep that lifecycle separate from the gate so a rehearsal cleanup cannot
+    // terminate the parent before it writes the aggregate report.
+    const rehearsal = label.startsWith("rehearsal:");
+    const environment = { ...process.env, QA_SEED: seed };
+    if (rehearsal) delete environment.EVIDENCE_PATH;
+    const child = spawn(command, [...commandArgs], { cwd: root, env: environment, detached: rehearsal });
     let output = "";
     child.stdout.on("data", (chunk) => { output += chunk; });
     child.stderr.on("data", (chunk) => { output += chunk; });
