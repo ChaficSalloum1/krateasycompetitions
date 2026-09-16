@@ -96,6 +96,15 @@ each supplied rehearsal. It writes a local JSON report under `output/qa/`.
 That report is review material; a release/pilot decision must additionally
 preserve the relevant durable evidence or CI artefact.
 
+### Current local-runner boundary
+
+The checked-in browser rehearsals use the configured local Playwright runner.
+They are valid local QA evidence, but are not yet a hosted-CI substitute. Before
+using this gate as a release requirement, pin the browser runner/dependencies in
+CI and archive the generated `output/qa/` and rehearsal JSON as CI artefacts.
+This remains separate from the pilot's external production and human-acceptance
+gates.
+
 ## Reviewer decision template
 
 ```text
