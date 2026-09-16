@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { participantOperationsHtml, venueDisplayHtml } from "../src/attention-views.js";
+import { venueDisplayHtml } from "../src/attention-views.js";
+import { runControlHtml } from "../src/run-control-view.js";
 import { competitionJourneyHtml } from "../src/competition-journey.js";
 import { playerHtml } from "../src/player-view.js";
 import { participantRecoveryHtml } from "../src/participant-recovery-view.js";
@@ -23,7 +24,7 @@ const preflightHtml = renderCompetitionGuardPreflight({ competitionId: "competit
 const coreSurfaces = [
   ["participant next", playerHtml],
   ["participant recovery", participantRecoveryHtml],
-  ["organiser live", participantOperationsHtml],
+  ["Run Control", runControlHtml],
   ["venue display", venueDisplayHtml],
   ["published and closed competition", competitionJourneyHtml("competition.accessibility")],
   ["Guard pre-flight", preflightHtml],
@@ -52,8 +53,9 @@ test("dynamic status and dense information have explicit names and announcements
   assert.match(playerHtml, /role="status"[^>]*aria-live="polite"[^>]*aria-atomic="true"/);
   assert.match(playerHtml, /<time[^>]*id="next-time"/);
   assert.match(playerHtml, /aria-labelledby="proof-title"/);
-  assert.match(participantOperationsHtml, /role="status"[^>]*aria-live="polite"[^>]*aria-atomic="true"/);
-  assert.match(participantOperationsHtml, /aria-labelledby="participants-title"/);
+  assert.match(runControlHtml, /role="status"[^>]*aria-live="polite"[^>]*aria-atomic="true"/);
+  assert.match(runControlHtml, /aria-labelledby="participants-title"/);
+  assert.match(runControlHtml, /aria-labelledby="change-review-title"/);
   assert.match(venueDisplayHtml, /aria-labelledby="matches-title"/);
   assert.match(venueDisplayHtml, /aria-live="off"/);
   assert.match(competitionJourneyHtml("competition.accessibility"), /<caption>Published schedule<\/caption>/);
