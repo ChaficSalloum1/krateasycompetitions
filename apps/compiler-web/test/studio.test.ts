@@ -4,6 +4,7 @@ import test from "node:test";
 import { compilerHtml } from "../src/ui.js";
 import { playerHtml } from "../src/player-view.js";
 import { participantOperationsHtml, venueDisplayHtml } from "../src/attention-views.js";
+import { runControlHtml } from "../src/run-control-view.js";
 import { apiAccessDecision, clientApiResponse, compileOrganiserPrompt, compilerClientApi, compilerReadiness, compilerWorkspace, createCompilerServer, interpretApiPayload, readJsonRequestBody } from "../src/server.js";
 import { CompetitionJourney } from "../src/competition-journey.js";
 import { runReferenceDemo } from "../src/demo.js";
@@ -60,6 +61,12 @@ test("participant and public surfaces consume authoritative revision-scoped proj
   for (const text of ["Signed participant view", "participant-next", "private link", "No app needed", "operation.stateVersion"]) {
     assert.ok(playerHtml.includes(text), `missing ${text}`);
   }
+});
+
+test("Run Control keeps guarded Change Review inside the existing live-operation surface", () => {
+  for (const expected of ["Change Review", "no-show-preview", "no-show-approve", "expectedRevision", "expectedLiveVersion",
+    "proposalHash", "separately attributed director approval", "Nothing changed"]) assert.ok(runControlHtml.includes(expected));
+  assert.doesNotMatch(runControlHtml, /guardInput|simulation|schedule\s*:/i);
 });
 
 test("workspace publishes the evidence-derived capability truth ledger beside certification", () => {

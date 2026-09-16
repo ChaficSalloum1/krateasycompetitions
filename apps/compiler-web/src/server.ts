@@ -31,6 +31,7 @@ import { analyseCompetitionSources, recognisedCompetitionName } from "./competit
 import { playerHtml } from "./player-view.js";
 import { participantRecoveryHtml } from "./participant-recovery-view.js";
 import { participantOperationsHtml, venueDisplayHtml } from "./attention-views.js";
+import { runControlHtml } from "./run-control-view.js";
 import { verifyOfflineEventPack } from "./offline-event-pack.js";
 import { renderPrintableManualFallback } from "./manual-fallback-view.js";
 import { createPlatformDemo } from "./platform-demo.js";
@@ -548,7 +549,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
           "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
         });
-        response.end(participantOperationsHtml);
+        response.end(runControlHtml);
         return;
       }
       if (!production && (request.url === "/display" || request.url?.startsWith("/display?")) && request.method === "GET") {
