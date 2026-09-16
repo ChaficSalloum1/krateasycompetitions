@@ -36,7 +36,7 @@ function run(label: string, command: string, commandArgs: readonly string[]): Pr
     const rehearsal = label.startsWith("rehearsal:");
     const environment = { ...process.env, QA_SEED: seed };
     if (rehearsal) delete environment.EVIDENCE_PATH;
-    const child = spawn(command, [...commandArgs], { cwd: root, env: environment, detached: rehearsal });
+    const child = spawn(command, [...commandArgs], { cwd: root, env: environment, detached: false });
     let output = "";
     child.stdout.on("data", (chunk) => { output += chunk; });
     child.stderr.on("data", (chunk) => { output += chunk; });
