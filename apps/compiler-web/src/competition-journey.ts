@@ -1188,7 +1188,11 @@ export class CompetitionJourney {
       spec: compiled.spec, graph: compiled.graph, schedule: compiled.schedule,
       ...(compiled.simulation ? { simulation: compiled.simulation } : {}),
     }, assignments, request);
-    const revisedLive: JourneyLiveState = { ...live, courtOutageProposal: proposal };
+    // Only one pending change can be approved at a time.  Clearing a superseded
+    // no-show preview prevents a caller from accidentally rendering or approving
+    // it while the active proposal is a court closure.
+    const { proposal: _supersededNoShow, ...withoutPendingNoShow } = live;
+    const revisedLive: JourneyLiveState = { ...withoutPendingNoShow, courtOutageProposal: proposal };
     const revised = sealRecord({ ...withoutSeal(current), updatedAt: request.proposedAt, live: revisedLive });
     this.records.set(id, revised);
     this.persist();
@@ -1235,7 +1239,10 @@ export class CompetitionJourney {
       reason: request.reason, expectedReopenAt: request.expectedEndAt, proposedBy: request.proposedBy,
       proposedAt: request.proposedAt, incidentKind: "DELAY_OVERRUN", sourceContestId: request.contestId,
       closureStartsAt: definition.scheduledEnd });
-    const revisedLive: JourneyLiveState = { ...live, courtOutageProposal: proposal };
+    // A delay uses the same guarded operational proposal slot as a court outage.
+    // Do not leave an earlier no-show proposal selectable beside it.
+    const { proposal: _supersededNoShow, ...withoutPendingNoShow } = live;
+    const revisedLive: JourneyLiveState = { ...withoutPendingNoShow, courtOutageProposal: proposal };
     const revised = sealRecord({ ...withoutSeal(current), updatedAt: request.proposedAt, live: revisedLive });
     this.records.set(id, revised);
     this.persist();
@@ -1690,10 +1697,15 @@ export class CompetitionJourney {
     readonly expectedOperationalRevision: number }): PublicLiveProjection {
     const current = this.requireScoped(input.organizationId, input.competitionId);
     const live = this.requireProjectedLive(current, input.expectedOperationalRevision);
+    // A later repair can retain an earlier walkover's removed assignment.  The
+    // public projection must still render that prior, authoritative outcome,
+    // rather than treating only the most recent publication as the whole plan.
+    const affectedContestIds = [...new Set((live.publicationHistory ?? [])
+      .flatMap((publication) => publication.affectedContestIds))];
     return derivePublicLive({ competitionId: current.id,
       competitionName: recognisedCompetitionName(current.workbench!) ?? current.proposal.blueprint.name ?? "Competition",
       publishedRevision: current.publication!.revision, operationalRevision: input.expectedOperationalRevision,
-      affectedContestIds: live.publication?.affectedContestIds ?? [],
+      affectedContestIds,
       contestRevisions: live.contestRevisions,
       participantNames: authoritativeParticipantNames(current), state: live.state,
       assignments: live.publication?.operationalAssignments ?? current.compiled!.schedule.contests,

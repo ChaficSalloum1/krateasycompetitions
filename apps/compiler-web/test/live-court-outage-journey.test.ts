@@ -97,6 +97,10 @@ test("a St Albans court outage is server-planned, independently Guarded, approve
     assert.equal(approved.live!.publication!.revision, 3);
     assert.equal(approved.live!.publication!.changeKind, "COURT_OUTAGE");
     assert.equal(approved.live!.state.resources.courts[target.resourceId]?.available, false);
+    const organiserProjection = journey.readOrganiserLive({ organizationId: "org.local", competitionId: base.id,
+      expectedOperationalRevision: 3, at: "2026-09-20T13:01:00.000Z" });
+    assert.ok(organiserProjection.controlContests.some(({ contestId }) => contestId === target.contestId),
+      "a later court repair must retain prior walkover outcomes in the current organiser projection");
     assert.deepEqual(approved.live!.publication!.affectedEntrantIds, proposal.affectedEntrantIds);
     assert.deepEqual(approved.live!.publication!.outboxIntents.map(({ payload }) => payload.recipientEntrantId).sort(),
       proposal.affectedEntrantIds.slice().sort());
