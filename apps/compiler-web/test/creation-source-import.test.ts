@@ -196,7 +196,7 @@ test("the connected creator previews and saves imports through the authoritative
   assert.equal(saved.status, 201); assert.equal(saved.body.name, "Encourt Padel & Wellness Club St Albans");
   const draftPage = await get(server, `/competitions/${encodeURIComponent(saved.body.id)}`);
   assert.equal(draftPage.status, 200);
-  assert.ok(draftPage.body.includes("Authoritative competition draft"));
+  assert.ok(draftPage.body.includes("Organiser Studio"));
   assert.equal(journey.list().length, 1);
   server.close();
 });
@@ -238,7 +238,7 @@ test("the connected web draft appends a generic roster into the same authoritati
   const page = await get(server, `/competitions/${encodeURIComponent(saved.body.id)}`);
   assert.equal(page.status, 200);
   assert.ok(page.body.includes("Add or corroborate entrants"));
-  assert.ok(page.body.includes("/sources"));
+  assert.ok(page.body.includes("source-form"));
 
   const rows = [["entrant_id", "display_name", "division_id", "member_ids", "seed"],
     ...Array.from({ length: 4 }, (_, index) => { const number = index + 1; return [

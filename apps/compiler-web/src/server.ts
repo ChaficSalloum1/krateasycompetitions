@@ -21,10 +21,12 @@ import { compilerHtml } from "./ui.js";
 import { creatorHtml } from "./creator-view.js";
 import { productHtml } from "./product-view.js";
 import { createCompetitionProposal, parseCreationProposalPayload } from "./creation-proposal.js";
-import { CompetitionJourney, competitionJourneyHtml, parseConnectedLiveCommand, parseCreationSource,
+import { CompetitionJourney, parseConnectedLiveCommand, parseCreationSource,
   type CompetitionJourneyOptions } from "./competition-journey.js";
 import { renderCompetitionGuardPreflight } from "./guard-preflight-view.js";
 import { renderCompetitionPortfolio } from "./competition-portfolio-view.js";
+import { renderOrganiserStudio } from "./organiser-studio-view.js";
+import { renderCloseIntegrityReceipt } from "./close-integrity-receipt-view.js";
 import { analyseCompetitionSources, recognisedCompetitionName } from "./competition-workbench.js";
 import { playerHtml } from "./player-view.js";
 import { participantRecoveryHtml } from "./participant-recovery-view.js";
@@ -732,6 +734,21 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           preflight: snapshot.compiled.guardPreflight }));
         return;
       }
+      const closeReceiptPage = !production && /^\/competitions\/([^/?#]+)\/receipt$/.exec(request.url ?? "");
+      if (closeReceiptPage && request.method === "GET") {
+        const competitionId = decodeURIComponent(closeReceiptPage[1]!);
+        if (!competitionJourney.read(competitionId)) {
+          json(response, 404, { apiVersion: "1.0", error: "journey_not_found" });
+          return;
+        }
+        response.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+          "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
+        });
+        response.end(renderCloseIntegrityReceipt(competitionId));
+        return;
+      }
       const journeyPage = !production && /^\/competitions\/([^/?#]+)$/.exec(request.url ?? "");
       if (journeyPage && request.method === "GET") {
         const competitionId = decodeURIComponent(journeyPage[1]!);
@@ -744,7 +761,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
           "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
         });
-        response.end(competitionJourneyHtml(competitionId));
+        response.end(renderOrganiserStudio(competitionId));
         return;
       }
       if (!production && request.url === "/v1/competition-journey" && request.method === "GET") {

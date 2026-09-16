@@ -25,10 +25,21 @@ test("the default web portfolio lists only authoritative journey records and iso
 
   const portfolio = await get(server, "/");
   assert.equal(portfolio.status, 200);
-  assert.match(portfolio.body, /Authoritative competition portfolio/);
+  assert.match(portfolio.body, /Organiser Studio/);
   assert.match(portfolio.body, new RegExp(draft.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.doesNotMatch(portfolio.body, /platform-demo|Play &amp; Konnect|Sunday Crew|xG Leagues/);
   assert.match(portfolio.body, /href="\/create"/);
+
+  const studio = await get(server, `/competitions/${encodeURIComponent(draft.id)}`);
+  assert.equal(studio.status, 200);
+  for (const expected of ["Organiser Studio", "Competition Design", "Run Assurance", "Publish Review"])
+    assert.match(studio.body, new RegExp(expected));
+  assert.doesNotMatch(studio.body, /platform-demo|Play &amp; Konnect/);
+
+  const receipt = await get(server, `/competitions/${encodeURIComponent(draft.id)}/receipt`);
+  assert.equal(receipt.status, 200);
+  assert.match(receipt.body, /Close &amp; Integrity Receipt/);
+  assert.match(receipt.body, /immutable closure/);
 
   const demo = await get(server, "/demo");
   assert.equal(demo.status, 200);
