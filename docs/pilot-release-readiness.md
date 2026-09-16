@@ -26,19 +26,21 @@ The acceptance record cannot replace, alter or supply the specification, graph, 
 
 ## Open authority gates and fixed fallbacks
 
-| Gate | Required owner | Evidence required | Safe fallback while open |
-|---|---|---|---|
-| `DELIVERY_PROVIDER_AND_FALLBACK` | Platform/security | Provider, credentials, receipt semantics, failure exercise and non-urgent fallback | Disable remote delivery; use signed participant QR, venue display and controlled manual contact. |
-| `MANUAL_EMERGENCY_REHEARSAL` | Event operations | Staff disconnect, paper operation, reconciliation and separately authorised restart rehearsal | Pause digital commands; use the signed manual pack and reconcile every paper fact before restart. |
-| `VENUE_SAFETY_DETAILS` | Venue safety | Named responders, contacts, access and evacuation details | Do not claim emergency readiness; use the venue-controlled printed safety plan and stop play when uncertain. |
-| `ACCESSIBILITY_FIELD_ACCEPTANCE` | Accessibility | Named VoiceOver/NVDA, printed-paper and representative outdoor/mobile inspection | Do not release until equivalent completion is demonstrated; provide staffed assistance without weakening privacy or authority. |
-| `WEAK_NETWORK_RETRIEVAL` | Event operations | Representative venue test against the participant retrieval target | Use signed QR/manual lookup and venue display; never present stale cached data as current. |
-| `PRODUCTION_PERSISTENCE_AND_RESTORE` | Platform/security | Production identity, PostgreSQL, backup and staff-run restore evidence | Do not route pilot traffic; keep rehearsal-only status and the verified local closure bundle. |
-| `SUPPORT_AND_ROLLBACK` | Event operations | Named support owner, limitations, escalation and rollback acceptance | Stop new writes, retain the command journal, switch to the signed manual pack and restore only from verified evidence. |
-| `PRODUCT_ENVELOPE_APPROVAL` | Product owner | Acceptance of the named St Albans envelope and limitations | Keep the product in rehearsal. |
-| `COMPETITION_RULES_APPROVAL` | Competition domain | Acceptance of qualification, scoring, tiebreak, normalisation and withdrawal policies | Do not publish or operate until the disputed rule is resolved. |
-| `ASSURANCE_EVIDENCE_APPROVAL` | Guard/assurance | Acceptance of Guard, adversarial, replay and recovery evidence | Block release and retain the last independently certified revision. |
-| `EVENT_OPERATIONS_APPROVAL` | Event operations | Acceptance of commands, disruption, communication, close and recovery | Keep the event in rehearsal or use the separately authorised manual plan. |
+Each row is a release blocker package: the named accountable role must make the stated decision against the exact scope hash. A role is deliberate here—this repository must not invent a production person's identity.
+
+| Gate | Required owner | Decision needed | Evidence required | Safe fallback while open |
+|---|---|---|---|---|
+| `DELIVERY_PROVIDER_AND_FALLBACK` | Platform/security | Select and credential one delivery provider, accept its receipt semantics and name the non-urgent fallback. | Provider, credentials, receipt semantics, failure exercise and non-urgent fallback | Disable remote delivery; use signed participant QR, venue display and controlled manual contact. |
+| `MANUAL_EMERGENCY_REHEARSAL` | Event operations | Authorise the staff disconnect, paper-operation, reconciliation and restart procedure. | Staff disconnect, paper operation, reconciliation and separately authorised restart rehearsal | Pause digital commands; use the signed manual pack and reconcile every paper fact before restart. |
+| `VENUE_SAFETY_DETAILS` | Venue safety | Supply and approve the venue-specific emergency facts for this pilot. | Named responders, contacts, access and evacuation details | Do not claim emergency readiness; use the venue-controlled printed safety plan and stop play when uncertain. |
+| `ACCESSIBILITY_FIELD_ACCEPTANCE` | Accessibility | Accept field usability after named assistive-technology, print and outdoor/mobile inspection. | Named VoiceOver/NVDA, printed-paper and representative outdoor/mobile inspection | Do not release until equivalent completion is demonstrated; provide staffed assistance without weakening privacy or authority. |
+| `WEAK_NETWORK_RETRIEVAL` | Event operations | Accept the measured venue retrieval result or retain the manual route. | Representative venue test against the participant retrieval target | Use signed QR/manual lookup and venue display; never present stale cached data as current. |
+| `PRODUCTION_PERSISTENCE_AND_RESTORE` | Platform/security | Authorise production identity, persistence and the demonstrated restore process. | Production identity, PostgreSQL, backup and staff-run restore evidence | Do not route pilot traffic; keep rehearsal-only status and the verified local closure bundle. |
+| `SUPPORT_AND_ROLLBACK` | Event operations | Name the support owner and accept escalation, limitations and rollback authority. | Named support owner, limitations, escalation and rollback acceptance | Stop new writes, retain the command journal, switch to the signed manual pack and restore only from verified evidence. |
+| `PRODUCT_ENVELOPE_APPROVAL` | Product owner | Accept the documented St Albans scope and explicitly exclude unsupported envelopes. | Acceptance of the named St Albans envelope and limitations | Keep the product in rehearsal. |
+| `COMPETITION_RULES_APPROVAL` | Competition domain | Approve the explicit qualification, scoring, tiebreak, normalisation and withdrawal rules. | Acceptance of qualification, scoring, tiebreak, normalisation and withdrawal policies | Do not publish or operate until the disputed rule is resolved. |
+| `ASSURANCE_EVIDENCE_APPROVAL` | Guard/assurance | Accept the current independent Guard, adversarial, replay and recovery evidence. | Acceptance of Guard, adversarial, replay and recovery evidence | Block release and retain the last independently certified revision. |
+| `EVENT_OPERATIONS_APPROVAL` | Event operations | Accept the command, disruption, communication, closure and recovery operating procedure. | Acceptance of commands, disruption, communication, close and recovery | Keep the event in rehearsal or use the separately authorised manual plan. |
 
 ## Known operational limitations
 
