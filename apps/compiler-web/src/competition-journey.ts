@@ -1091,7 +1091,7 @@ export class CompetitionJourney {
   }
 
   public approveNoShow(id: string, expectedRevision: number, expectedProposalHash: string,
-    strategy: NoShowRepairStrategy, approvedBy: string, approvedAt: string, expectedOptionHash?: string): CompetitionJourneySnapshot {
+    expectedOptionHash: string, strategy: NoShowRepairStrategy, approvedBy: string, approvedAt: string): CompetitionJourneySnapshot {
     const current = this.require(id);
     if (current.closure) throw new Error("competition_is_closed");
     const live = this.requireLive(current, expectedRevision);
@@ -1110,8 +1110,8 @@ export class CompetitionJourney {
     if (!Number.isFinite(Date.parse(approvedAt)) || new Date(Date.parse(approvedAt)).toISOString() !== approvedAt)
       throw new Error("invalid_no_show_approval_time");
     if (approvedAt < proposal.proposedAt) throw new Error("stale_no_show_approval_time");
-    const option = proposal.options.find((candidate) => candidate.strategy === strategy
-      && (!expectedOptionHash || candidate.optionHash === expectedOptionHash));
+    if (typeof expectedOptionHash !== "string" || !expectedOptionHash.trim()) throw new Error("no_show_option_hash_required");
+    const option = proposal.options.find((candidate) => candidate.strategy === strategy && candidate.optionHash === expectedOptionHash);
     if (!option) throw new Error("no_show_option_not_found");
     const compiled = current.compiled!;
     const artifacts = { spec: compiled.spec, graph: compiled.graph, schedule: compiled.schedule,

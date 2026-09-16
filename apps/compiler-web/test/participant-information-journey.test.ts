@@ -108,7 +108,7 @@ test("signed participant and public projections change only where an approved no
     const deliveryIdsBeforeApproval = new Set(proposal.live!.delivery.map(({ id }) => id));
 
     const repaired = journey.approveNoShow(base.id, 1, proposal.live!.proposal!.proposalHash,
-      "RELEASE_WALKOVER_SLOTS", "tournament.director", timestamp);
+      proposal.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "tournament.director", timestamp);
     const after = new Map(participantIds.map((participantId) => [participantId,
       journey.readParticipantNext({ organizationId: "org.st-albans", competitionId: base.id,
         expectedOperationalRevision: 2, token: grants.get(participantId)!.token, at: timestamp })]));
@@ -184,7 +184,7 @@ test("targeted projection delivery is atomic, retryable, and retains provider ev
       contestId: contest.contestId, entrantId: contest.entrantIds[0]!, reason: "Absent after reporting window.",
       proposedBy: "operator.lead", proposedAt: timestamp });
     const repaired = journey.approveNoShow(base.id, 1, proposal.live!.proposal!.proposalHash,
-      "RELEASE_WALKOVER_SLOTS", "tournament.director", timestamp);
+      proposal.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "tournament.director", timestamp);
     assert.equal(repaired.live!.delivery.length, repaired.live!.publication!.affectedEntrantIds.length);
     assert.equal(repaired.live!.delivery.every(({ status, payload }) => status === "PENDING"
       && (payload as any).projection.projectionHash), true);
@@ -218,7 +218,7 @@ test("targeted projection delivery is atomic, retryable, and retains provider ev
     assert.equal(deliveredKeys.size, evidence.length);
     assert.equal(attempts, evidence.length * 2);
     assert.deepEqual(restarted.approveNoShow(base.id, 1, proposal.live!.proposal!.proposalHash,
-      "RELEASE_WALKOVER_SLOTS", "tournament.director", timestamp).live!.delivery, evidence,
+      proposal.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "tournament.director", timestamp).live!.delivery, evidence,
     "duplicate approval must not enqueue or reset delivery evidence");
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -301,7 +301,7 @@ test("connected control-room commands append call, score, finish, correction, an
       entrantId: noShowContest.entrantIds[0]!, reason: "Absent after reporting window.",
       proposedBy: "operator.lead", proposedAt: timestamp });
     current = journey.approveNoShow(base.id, 1, preview.live!.proposal!.proposalHash,
-      "RELEASE_WALKOVER_SLOTS", "tournament.director", timestamp);
+      preview.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "tournament.director", timestamp);
     assert.equal(current.live!.publication!.revision, 2);
     assert.equal(current.live!.state.contests[noShowContest.contestId].status, "WALKOVER");
 
@@ -343,7 +343,7 @@ test("restart rejects a re-hashed live publication that suppresses affected proj
       contestId: contest.contestId, entrantId: contest.entrantIds[0]!, reason: "Absent.",
       proposedBy: "operator.lead", proposedAt: timestamp });
     journey.approveNoShow(base.id, 1, proposal.live!.proposal!.proposalHash,
-      "RELEASE_WALKOVER_SLOTS", "tournament.director", timestamp);
+      proposal.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "tournament.director", timestamp);
     const envelope = JSON.parse(readFileSync(storagePath, "utf8"));
     const publication = envelope.records[0].live.publication;
     publication.affectedEntrantIds = [];

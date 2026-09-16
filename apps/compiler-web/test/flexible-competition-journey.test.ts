@@ -127,7 +127,7 @@ for (const fixture of fixtures) test(`${fixture.name} uses the same authoritativ
       reason: "Absent after the final published call.", proposedBy: "operator.lead", proposedAt: clock,
     });
     active = journey.approveNoShow(active.id, active.revision, proposal.live!.proposal!.proposalHash,
-      "RELEASE_WALKOVER_SLOTS", "competition.director", clock);
+      proposal.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "competition.director", clock);
     const operationalRevision = 2;
     assert.equal(active.live?.publication?.revision, operationalRevision);
     assert.ok(active.live!.publication!.outboxIntents.length > 0);

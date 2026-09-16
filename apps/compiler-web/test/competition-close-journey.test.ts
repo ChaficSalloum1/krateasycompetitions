@@ -113,7 +113,7 @@ test("the connected St Albans journey closes, exports, restores and duplicates w
       reason: "Absent after the final call.", proposedBy: "operator.lead", proposedAt: clock,
     });
     journey.approveNoShow(published.id, 1, proposal.live!.proposal!.proposalHash,
-      "RELEASE_WALKOVER_SLOTS", "tournament.director", clock);
+      proposal.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "tournament.director", clock);
 
     assert.throws(() => journey.closeCompetition({ organizationId: "org.st-albans", competitionId: published.id,
       expectedPublishedRevision: 1, expectedOperationalRevision: 2, expectedLiveVersion: journey.read(published.id)!.live!.state.version,

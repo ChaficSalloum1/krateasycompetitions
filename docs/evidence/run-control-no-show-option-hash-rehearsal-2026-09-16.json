@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1.0",
+  "kind": "run_control_no_show_option_hash_rehearsal",
+  "executedOn": "2026-09-16",
+  "fixture": {
+    "competitionId": "encourt-padel-wellness-club-st-albans.4b6fcaa959",
+    "definitionRevision": 1,
+    "operationalRevisionBeforeApproval": 1,
+    "contestId": "advanced.pools.P1.R1.M1",
+    "entrantId": "advanced.team.1"
+  },
+  "reproduction": {
+    "command": "npm run rehearse:run-control-options",
+    "surface": "/attention?competition=encourt-padel-wellness-club-st-albans.4b6fcaa959&revision=1",
+    "serverFixture": "scripts/serve-run-control-options.ts"
+  },
+  "browserRuns": [
+    {
+      "strategy": "KEEP_ANNOUNCED_SLOTS",
+      "optionHash": "63cb9b295d9d1eb0334687050a21b5eba2d9ce8f461e8bfc6c8fd4bcce32c618",
+      "approveDisabledBeforeSelection": true,
+      "selectedOptionHashBoundToApproval": true,
+      "publishedOperationalRevision": 2
+    },
+    {
+      "strategy": "RELEASE_WALKOVER_SLOTS",
+      "optionHash": "172e616a30a78dfa35a4a1afb85ca69bdf7d6ff8fb1335b3d49d3a561703a697",
+      "approveDisabledBeforeSelection": true,
+      "selectedOptionHashBoundToApproval": true,
+      "publishedOperationalRevision": 2
+    }
+  ],
+  "optionMetrics": {
+    "derived": ["movedContestCount", "lowerBoundMovedContestCount", "removedAssignmentCount", "optimalityProven"],
+    "explicitlyUnavailable": ["projectedFinish", "restWaitDelta", "fairnessDelta"],
+    "claim": "The interface labels unavailable metrics as unavailable; it does not imply that they were assessed."
+  },
+  "authoritativeBoundaryChecks": {
+    "missingExpectedOptionHash": { "httpStatus": 400, "mutation": false },
+    "forgedExpectedOptionHash": { "httpStatus": 400, "mutation": false },
+    "matchingSelectedOptionHash": { "httpStatus": 200, "publishedOperationalRevision": 2 }
+  },
+  "automatedEvidence": {
+    "test": "apps/compiler-web/test/live-no-show-journey.test.ts",
+    "assertions": ["direct missing hash rejection", "HTTP missing hash rejection", "forged hash rejection without publication", "matching selected hash approval"]
+  }
+}

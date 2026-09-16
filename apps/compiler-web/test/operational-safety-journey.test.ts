@@ -91,7 +91,7 @@ test("St Albans safety stop freezes starts/publication, updates every projection
       courtId: contest.courtId, startedAt: clock, commandId: "forged.start", expectedVersion: 0,
       actorId: "operator.lead", occurredAt: clock }), /operational_mode_blocks_live_command/);
     assert.throws(() => journey.approveNoShow(base.id, 1, current.live!.proposal!.proposalHash,
-      "KEEP_ANNOUNCED_SLOTS", "tournament.director", clock), /operational_mode_blocks_publication/);
+      current.live!.proposal!.options[0]!.optionHash, "KEEP_ANNOUNCED_SLOTS", "tournament.director", clock), /operational_mode_blocks_publication/);
 
     clock = "2026-09-20T13:06:00.000Z";
     current = journey.submitOperationalCommand(base.id, 1, { kind: "RECORD_RESTART_CLEARANCE", commandId: "clear.safety",

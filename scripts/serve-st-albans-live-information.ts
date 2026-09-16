@@ -52,7 +52,7 @@ const proposal = journey.proposeNoShow(published.id, 1, current.live!.state.vers
   proposalId: "browser.no-show", contestId: noShow.contestId, entrantId: participantId,
   reason: "Absent after reporting window.", proposedBy: "operator.lead", proposedAt: at });
 journey.approveNoShow(published.id, 1, proposal.live!.proposal!.proposalHash,
-  "RELEASE_WALKOVER_SLOTS", "tournament.director", at);
+  proposal.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "tournament.director", at);
 
 const port = Number(process.env.PORT ?? 4178);
 const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId, now: () => at });

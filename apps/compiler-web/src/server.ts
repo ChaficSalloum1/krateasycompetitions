@@ -1167,8 +1167,8 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
             || !["KEEP_ANNOUNCED_SLOTS", "RELEASE_WALKOVER_SLOTS"].includes(String(command.strategy)))
             throw new Error("invalid_journey_command");
           json(response, 200, competitionJourney.approveNoShow(competitionId, command.expectedRevision as number,
-            command.expectedProposalHash, command.strategy as "KEEP_ANNOUNCED_SLOTS" | "RELEASE_WALKOVER_SLOTS",
-            "local.tournament-director", serverNow(), command.expectedOptionHash));
+            command.expectedProposalHash, command.expectedOptionHash, command.strategy as "KEEP_ANNOUNCED_SLOTS" | "RELEASE_WALKOVER_SLOTS",
+            "local.tournament-director", serverNow()));
           return;
         }
         if (operation === "court-outage-preview") {

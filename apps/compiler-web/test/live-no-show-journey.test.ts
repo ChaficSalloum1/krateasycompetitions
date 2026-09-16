@@ -85,9 +85,11 @@ test("a no-show preserves actual truth, Guards deterministic options, and publis
     assert.equal(proposal.live?.state.proofHash, current.live?.state.proofHash, "proposal must not mutate live truth");
 
     assert.throws(() => journey.approveNoShow(base.id, base.revision, proposal.live!.proposal!.proposalHash,
-      "RELEASE_WALKOVER_SLOTS", "operator.lead", now), /independent_actor/);
+      undefined as unknown as string, "RELEASE_WALKOVER_SLOTS", "tournament.director", now), /no_show_option_hash_required/);
+    assert.throws(() => journey.approveNoShow(base.id, base.revision, proposal.live!.proposal!.proposalHash,
+      proposal.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "operator.lead", now), /independent_actor/);
     const repaired = journey.approveNoShow(base.id, base.revision, proposal.live!.proposal!.proposalHash,
-      "RELEASE_WALKOVER_SLOTS", "tournament.director", now);
+      proposal.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "tournament.director", now);
     assert.equal(repaired.live?.publication?.revision, 2);
     assert.equal(repaired.live?.publication?.baseRevision, 1);
     assert.equal(repaired.live?.state.contests[completedContest.contestId]?.status, "COMPLETED");
@@ -105,7 +107,7 @@ test("a no-show preserves actual truth, Guards deterministic options, and publis
     const restarted = new CompetitionJourney({ storagePath });
     assert.deepEqual(restarted.read(base.id), repaired);
     assert.deepEqual(restarted.approveNoShow(base.id, base.revision, proposal.live!.proposal!.proposalHash,
-      "RELEASE_WALKOVER_SLOTS", "tournament.director", now), repaired, "approval replay must be idempotent");
+      proposal.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "tournament.director", now), repaired, "approval replay must be idempotent");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -128,7 +130,7 @@ test("no-show proposals replay deterministically and stale live truth cannot be 
     reason: "Reported at desk", commandId: "late.after.proposal", expectedVersion: active.live!.state.version,
     actorId: "operator.lead", occurredAt: now });
   assert.throws(() => journey.approveNoShow(base.id, base.revision, first.live!.proposal!.proposalHash,
-    "KEEP_ANNOUNCED_SLOTS", "tournament.director", now), /stale_live_proposal/);
+    first.live!.proposal!.options[0]!.optionHash, "KEEP_ANNOUNCED_SLOTS", "tournament.director", now), /stale_live_proposal/);
 });
 
 test("live command replay is idempotent and the connected boundary rejects privileged or repair-bypassing input", () => {
@@ -209,6 +211,9 @@ test("the connected HTTP journey previews and separately approves a server-owned
   assert.equal(preview.body.live.proposal.options.every(({ competitionGuard, liveGuard }: any) =>
     competitionGuard.status === "PASSED" && liveGuard.status === "PASSED"), true);
   const selected = preview.body.live.proposal.options.find(({ strategy }: any) => strategy === "RELEASE_WALKOVER_SLOTS");
+  const missingOption = await post(server, `${root}/no-show-approve`, { expectedRevision: base.revision,
+    expectedProposalHash: preview.body.live.proposal.proposalHash, strategy: "RELEASE_WALKOVER_SLOTS" });
+  assert.equal(missingOption.status, 400);
   const wrongOption = await post(server, `${root}/no-show-approve`, { expectedRevision: base.revision,
     expectedProposalHash: preview.body.live.proposal.proposalHash, expectedOptionHash: "forged-option-hash",
     strategy: "RELEASE_WALKOVER_SLOTS" });

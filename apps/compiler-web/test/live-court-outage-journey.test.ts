@@ -60,7 +60,7 @@ test("a St Albans court outage is server-planned, independently Guarded, approve
       reason: "Absent after final call", proposedBy: "operator.lead", proposedAt: now,
     });
     active = journey.approveNoShow(base.id, base.revision, noShow.live!.proposal!.proposalHash,
-      "RELEASE_WALKOVER_SLOTS", "tournament.director", "2026-09-20T13:00:30.000Z");
+      noShow.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "tournament.director", "2026-09-20T13:00:30.000Z");
     const originalStateHash = active.live!.state.proofHash;
     const deliveryBeforePreview = structuredClone(active.live!.delivery);
 

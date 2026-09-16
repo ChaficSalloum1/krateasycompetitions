@@ -73,7 +73,7 @@ test("an in-progress St Albans overrun preserves actual truth and publishes a gu
       reason: "Absent after final call", proposedBy: "operator.lead", proposedAt: "2026-09-20T12:45:00.000Z",
     });
     current = journey.approveNoShow(base.id, base.revision, noShow.live!.proposal!.proposalHash,
-      "RELEASE_WALKOVER_SLOTS", "tournament.director", "2026-09-20T12:46:00.000Z");
+      noShow.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "tournament.director", "2026-09-20T12:46:00.000Z");
     const actualBefore = structuredClone(current.live!.state.contests[inProgress.contestId]);
     const deliveryBefore = structuredClone(current.live!.delivery);
 
