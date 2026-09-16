@@ -1161,13 +1161,14 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           return;
         }
         if (operation === "no-show-approve") {
-          if (Object.keys(command).some((key) => !["expectedRevision", "expectedProposalHash", "strategy"].includes(key))
+          if (Object.keys(command).some((key) => !["expectedRevision", "expectedProposalHash", "expectedOptionHash", "strategy"].includes(key))
             || !Number.isSafeInteger(command.expectedRevision) || typeof command.expectedProposalHash !== "string"
+            || typeof command.expectedOptionHash !== "string"
             || !["KEEP_ANNOUNCED_SLOTS", "RELEASE_WALKOVER_SLOTS"].includes(String(command.strategy)))
             throw new Error("invalid_journey_command");
           json(response, 200, competitionJourney.approveNoShow(competitionId, command.expectedRevision as number,
             command.expectedProposalHash, command.strategy as "KEEP_ANNOUNCED_SLOTS" | "RELEASE_WALKOVER_SLOTS",
-            "local.tournament-director", serverNow()));
+            "local.tournament-director", serverNow(), command.expectedOptionHash));
           return;
         }
         if (operation === "court-outage-preview") {

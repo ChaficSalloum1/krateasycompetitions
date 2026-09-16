@@ -208,8 +208,15 @@ test("the connected HTTP journey previews and separately approves a server-owned
   assert.equal(preview.status, 200);
   assert.equal(preview.body.live.proposal.options.every(({ competitionGuard, liveGuard }: any) =>
     competitionGuard.status === "PASSED" && liveGuard.status === "PASSED"), true);
+  const selected = preview.body.live.proposal.options.find(({ strategy }: any) => strategy === "RELEASE_WALKOVER_SLOTS");
+  const wrongOption = await post(server, `${root}/no-show-approve`, { expectedRevision: base.revision,
+    expectedProposalHash: preview.body.live.proposal.proposalHash, expectedOptionHash: "forged-option-hash",
+    strategy: "RELEASE_WALKOVER_SLOTS" });
+  assert.equal(wrongOption.status, 400);
+  assert.equal(journey.read(base.id)?.live?.publication, undefined);
   const approved = await post(server, `${root}/no-show-approve`, { expectedRevision: base.revision,
-    expectedProposalHash: preview.body.live.proposal.proposalHash, strategy: "RELEASE_WALKOVER_SLOTS" });
+    expectedProposalHash: preview.body.live.proposal.proposalHash, expectedOptionHash: selected.optionHash,
+    strategy: "RELEASE_WALKOVER_SLOTS" });
   assert.equal(approved.status, 200);
   assert.equal(approved.body.live.publication.revision, 2);
 
