@@ -21,7 +21,8 @@
     "rehearse:run-control-operational-triage-browser": "node --import tsx scripts/rehearse-run-control-operational-triage-browser.ts",
     "rehearse:routed-operations-accessibility-browser": "node --import tsx scripts/rehearse-routed-operations-accessibility-browser.ts",
     "rehearse:organiser-structure-map-browser": "node --import tsx scripts/rehearse-organiser-structure-map-browser.ts",
-    "start:production": "NODE_ENV=production node apps/compiler-web/dist/src/production-host.js"
+    "start:production": "NODE_ENV=production node apps/compiler-web/dist/src/production-host.js",
+    "start:outbox-worker": "node apps/compiler-web/dist/src/outbox-worker-host.js"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
