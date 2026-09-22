@@ -32,6 +32,7 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
+    "@clerk/backend": "^3.18.1",
     "qrcode": "^1.5.4",
     "yaml": "^2.8.3"
   }

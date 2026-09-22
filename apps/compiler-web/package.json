@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@tournament-os/tournament-schema": "0.1.0",
-    "@tournament-os/competition-engine": "0.1.0"
+    "@tournament-os/competition-engine": "0.1.0",
+    "@clerk/backend": "^3.18.1"
   }
 }
