@@ -233,7 +233,7 @@ test("install-free HTTP projections use opaque access and never fall back to the
   const participantId = active.live!.state.definition.contests.find(({ contestId }) => contestId.includes(".pools."))!
     .entrantIds[0]!;
   const server = createCompilerServer({ production: false, competitionJourney: journey,
-    organizationId: "org.st-albans" });
+    organizationId: "org.st-albans", now: () => timestamp });
   const root = `/v1/competition-journey/${encodeURIComponent(base.id)}`;
   const issued = await http(server, "POST", `${root}/participant-access`, { expectedPublishedRevision: 1,
     participantId, expiresAt: "2026-09-21T00:00:00.000Z" });
