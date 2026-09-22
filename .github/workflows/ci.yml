@@ -34,3 +34,44 @@ jobs:
 
       - name: Protocol model check
         run: npm run stress:protocols
+
+  postgres-check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify Postgres event store against a real server
+        env:
+          TOURNAMENTOS_POSTGRES_HOST: 127.0.0.1
+          TOURNAMENTOS_POSTGRES_PORT: "5432"
+          USER: postgres
+        run: node --import tsx scripts/verify-postgres-event-store.ts
+
+      - name: Verify Postgres production coordination against a real server
+        env:
+          DATABASE_URL: postgresql://postgres@127.0.0.1:5432/postgres
+          COORDINATION_KEY_HASH_SECRET: ci-only-coordination-key-hash-secret-not-a-real-secret-32b
+        run: node --import tsx scripts/verify-postgres-production-coordination.ts
