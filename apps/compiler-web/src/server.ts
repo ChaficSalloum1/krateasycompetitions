@@ -473,10 +473,12 @@ function journeyClientApiResponse(path: string, journey: CompetitionJourney): un
 export function createCompilerServer(options: CompilerServerOptions = {}) {
   const production = options.production ?? process.env.NODE_ENV === "production";
   const organizationId = options.organizationId ?? process.env.KRATEASY_ORGANIZATION_ID ?? "org.local";
-  const serverNow = options.now ?? (() => new Date().toISOString());
+  // One clock: an explicit server clock wins and is shared with the journey this server builds; an
+  // injected journey without one lends the server its own clock, so the two never disagree.
+  const serverNow = options.now ?? options.competitionJourney?.now ?? (() => new Date().toISOString());
   const competitionJourney = options.competitionJourney ?? new CompetitionJourney({
     ...(production ? {} : { storagePath: process.env.KRATEASY_JOURNEY_STORE ?? `${process.cwd()}/work/competition-journey.json` }),
-    organizationId, ...participantTokenConfiguration(),
+    organizationId, now: serverNow, ...participantTokenConfiguration(),
     ...(process.env.KRATEASY_OFFLINE_PACK_SIGNING_SEED
       ? { offlinePackSigningSeedHex: process.env.KRATEASY_OFFLINE_PACK_SIGNING_SEED } : {}),
   });
