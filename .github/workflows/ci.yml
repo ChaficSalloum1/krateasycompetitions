@@ -9,16 +9,17 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
 
@@ -40,18 +41,35 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev
 
-      - name: Type-check, build and test
-        run: npm run check
+      # Equivalent to `npm run check` (tsc -b, then the full suite), with a JUnit report kept as evidence.
+      - name: Type-check and build
+        run: npm run build
+
+      - name: Test
+        run: |
+          mkdir -p evidence
+          npm run test:ci
 
       - name: Protocol model check
-        run: npm run stress:protocols
+        shell: bash
+        run: npm run --silent stress:protocols | tee evidence/protocol-model-check.json
+
+      - name: Keep release evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: check-evidence
+          path: evidence/
+          if-no-files-found: error
 
   container:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
 
@@ -61,12 +79,26 @@ jobs:
       - name: Production host starts from the pruned image and fails closed without configuration
         env:
           SMOKE_IMAGE: krateasy:ci
-        run: node scripts/smoke-production-host.mjs
+        shell: bash
+        run: |
+          mkdir -p evidence
+          node scripts/smoke-production-host.mjs | tee evidence/container-smoke.txt
+          docker image inspect krateasy:ci --format '{{json .}}' > evidence/image-inspect.json
+
+      - name: Keep container evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: container-evidence
+          path: evidence/
+          if-no-files-found: error
 
   apple:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Swift client tests
         run: npm run check:apple
@@ -86,9 +118,11 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           cache: npm

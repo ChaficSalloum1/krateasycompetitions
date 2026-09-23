@@ -50,7 +50,7 @@ fixture and is not the chosen mode.
   `ortools==9.15.6755` into `/opt/cp-sat`, with every transitive package pinned
   by `packages/competition-engine/solver/constraints-cp-sat.txt`, and sets
   `TOURNAMENT_OS_CP_SAT_PYTHON`. OR-Tools publishes only glibc wheels, so the
-  runtime base is `node:24-bookworm-slim`. The worker refuses any other OR-Tools
+  runtime base is `node:24.21.0-bookworm-slim`. The worker refuses any other OR-Tools
   version (`CPS003`), and a version change needs `CP_SAT_BACKEND_VERSION`,
   both requirement files and the image to move together.
 - **Readiness.** `cp-sat-solver` is a mandatory readiness probe. A deployment
