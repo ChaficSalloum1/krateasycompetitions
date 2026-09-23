@@ -1,3 +1,4 @@
+import { sharedStyles } from "./design-system.js";
 import QRCode from "qrcode";
 import type { OfflineEventPackBody, SignedOfflineEventPack } from "./offline-event-pack.js";
 
@@ -42,8 +43,8 @@ export async function renderPrintableManualFallback(input: {
   const machineEnvelope = escape(JSON.stringify(envelope));
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
     + `<title>${escape(body.competitionName)} · manual fallback</title><style>
-      :root{color-scheme:light;font-family:ui-sans-serif,system-ui,sans-serif;color:#17201d;background:#f7f7f3}*{box-sizing:border-box;min-width:0}html{font-size:100%;scroll-behavior:smooth}body{margin:0;overflow-wrap:anywhere}main{max-width:1120px;margin:auto;padding:32px}
-      .skip{position:absolute;left:-9999px;top:8px;z-index:100;background:white;color:#17201d;padding:12px 16px;border:2px solid currentColor;border-radius:8px}.skip:focus{left:8px}:focus-visible{outline:3px solid #c95635;outline-offset:3px}
+      ${sharedStyles}*{box-sizing:border-box;min-width:0}html{font-size:100%;scroll-behavior:smooth}body{margin:0;overflow-wrap:anywhere}main{max-width:1120px;margin:auto;padding:32px}
+      .skip{position:absolute;left:-9999px;top:8px;z-index:100;background:white;color:#17201d;padding:12px 16px;border:2px solid currentColor;border-radius:8px}.skip:focus{left:8px}:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
       h1{font-size:2rem;margin-bottom:.25rem}h2{margin-top:0}.meta,.mono{font-family:ui-monospace,monospace;font-size:.875rem;overflow-wrap:anywhere}
       .banner{padding:16px;border:2px solid #9a5b00;background:#fff2d8}.warning{font-weight:700;color:#7a3100}table{width:100%;border-collapse:collapse;font-size:.875rem}caption{text-align:left;font-weight:800;padding:0 0 8px}
       th,td{border:1px solid #9ca39f;padding:5px;text-align:left;vertical-align:top}.page{background:white;padding:24px;margin:24px 0;break-after:page}

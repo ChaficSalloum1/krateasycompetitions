@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deriveRunControlTriage, runControlHtml, type RunControlAttentionRow } from "../src/run-control-view.js";
+import { deriveRunControlTriage, renderRunControl, runControlHtml, type RunControlAttentionRow } from "../src/run-control-view.js";
 import { renderOrganiserStudio } from "../src/organiser-studio-view.js";
 import { parseConnectedLiveCommand } from "../src/competition-journey.js";
 
@@ -96,8 +96,12 @@ test("Run Control exposes contextual controls while keeping stable identities in
   for (const expected of ["deriveTriage", "data-context-action", "Check in ", "Call fixture",
     "Record score", "Confirm result receipt", "Review exact cause", "Open incident review",
     "No matching guarded control is available", "Technical evidence", "Technical head evidence",
-    "Close Receipt", "Ranked by urgency, then affected scope"])
+    "Ranked by urgency, then affected scope"])
     assert.ok(runControlHtml.includes(expected), `Run Control is missing ${expected}`);
+  const withCompetition = renderRunControl({ id: "competition.run", name: "Run", operationalRevision: 2, compiled: true });
+  assert.ok(withCompetition.includes('href="/competitions/competition.run/receipt">Close receipt</a>'),
+    "Run Control reaches the competition's Close receipt through the shared organiser navigation");
+  assert.ok(withCompetition.includes('aria-current="page">Run Control</a>'));
   assert.ok(!runControlHtml.includes("<strong>'+esc(x.contestId)"));
   assert.ok(!runControlHtml.includes("x.displayName+' · '+x.participantId"));
   assert.match(runControlHtml, /JSON\.stringify\(\{expectedRevision:state\.public\.operationalRevision,command:liveCommand\(\)\}\)/);

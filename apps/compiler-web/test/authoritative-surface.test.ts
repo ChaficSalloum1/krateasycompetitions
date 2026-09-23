@@ -25,7 +25,8 @@ test("the default web portfolio lists only authoritative journey records and iso
 
   const portfolio = await get(server, "/");
   assert.equal(portfolio.status, 200);
-  assert.match(portfolio.body, /Organiser Studio/);
+  assert.match(portfolio.body, /<nav class="app-nav" aria-label="Organiser"><a href="\/" aria-current="page">Competitions<\/a>/);
+  assert.match(portfolio.body, /Open Studio/);
   assert.match(portfolio.body, new RegExp(draft.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(portfolio.body, /<summary>Technical identity<\/summary>/);
   assert.doesNotMatch(portfolio.body, /platform-demo|Play &amp; Konnect|Sunday Crew|xG Leagues/);
@@ -45,8 +46,10 @@ test("the default web portfolio lists only authoritative journey records and iso
 
   const runControl = await get(server, `/attention?competition=${encodeURIComponent(draft.id)}&revision=1`);
   assert.equal(runControl.status, 200);
-  for (const expected of ["Run Control", "data-context-action", "Technical evidence", "Close Receipt"])
+  for (const expected of ["Run Control", "data-context-action", "Technical evidence", "Close receipt"])
     assert.match(runControl.body, new RegExp(expected));
+  assert.match(runControl.body, new RegExp(`href="/competitions/${encodeURIComponent(draft.id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/receipt"`),
+    "Run Control links to the same competition's Close receipt through the shared navigation");
 
   const demo = await get(server, "/demo");
   assert.equal(demo.status, 200);

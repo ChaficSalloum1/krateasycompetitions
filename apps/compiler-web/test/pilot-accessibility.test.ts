@@ -121,7 +121,8 @@ function contrast(foreground: string, background: string): number {
 
 test("pilot surface colour pairs meet WCAG AA normal-text contrast", () => {
   const pairs = [
-    ["#17201d", "#f3f2ed"], ["#65706b", "#f3f2ed"], ["#087b59", "#fffefb"],
+    ["#17201d", "#f4f2ec"], ["#65706b", "#f4f2ec"], ["#b74e30", "#fffdf8"], ["#ffffff", "#b74e30"], ["#9b3d26", "#f4f2ec"],
+    ["#176b48", "#e7f4ed"], ["#8b5a10", "#fbf1dc"], ["#9a3124", "#fbeae6"],
     ["#8a2b1f", "#fff0ed"], ["#73d2b2", "#17201d"], ["#c9d6d0", "#17201d"],
     ["#f4f5f2", "#101916"], ["#aab3af", "#101916"], ["#63d5aa", "#17241f"],
     ["#17201d", "#e3f3ed"],

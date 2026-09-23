@@ -24,14 +24,15 @@ import { createCompetitionProposal, parseCreationProposalPayload } from "./creat
 import { CompetitionJourney, parseConnectedLiveCommand, parseCreationSource,
   type CompetitionJourneyOptions } from "./competition-journey.js";
 import { renderCompetitionGuardPreflight } from "./guard-preflight-view.js";
-import { renderCompetitionPortfolio } from "./competition-portfolio-view.js";
+import { renderCompetitionPortfolio, renderCompetitionPortfolioUnavailable } from "./competition-portfolio-view.js";
 import { renderOrganiserStudio } from "./organiser-studio-view.js";
 import { renderCloseIntegrityReceipt } from "./close-integrity-receipt-view.js";
 import { analyseCompetitionSources, recognisedCompetitionName } from "./competition-workbench.js";
 import { playerHtml } from "./player-view.js";
 import { participantRecoveryHtml } from "./participant-recovery-view.js";
 import { participantOperationsHtml, venueDisplayHtml } from "./attention-views.js";
-import { runControlHtml } from "./run-control-view.js";
+import { renderRunControl, runControlHtml } from "./run-control-view.js";
+import { organiserContextOf, withDemoBanner } from "./design-system.js";
 import { verifyOfflineEventPack } from "./offline-event-pack.js";
 import { renderPrintableManualFallback } from "./manual-fallback-view.js";
 import { createPlatformDemo } from "./platform-demo.js";
@@ -552,7 +553,11 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
           "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
         });
-        response.end(runControlHtml);
+        // The shared organiser navigation needs the competition's live context; an unknown or missing
+        // competition still gets the page, whose own script reports that nothing can be loaded.
+        const attentionCompetition = new URL(request.url ?? "/", "http://local.invalid").searchParams.get("competition");
+        const attentionSnapshot = attentionCompetition ? competitionJourney.read(attentionCompetition) : null;
+        response.end(attentionSnapshot ? renderRunControl(organiserContextOf(attentionSnapshot)) : runControlHtml);
         return;
       }
       if (!production && (request.url === "/display" || request.url?.startsWith("/display?")) && request.method === "GET") {
@@ -695,7 +700,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           "x-content-type-options": "nosniff",
           "referrer-policy": "no-referrer",
         });
-        response.end(compilerHtml);
+        response.end(withDemoBanner(compilerHtml));
         return;
       }
       if (!production && request.url === "/demo" && request.method === "GET") {
@@ -705,7 +710,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           "x-content-type-options": "nosniff",
           "referrer-policy": "no-referrer",
         });
-        response.end(productHtml);
+        response.end(withDemoBanner(productHtml));
         return;
       }
       if (request.url === "/" && request.method === "GET") {
@@ -713,12 +718,15 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           json(response, 503, { apiVersion: "1.0", error: "pilot_web_projection_not_configured" });
           return;
         }
-        response.writeHead(200, {
-          "content-type": "text/html; charset=utf-8",
+        let portfolio: string; let portfolioStatus = 200;
+        try { portfolio = renderCompetitionPortfolio(competitionJourney.list()); }
+        catch { portfolio = renderCompetitionPortfolioUnavailable(); portfolioStatus = 503; }
+        response.writeHead(portfolioStatus, {
+          "content-type": "text/html; charset=utf-8", "cache-control": "no-store",
           "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
           "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
         });
-        response.end(renderCompetitionPortfolio(competitionJourney.list()));
+        response.end(portfolio);
         return;
       }
       const preflightPage = !production && /^\/competitions\/([^/?#]+)\/preflight$/.exec(request.url ?? "");
@@ -735,7 +743,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
         });
         response.end(renderCompetitionGuardPreflight({ competitionId, competitionName: snapshot.name,
-          preflight: snapshot.compiled.guardPreflight }));
+          preflight: snapshot.compiled.guardPreflight, context: organiserContextOf(snapshot) }));
         return;
       }
       const closeReceiptPage = !production && /^\/competitions\/([^/?#]+)\/receipt$/.exec(request.url ?? "");
@@ -750,7 +758,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
           "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
         });
-        response.end(renderCloseIntegrityReceipt(competitionId));
+        response.end(renderCloseIntegrityReceipt(competitionId, organiserContextOf(competitionJourney.read(competitionId)!)));
         return;
       }
       const journeyPage = !production && /^\/competitions\/([^/?#]+)$/.exec(request.url ?? "");
@@ -765,7 +773,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
           "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
         });
-        response.end(renderOrganiserStudio(competitionId));
+        response.end(renderOrganiserStudio(competitionId, organiserContextOf(competitionJourney.read(competitionId)!)));
         return;
       }
       if (!production && request.url === "/v1/competition-journey" && request.method === "GET") {
