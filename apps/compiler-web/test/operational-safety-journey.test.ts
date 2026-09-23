@@ -141,8 +141,7 @@ test("the connected operational boundary owns actors/messages and rejects stale 
   const journey = new CompetitionJourney({ organizationId: "org.st-albans", now: () => clock,
     operationalAuthorityAssignments: authority });
   const base = published(journey); journey.activateLive(base.id, 1, "operator.lead");
-  const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId: "org.st-albans",
-    now: () => clock });
+  const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId: "org.st-albans" });
   const root = `/v1/competition-journey/${encodeURIComponent(base.id)}`;
   const incident = await post(server, `${root}/operational-incident`, { expectedOperationalRevision: 1,
     expectedStateVersion: 0, commandId: "incident.http.1", incidentId: "service.1", category: "SERVICE",

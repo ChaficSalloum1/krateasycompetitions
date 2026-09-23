@@ -473,9 +473,10 @@ function journeyClientApiResponse(path: string, journey: CompetitionJourney): un
 export function createCompilerServer(options: CompilerServerOptions = {}) {
   const production = options.production ?? process.env.NODE_ENV === "production";
   const organizationId = options.organizationId ?? process.env.KRATEASY_ORGANIZATION_ID ?? "org.local";
-  // One clock: an explicit server clock wins and is shared with the journey this server builds; an
-  // injected journey without one lends the server its own clock, so the two never disagree.
-  const serverNow = options.now ?? options.competitionJourney?.now ?? (() => new Date().toISOString());
+  // One clock owner. An injected journey owns time, so a second server clock beside it is rejected
+  // rather than trusted to agree; otherwise the server's clock is shared with the journey it builds.
+  if (options.competitionJourney && options.now) throw new Error("compiler_server_clock_ambiguous");
+  const serverNow = options.competitionJourney?.now ?? options.now ?? (() => new Date().toISOString());
   const competitionJourney = options.competitionJourney ?? new CompetitionJourney({
     ...(production ? {} : { storagePath: process.env.KRATEASY_JOURNEY_STORE ?? `${process.cwd()}/work/competition-journey.json` }),
     organizationId, now: serverNow, ...participantTokenConfiguration(),

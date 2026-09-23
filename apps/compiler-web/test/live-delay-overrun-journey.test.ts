@@ -127,8 +127,7 @@ test("delay proposals reject non-live contests, stale heads and client-owned art
   } as never), /invalid_delay_overrun_request/);
   assert.throws(() => journey.proposeDelayOverrun(base.id, base.revision + 1, active.live!.state.version, request),
     /journey_revision_conflict/);
-  const server = createCompilerServer({ production: false, competitionJourney: journey,
-    now: () => "2026-09-20T12:30:00.000Z" });
+  const server = createCompilerServer({ production: false, competitionJourney: journey });
   const response = await post(server, `/v1/competition-journey/${encodeURIComponent(base.id)}/delay-preview`, {
     expectedOperationalRevision: base.revision, expectedLiveVersion: active.live!.state.version,
     proposalId: request.proposalId, contestId: request.contestId, reason: request.reason,

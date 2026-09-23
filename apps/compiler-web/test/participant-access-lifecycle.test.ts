@@ -170,7 +170,7 @@ test("generic event recovery is opaque, exact-head bound and rate limited", asyn
   /participant_recovery_denied/);
 
   const server = createCompilerServer({ production: false, competitionJourney: journey,
-    organizationId: "org.st-albans", now: () => timestamp });
+    organizationId: "org.st-albans" });
   const encodedId = encodeURIComponent(active.id);
   const page = await http(server, "GET", `/next/recover?competition=${encodedId}&revision=1`);
   assert.equal(page.status, 200);

@@ -143,7 +143,7 @@ test("the printable St Albans fallback is generated only from the signed exact-r
   const base = published(journey);
   journey.activateLive(base.id, 1, "operator.lead");
   const server = createCompilerServer({ production: false, competitionJourney: journey,
-    organizationId: "org.st-albans", now: () => timestamp });
+    organizationId: "org.st-albans" });
 
   const response = await get(server, `/v1/competition-journey/${encodeURIComponent(base.id)}`
     + "/manual-pack?published=1&operational=1");
@@ -195,7 +195,7 @@ test("offline pack replay is deterministic across restart and HTTP accepts revis
     assert.deepEqual(restarted.issueOfflineEventPack(input), first);
 
     const server = createCompilerServer({ production: false, competitionJourney: restarted,
-      organizationId: "org.st-albans", now: () => timestamp });
+      organizationId: "org.st-albans" });
     const root = `/v1/competition-journey/${encodeURIComponent(base.id)}/offline-pack`;
     const accepted = await post(server, root, { expectedPublishedRevision: 1, expectedOperationalRevision: 1, expiresAt });
     assert.equal(accepted.status, 200);

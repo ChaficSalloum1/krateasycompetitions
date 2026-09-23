@@ -284,6 +284,18 @@ test("participant token expiry is judged by the journey's injected clock, never 
   const expired = await next();
   assert.equal(expired.status, 400, "a token is rejected at its expiry on the injected clock");
   assert.equal(expired.body.error, "participant_access_denied");
+
+  clock = "2026-09-20T14:00:00.001Z";
+  const after = await next();
+  assert.equal(after.status, 400, "a token stays rejected after its expiry on the injected clock");
+  assert.equal(after.body.error, "participant_access_denied");
+});
+
+test("a server refuses a second clock beside an injected journey instead of trusting them to agree", () => {
+  const journey = new CompetitionJourney({ organizationId: "org.st-albans", participantTokenSecret: secret,
+    now: () => timestamp });
+  assert.throws(() => createCompilerServer({ production: false, competitionJourney: journey,
+    organizationId: "org.st-albans", now: () => timestamp }), /compiler_server_clock_ambiguous/);
 });
 
 test("connected control-room commands append call, score, finish, correction, and post-repair actual truth", async () => {
@@ -296,7 +308,7 @@ test("connected control-room commands append call, score, finish, correction, an
     let current = journey.activateLive(base.id, 1, "operator.lead");
     const contest = current.live!.state.definition.contests.find(({ contestId }) => contestId.includes(".pools."))!;
     const server = createCompilerServer({ production: false, competitionJourney: journey,
-      organizationId: "org.st-albans", now: () => timestamp });
+      organizationId: "org.st-albans" });
     const root = `/v1/competition-journey/${encodeURIComponent(base.id)}`;
     const command = async (kind: Record<string, unknown>, revision = 1) => {
       const response = await http(server, "POST", `${root}/live-command`, { expectedRevision: revision,

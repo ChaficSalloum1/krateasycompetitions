@@ -146,7 +146,7 @@ test("court-outage requests fail closed on forged repair or Guard artefacts", as
     expectedReopenAt: "2026-09-20T13:30:00.000Z", proposedBy: "operator.lead", proposedAt: now,
     guardInput: { status: "PASSED" }, repairRequest: { tasks: [] },
   } as never), /invalid_court_outage_request/);
-  const server = createCompilerServer({ production: false, competitionJourney: journey, now: () => now });
+  const server = createCompilerServer({ production: false, competitionJourney: journey });
   const response = await post(server, `/v1/competition-journey/${encodeURIComponent(base.id)}/court-outage-preview`, {
     expectedOperationalRevision: base.revision, expectedLiveVersion: active.live!.state.version,
     proposalId: "court-outage.http-forged", courtId: "venue.courts.main.2", reason: "Unsafe wet surface",

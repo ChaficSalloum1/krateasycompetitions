@@ -55,7 +55,7 @@ journey.approveNoShow(published.id, 1, proposal.live!.proposal!.proposalHash,
   proposal.live!.proposal!.options[1]!.optionHash, "RELEASE_WALKOVER_SLOTS", "tournament.director", at);
 
 const port = Number(process.env.PORT ?? 4178);
-const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId, now: () => at });
+const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId });
 server.listen(port, "127.0.0.1", () => {
   const origin = `http://127.0.0.1:${port}`;
   const participantUrl = new URL(access.path, origin); participantUrl.searchParams.set("revision", "2");
