@@ -11,5 +11,8 @@
   "files": ["dist", "schema", "examples"],
   "scripts": {
     "build": "tsc -b"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
   }
 }
