@@ -232,6 +232,7 @@ test("install-free HTTP projections use opaque access and never fall back to the
   const active = journey.activateLive(base.id, 1, "operator.lead");
   const participantId = active.live!.state.definition.contests.find(({ contestId }) => contestId.includes(".pools."))!
     .entrantIds[0]!;
+  // No server clock: the server must read time from the injected journey, never the machine date.
   const server = createCompilerServer({ production: false, competitionJourney: journey,
     organizationId: "org.st-albans" });
   const root = `/v1/competition-journey/${encodeURIComponent(base.id)}`;
@@ -259,6 +260,44 @@ test("install-free HTTP projections use opaque access and never fall back to the
   assert.doesNotMatch(page.body, /pair-options|participant-attention|DELIVERY_REHEARSAL/);
 });
 
+test("participant token expiry is judged by the journey's injected clock, never the machine date", async () => {
+  let clock = timestamp;
+  const journey = new CompetitionJourney({ organizationId: "org.st-albans", participantTokenSecret: secret,
+    now: () => clock });
+  const base = published(journey);
+  const active = journey.activateLive(base.id, 1, "operator.lead");
+  const participantId = active.live!.state.definition.contests.find(({ contestId }) => contestId.includes(".pools."))!
+    .entrantIds[0]!;
+  const server = createCompilerServer({ production: false, competitionJourney: journey,
+    organizationId: "org.st-albans" });
+  const root = `/v1/competition-journey/${encodeURIComponent(base.id)}`;
+  const expiresAt = "2026-09-20T14:00:00.000Z";
+  const issued = await http(server, "POST", `${root}/participant-access`, { expectedPublishedRevision: 1,
+    participantId, expiresAt });
+  assert.equal(issued.status, 201);
+  const next = () => http(server, "GET", `${root}/participant-next?revision=1&token=${issued.body.token}`);
+
+  clock = "2026-09-20T13:59:59.999Z";
+  assert.equal((await next()).status, 200, "a token is valid until its expiry on the injected clock");
+
+  clock = expiresAt;
+  const expired = await next();
+  assert.equal(expired.status, 400, "a token is rejected at its expiry on the injected clock");
+  assert.equal(expired.body.error, "participant_access_denied");
+
+  clock = "2026-09-20T14:00:00.001Z";
+  const after = await next();
+  assert.equal(after.status, 400, "a token stays rejected after its expiry on the injected clock");
+  assert.equal(after.body.error, "participant_access_denied");
+});
+
+test("a server refuses a second clock beside an injected journey instead of trusting them to agree", () => {
+  const journey = new CompetitionJourney({ organizationId: "org.st-albans", participantTokenSecret: secret,
+    now: () => timestamp });
+  assert.throws(() => createCompilerServer({ production: false, competitionJourney: journey,
+    organizationId: "org.st-albans", now: () => timestamp }), /compiler_server_clock_ambiguous/);
+});
+
 test("connected control-room commands append call, score, finish, correction, and post-repair actual truth", async () => {
   const directory = mkdtempSync(join(tmpdir(), "krateasy-connected-control-room-"));
   const storagePath = join(directory, "journey.json");
@@ -269,7 +308,7 @@ test("connected control-room commands append call, score, finish, correction, an
     let current = journey.activateLive(base.id, 1, "operator.lead");
     const contest = current.live!.state.definition.contests.find(({ contestId }) => contestId.includes(".pools."))!;
     const server = createCompilerServer({ production: false, competitionJourney: journey,
-      organizationId: "org.st-albans", now: () => timestamp });
+      organizationId: "org.st-albans" });
     const root = `/v1/competition-journey/${encodeURIComponent(base.id)}`;
     const command = async (kind: Record<string, unknown>, revision = 1) => {
       const response = await http(server, "POST", `${root}/live-command`, { expectedRevision: revision,

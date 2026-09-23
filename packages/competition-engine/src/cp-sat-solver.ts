@@ -354,7 +354,8 @@ export function createCpSatSolver(config: CpSatSolverConfig = {}): CpSatSolver {
       const process = spawnSync(pythonExecutable, [workerPath], {
         input: JSON.stringify({ protocolVersion: 1, requiredBackendVersion, problem, options }),
         encoding: "utf8",
-        timeout: Math.ceil(options.maxTimeSeconds * 1_000) + 30_000,
+        // Outlasts the worker's wall-time safety cap (2 × budget + 5 s) so the worker reports its own limit.
+        timeout: Math.ceil((options.maxTimeSeconds * 2 + 5) * 1_000) + 30_000,
         maxBuffer: 16 * 1024 * 1024,
       });
       if (process.error) {
@@ -375,4 +376,37 @@ export function createCpSatSolver(config: CpSatSolverConfig = {}): CpSatSolver {
       return trustedResult(problem, options, requiredBackendVersion, response);
     },
   });
+}
+
+export interface CpSatReadinessProbe {
+  readonly name: "cp-sat-solver";
+  readonly required: true;
+  readonly status: "HEALTHY" | "UNHEALTHY";
+  readonly observedAt: string;
+  readonly detail: string;
+}
+
+/**
+ * Production readiness evidence for the pinned CP-SAT runtime (deployment mode A): the solver must
+ * solve a fixed two-contest problem to its known optimum on the pinned backend version. Anything else
+ * (missing interpreter, version drift, malformed output, a wrong answer) is UNHEALTHY, so traffic is
+ * not routed to a host that could only return UNKNOWN for every competition that needs the solver.
+ */
+export function probeCpSatSolver(observedAt: string, solver: CpSatSolver = createCpSatSolver()): Readonly<CpSatReadinessProbe> {
+  const problem: SchedulingProblem = {
+    id: "readiness.cp-sat",
+    tasks: [
+      { id: "A", durationMinutes: 30, eligibleResourceIds: ["court.1"], dependencyIds: [], participantIds: ["p1"] },
+      { id: "B", durationMinutes: 30, eligibleResourceIds: ["court.1"], dependencyIds: [], participantIds: ["p2"] },
+    ],
+    resources: [{ id: "court.1", calendars: [{ startMinute: 0, endMinute: 60 }], closures: [] }],
+    locks: [],
+    minimumRestMinutes: 0,
+  };
+  const result = solver.solve(problem, { maxTimeSeconds: 5 });
+  const healthy = result.status === "CERTIFIED" && result.objective.optimal && result.objective.valueMinutes === 60
+    && result.proof.backendVersion === result.proof.requiredBackendVersion;
+  return freeze({ name: "cp-sat-solver" as const, required: true as const, status: healthy ? "HEALTHY" as const : "UNHEALTHY" as const,
+    observedAt, detail: healthy ? `OR-Tools ${result.proof.backendVersion} solved the readiness model to its known optimum`
+      : `CP-SAT readiness model returned ${result.status} (${result.proof.findings[0] ?? result.proof.backendStatus})` });
 }

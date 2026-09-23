@@ -14,7 +14,7 @@ const nonQualification = [
 ] as const;
 const partial = journey.planStructuredEdit(draft.id, draft.draftVersion, nonQualification, "organiser.author");
 const readyForStructure = journey.applyStructuredEdit(draft.id, draft.draftVersion, nonQualification, partial.previewHash, "organiser.author");
-const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId: "org.st-albans", now: () => at });
+const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId: "org.st-albans" });
 server.listen(Number(process.env.PORT ?? 0), "127.0.0.1", () => { const address = server.address(); const port = typeof address === "object" && address ? address.port : 0;
   process.stdout.write(JSON.stringify({ organiserUrl: `http://127.0.0.1:${port}/competitions/${encodeURIComponent(readyForStructure.id)}`, competitionId: readyForStructure.id }) + "\n");
 });

@@ -35,7 +35,7 @@ function distributedPilotSecurity() {
 const publicationArtifacts = { load: async () => undefined };
 
 const productionReadiness = () => assessProductionReadiness([
-  "database", "event-ledger", "identity-provider", "kms-provider", "outbox-worker", "secret-provider",
+  "cp-sat-solver", "database", "event-ledger", "identity-provider", "kms-provider", "outbox-worker", "secret-provider",
 ].map((name) => ({ name, required: true, status: "HEALTHY" as const, observedAt: "2026-09-12T12:00:00.000Z" })), {
   checkedAt: "2026-09-12T12:00:00.000Z", maximumEvidenceAgeMs: 5_000,
 });

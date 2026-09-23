@@ -874,7 +874,8 @@ function compileReferenceRevision(record: StoredJourneyRecord, compiledAt: strin
 export class CompetitionJourney {
   private records = new Map<string, StoredJourneyRecord>();
   private readonly storagePath: string | undefined;
-  private readonly now: () => string;
+  /** The journey's single clock; a server composed around this journey reads time from it too. */
+  public readonly now: () => string;
   private readonly organizationId: string;
   private readonly participantTokenKeys: Readonly<Record<string, string>>;
   private readonly participantTokenKeyVersion: string;

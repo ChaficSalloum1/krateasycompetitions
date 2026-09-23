@@ -27,6 +27,7 @@ export interface ProductionReadinessReport {
 }
 
 const mandatoryProbeNames = [
+  "cp-sat-solver",
   "database",
   "event-ledger",
   "identity-provider",

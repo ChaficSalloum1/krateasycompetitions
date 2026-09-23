@@ -141,7 +141,7 @@ test("the connected St Albans journey closes, exports, restores and duplicates w
       reason: "Independent review confirms the recorded result." });
     clock = "2026-09-20T20:30:00.000Z";
     const server = createCompilerServer({ production: false, organizationId: "org.st-albans",
-      competitionJourney: journey, now: () => clock });
+      competitionJourney: journey });
     const root = `/v1/competition-journey/${encodeURIComponent(published.id)}`;
     const closedResponse = await request(server, "POST", `${root}/close`, {
       expectedPublishedRevision: 1, expectedOperationalRevision: 2,

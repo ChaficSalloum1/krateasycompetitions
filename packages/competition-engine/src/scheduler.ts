@@ -1,6 +1,7 @@
 import { canonicalHash, type SchedulingDefinition, type TournamentSpec, type ValidationFinding } from "@tournament-os/tournament-schema";
 import type { CompetitionGraph, ContestNode, ScheduleSolution, ScheduledContest } from "./types.js";
 import { calculateSchedulingLowerBounds } from "./lower-bounds.js";
+import { deriveContestEntrantsIndependently } from "./independent-entrants.js";
 
 const minutes = (value: number) => value * 60_000;
 const iso = (value: number) => new Date(value).toISOString();
@@ -289,9 +290,21 @@ export function validateSchedule(spec: TournamentSpec, graph: CompetitionGraph, 
     if (requiredId && entry.resourceId !== requiredId) findings.push({ code: "TSV410", severity: "ERROR", path: `/schedule/${entry.contestId}`,
       message: "Contest is not assigned to its declared hard resource.", evidence: { expectedResourceId: requiredId, actualResourceId: entry.resourceId } });
   }
+  // Who can play is derived from the graph, not taken from the schedule: a candidate that understates a
+  // contest's entrants is rejected, and collisions/rest are judged on the union of claim and derivation.
+  const derivedEntrants = deriveContestEntrantsIndependently(graph);
+  for (const entry of solution.contests) {
+    const missingEntrantIds = [...(derivedEntrants.get(entry.contestId) ?? [])]
+      .filter((id) => !entry.possibleEntrantIds.includes(id)).sort();
+    if (missingEntrantIds.length) findings.push({ code: "TSV411", severity: "ERROR", path: `/schedule/${entry.contestId}`,
+      message: "Schedule omits entrants the competition graph says can occupy this contest.", evidence: { missingEntrantIds } });
+  }
   const minimumRest = Number(spec.scheduling.constraints.find(({ rule, strength }) => rule === "minimum_rest" && strength === "HARD")?.value ?? 0);
   const byEntrant = new Map<string, ScheduledContest[]>();
-  for (const entry of solution.contests) for (const id of entry.possibleEntrantIds) byEntrant.set(id, [...(byEntrant.get(id) ?? []), entry]);
+  for (const entry of solution.contests) {
+    const entrantIds = new Set([...entry.possibleEntrantIds, ...(derivedEntrants.get(entry.contestId) ?? [])]);
+    for (const id of entrantIds) byEntrant.set(id, [...(byEntrant.get(id) ?? []), entry]);
+  }
   for (const [entrantId, entries] of byEntrant) {
     entries.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
     for (let index = 1; index < entries.length; index += 1) if (Date.parse(entries[index]!.start) - Date.parse(entries[index - 1]!.end) < minutes(minimumRest)) findings.push({ code: "TSV406", severity: "ERROR", path: `/schedule/${entries[index]!.contestId}`, message: "Participant rest/collision invariant failed.", evidence: { entrantId } });

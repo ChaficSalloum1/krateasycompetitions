@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CP-SAT solver dependency
+        run: pip install -r packages/competition-engine/solver/requirements-cp-sat.txt -c packages/competition-engine/solver/constraints-cp-sat.txt
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Whitespace check on changed lines
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE_SHA" ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            BASE_SHA=$(git rev-parse HEAD^)
+          fi
+          git diff --check "$BASE_SHA" HEAD
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+
+      - name: Type-check, build and test
+        run: npm run check
+
+      - name: Protocol model check
+        run: npm run stress:protocols
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Build production image
+        run: docker build -f deployment/Dockerfile -t krateasy:ci .
+
+      - name: Production host starts from the pruned image and fails closed without configuration
+        env:
+          SMOKE_IMAGE: krateasy:ci
+        run: node scripts/smoke-production-host.mjs
+
+  apple:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift client tests
+        run: npm run check:apple
+
+  postgres-check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify Postgres event store against a real server
+        env:
+          TOURNAMENTOS_POSTGRES_HOST: 127.0.0.1
+          TOURNAMENTOS_POSTGRES_PORT: "5432"
+          USER: postgres
+        run: node --import tsx scripts/verify-postgres-event-store.ts
+
+      - name: Verify Postgres production coordination against a real server
+        env:
+          DATABASE_URL: postgresql://postgres@127.0.0.1:5432/postgres
+          COORDINATION_KEY_HASH_SECRET: ci-only-coordination-key-hash-secret-not-a-real-secret-32b
+        run: node --import tsx scripts/verify-postgres-production-coordination.ts

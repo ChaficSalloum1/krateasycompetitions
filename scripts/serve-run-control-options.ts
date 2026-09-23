@@ -16,7 +16,7 @@ const published = journey.approve(compiled.id, 1, "organiser.approver", compiled
 let current = journey.activateLive(published.id, 1, "operator.lead");
 const contest = current.live!.state.definition.contests.find(({ contestId }) => contestId.includes(".pools."))!;
 for (const entrantId of contest.entrantIds) current = journey.submitLiveCommand(published.id, 1, { kind: "CHECK_IN", entrantId, commandId: "browser.checkin." + entrantId, expectedVersion: current.live!.state.version, actorId: "operator.lead", occurredAt: at } as never);
-const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId, now: () => at });
+const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId });
 const port = Number(process.env.PORT ?? 4178);
 server.listen(port, "127.0.0.1", () => {
   const address = server.address();

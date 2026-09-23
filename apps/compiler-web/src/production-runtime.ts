@@ -78,7 +78,7 @@ export function createProductionRuntime(options: ProductionRuntimeOptions): Prod
   const api = createOrganizationPlatformApi({ platform, now });
   const productionPilotApi = createProductionPilotApi({ ...options.pilotApi, tenantId: options.tenantId, delegate: api,
     requireDistributedStores: true });
-  const server = createCompilerServer({ production: true, platformApi: api, productionPilotApi,
+  const server = createCompilerServer({ production: true, platformApi: api, productionPilotApi, now,
     ...(options.pilotApi.maxBodyBytes === undefined ? {} : { maximumRequestBodyBytes: options.pilotApi.maxBodyBytes }),
     productionReadiness: options.readiness, productionLiveness: () => createLivenessReport(startedAt, now()),
     authenticatePlatform: authenticate,

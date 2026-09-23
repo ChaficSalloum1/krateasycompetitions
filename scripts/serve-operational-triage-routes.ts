@@ -104,7 +104,7 @@ if (closedMode) {
   submit({ kind: "CLOSE_COURT", courtId: closedCourtId, reason: "Deterministic rehearsal outage" }, "close-court");
 }
 
-const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId, now: () => at });
+const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId });
 const port = Number(process.env.PORT ?? 4179);
 server.listen(port, "127.0.0.1", () => {
   const address = server.address();

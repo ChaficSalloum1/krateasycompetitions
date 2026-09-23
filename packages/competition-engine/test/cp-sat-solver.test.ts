@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { createCpSatSolver } from "../src/cp-sat-solver.js";
+import { spawnSync } from "node:child_process";
+import { createCpSatSolver, probeCpSatSolver } from "../src/cp-sat-solver.js";
 import { deterministicExactSolver, type SchedulingProblem } from "../src/schedule-solver.js";
 
 const twoTaskProblem = (): SchedulingProblem => ({
@@ -93,7 +94,19 @@ test("only an exhausted CP-SAT proof becomes INFEASIBLE; bounded or version-drif
   assert.deepEqual(infeasible.assignments, []);
   assert.equal(infeasible.objective.valueMinutes, null);
 
-  const bounded = createCpSatSolver().solve(base, { maxTimeSeconds: 0.000001 });
+  // The budget is deterministic work, so a trivial model can finish in presolve; bound a real
+  // combinatorial model instead: 60 contests, 4 interchangeable courts, shared players, rest.
+  const combinatorial: SchedulingProblem = {
+    id: "bounded-combinatorial",
+    tasks: Array.from({ length: 60 }, (_, index) => ({ id: `task.${String(index).padStart(2, "0")}`,
+      durationMinutes: 20 + (index * 7) % 25, eligibleResourceIds: ["court.1", "court.2", "court.3", "court.4"],
+      dependencyIds: [], participantIds: [`p${index % 13}`, `p${(index * 5 + 3) % 13}`] })),
+    resources: ["court.1", "court.2", "court.3", "court.4"].map((id) => ({ id,
+      calendars: [{ startMinute: 0, endMinute: 1_440 }], closures: [] })),
+    locks: [],
+    minimumRestMinutes: 10,
+  };
+  const bounded = createCpSatSolver().solve(combinatorial, { maxTimeSeconds: 0.000001 });
   assert.equal(bounded.status, "UNKNOWN");
   assert.notEqual(bounded.proof.backendStatus, "INFEASIBLE");
 
@@ -158,4 +171,40 @@ test("a worker claim is never certified until the TypeScript boundary independen
   assert.deepEqual(result.assignments, []);
   assert.ok(result.proof.validationErrors.some((message) => message.includes("Resource collision")));
   assert.match(result.proof.findings[0] ?? "", /CPS006/);
+});
+
+test("the CP-SAT readiness probe is healthy only when the pinned backend solves its known model", () => {
+  const observedAt = "2026-09-23T12:00:00.000Z";
+  const healthy = probeCpSatSolver(observedAt);
+  assert.deepEqual({ name: healthy.name, required: healthy.required, status: healthy.status },
+    { name: "cp-sat-solver", required: true, status: "HEALTHY" });
+  assert.match(healthy.detail, /OR-Tools 9\.15\.6755/);
+
+  const missing = probeCpSatSolver(observedAt, createCpSatSolver({ pythonExecutable: "/definitely/missing/python" }));
+  assert.equal(missing.status, "UNHEALTHY");
+  assert.match(missing.detail, /CPS001/);
+
+  const drifted = probeCpSatSolver(observedAt, createCpSatSolver({ requiredBackendVersion: "0.0.0" }));
+  assert.equal(drifted.status, "UNHEALTHY");
+  assert.match(drifted.detail, /CPS003/);
+});
+
+test("the worker never publishes a feasible answer that the wall-time safety cap cut short", () => {
+  const workerDirectory = fileURLToPath(new URL("../solver/", import.meta.url));
+  const script = [
+    "import json, sys",
+    "sys.dont_write_bytecode = True",
+    "sys.path.insert(0, sys.argv[1])",
+    "import cp_sat_worker as w",
+    "budget, cap = w.search_limits(30)",
+    "print(json.dumps({'budget': budget, 'cap': cap,",
+    "  'capped': w.reproducible_status('FEASIBLE', cap, cap),",
+    "  'deterministic': w.reproducible_status('FEASIBLE', budget, cap),",
+    "  'optimal': w.reproducible_status('OPTIMAL', cap, cap),",
+    "  'infeasible': w.reproducible_status('INFEASIBLE', cap, cap)}))",
+  ].join("\n");
+  const run = spawnSync(process.env.TOURNAMENT_OS_CP_SAT_PYTHON ?? "python3", ["-c", script, workerDirectory], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(JSON.parse(run.stdout), { budget: 30, cap: 65, capped: "UNKNOWN", deterministic: "FEASIBLE",
+    optimal: "OPTIMAL", infeasible: "INFEASIBLE" });
 });

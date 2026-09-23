@@ -34,6 +34,45 @@ the release record.
    compatibility, and replayed state hashes in an isolated environment.
 8. Alerts, dashboards, on-call ownership, privacy policy, retention periods,
    support contacts, and incident communication paths are approved.
+9. The CP-SAT solver runs in deployment mode A (below) and the image's
+   `cp-sat-solver` readiness probe is healthy.
+
+## CP-SAT solver: deployment mode A
+
+Every competition outside the fixed St Albans production lock is scheduled
+through CP-SAT (`solveGraphWithCpSat` in `competition-journey.ts`). Without a
+working solver, compilation fails with `journey_solver_unavailable`, so the
+deployed mode is **A: the pinned OR-Tools worker ships in the runtime image**.
+Mode B (declaring CP-SAT unavailable) would limit production to the St Albans
+fixture and is not the chosen mode.
+
+- **Pinned runtime.** `deployment/Dockerfile` installs Python 3 and
+  `ortools==9.15.6755` into `/opt/cp-sat`, with every transitive package pinned
+  by `packages/competition-engine/solver/constraints-cp-sat.txt`, and sets
+  `TOURNAMENT_OS_CP_SAT_PYTHON`. OR-Tools publishes only glibc wheels, so the
+  runtime base is `node:24-bookworm-slim`. The worker refuses any other OR-Tools
+  version (`CPS003`), and a version change needs `CP_SAT_BACKEND_VERSION`,
+  both requirement files and the image to move together.
+- **Readiness.** `cp-sat-solver` is a mandatory readiness probe. A deployment
+  adapter supplies it with `probeCpSatSolver`, which solves a fixed model to
+  its known optimum on the pinned backend. A missing interpreter, version drift,
+  malformed output or a wrong answer is `UNHEALTHY`; a missing probe is
+  `UNKNOWN`. Either returns 503 from `/health/ready`.
+- **Reproducible results.** The worker stops on CP-SAT's deterministic time
+  budget, with wall time only as a safety cap (twice the budget plus five
+  seconds). An unproven `FEASIBLE` answer cut short by the safety cap is
+  reported `UNKNOWN`, so a published schedule never depends on machine speed.
+  `OPTIMAL` and `INFEASIBLE` are proofs and stand either way.
+- **Independent validation.** Every returned assignment is re-validated before
+  use; an invalid or unavailable result is `UNKNOWN`, never `INFEASIBLE` or
+  publishable.
+- **Evidence.** CI builds the image and runs `scripts/smoke-production-host.mjs`
+  with `SMOKE_IMAGE`, which requires the host to fail closed without
+  configuration and the in-image probe to be healthy.
+- **Known limit.** The solver call is synchronous (`spawnSync`) and blocks the
+  Node event loop for the whole solve. Until compilation moves to an
+  asynchronous worker queue, keep compile traffic off hosts that serve live
+  operations, or accept that a compile pauses other requests.
 
 ## Health and service levels
 
