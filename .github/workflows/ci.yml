@@ -10,10 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version-file: .nvmrc
           cache: npm
 
       - uses: actions/setup-python@v5
@@ -26,14 +28,48 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Type-check and build
-        run: npm run build
+      - name: Whitespace check on changed lines
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE_SHA" ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            BASE_SHA=$(git rev-parse HEAD^)
+          fi
+          git diff --check "$BASE_SHA" HEAD
 
-      - name: Test
-        run: npm test
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+
+      - name: Type-check, build and test
+        run: npm run check
 
       - name: Protocol model check
         run: npm run stress:protocols
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Build production image
+        run: docker build -f deployment/Dockerfile -t krateasy:ci .
+
+      - name: Production host starts from the pruned image and fails closed without configuration
+        env:
+          SMOKE_IMAGE: krateasy:ci
+        run: node scripts/smoke-production-host.mjs
+
+  apple:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift client tests
+        run: npm run check:apple
 
   postgres-check:
     runs-on: ubuntu-latest
@@ -54,7 +90,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
