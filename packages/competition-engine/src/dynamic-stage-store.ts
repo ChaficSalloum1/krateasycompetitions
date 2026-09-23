@@ -190,8 +190,10 @@ export function createFileDynamicStagePort(directory: string): DynamicStagePersi
 export function createSQLiteDynamicStagePort(databasePath: string): SQLiteDynamicStagePersistencePort {
   if (!databasePath.trim()) throw new Error("SQLite database path is required");
   const database = new DatabaseSync(databasePath);
-  database.exec("PRAGMA journal_mode = WAL");
+  // Wait on a lock before switching to WAL: that switch needs an exclusive lock, so a
+  // concurrent opener without a busy timeout fails at once with "database is locked".
   database.exec("PRAGMA busy_timeout = 5000");
+  database.exec("PRAGMA journal_mode = WAL");
   database.exec("PRAGMA foreign_keys = ON");
   database.exec("PRAGMA synchronous = NORMAL");
   database.exec(`
