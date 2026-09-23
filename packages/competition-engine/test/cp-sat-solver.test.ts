@@ -193,6 +193,7 @@ test("the worker never publishes a feasible answer that the wall-time safety cap
   const workerDirectory = fileURLToPath(new URL("../solver/", import.meta.url));
   const script = [
     "import json, sys",
+    "sys.dont_write_bytecode = True",
     "sys.path.insert(0, sys.argv[1])",
     "import cp_sat_worker as w",
     "budget, cap = w.search_limits(30)",

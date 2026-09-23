@@ -13,3 +13,5 @@ output/
 !.env.example
 *.xcuserstate
 xcuserdata/
+__pycache__/
+*.pyc
