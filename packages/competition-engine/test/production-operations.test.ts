@@ -9,6 +9,7 @@ import {
 
 const checkedAt = "2026-09-12T12:00:00.000Z";
 const healthyRequiredProbes: ProductionProbe[] = [
+  "cp-sat-solver",
   "database",
   "event-ledger",
   "identity-provider",
@@ -66,4 +67,11 @@ test("structured telemetry emitter redacts sensitive attributes and rejects unsa
   assert.equal(accepted.attributes.accessToken, "[REDACTED]");
   assert.deepEqual(emitted, [accepted]);
   assert.throws(() => emit({ name: "Bad Event", service: "competition-operations" }), /Unsafe telemetry event/);
+});
+
+test("a deployment that omits the CP-SAT solver probe does not route traffic", () => {
+  const missing = assessProductionReadiness(healthyRequiredProbes.filter(({ name }) => name !== "cp-sat-solver"),
+    { checkedAt, maximumEvidenceAgeMs: 5_000 });
+  assert.equal(missing.routeTraffic, false);
+  assert.match(missing.reasons.join("\n"), /cp-sat-solver: required probe is missing/);
 });

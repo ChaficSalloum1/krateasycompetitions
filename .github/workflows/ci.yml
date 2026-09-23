@@ -23,7 +23,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install CP-SAT solver dependency
-        run: pip install -r packages/competition-engine/solver/requirements-cp-sat.txt
+        run: pip install -r packages/competition-engine/solver/requirements-cp-sat.txt -c packages/competition-engine/solver/constraints-cp-sat.txt
 
       - name: Install dependencies
         run: npm ci

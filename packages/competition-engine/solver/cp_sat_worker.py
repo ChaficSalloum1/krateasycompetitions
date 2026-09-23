@@ -27,6 +27,21 @@ def allowed_starts(task: dict[str, Any], resource: dict[str, Any], horizon: int)
     return starts
 
 
+def search_limits(budget_seconds: float) -> tuple[float, float]:
+    """The search stops on CP-SAT's deterministic time, so the same model and pinned backend reach the
+    same answer on any machine; wall time is only a safety cap well beyond that budget."""
+    return budget_seconds, budget_seconds * 2 + 5
+
+
+def reproducible_status(status: str, wall_seconds: float, wall_cap_seconds: float) -> str:
+    """OPTIMAL and INFEASIBLE are proofs. An unproven FEASIBLE answer is only reproducible when the
+    deterministic budget ended the search; if the wall-time safety cap ended it, the answer depends on
+    machine speed and is reported as UNKNOWN rather than published."""
+    if status == "FEASIBLE" and wall_seconds >= wall_cap_seconds * 0.99:
+        return "UNKNOWN"
+    return status
+
+
 def solve(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         import ortools
@@ -123,13 +138,16 @@ def solve(payload: dict[str, Any]) -> dict[str, Any]:
         model.add_max_equality(makespan, [ends[task["id"]] for task in tasks])
         model.minimize(makespan)
 
+        deterministic_budget, wall_cap = search_limits(max_time_seconds)
         solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds = max_time_seconds
+        solver.parameters.max_deterministic_time = deterministic_budget
+        solver.parameters.max_time_in_seconds = wall_cap
         solver.parameters.num_search_workers = 1
         solver.parameters.random_seed = 0
         solver.parameters.log_search_progress = False
         status_code = solver.solve(model)
-        status = solver.status_name(status_code)
+        solved_status = solver.status_name(status_code)
+        status = reproducible_status(solved_status, solver.wall_time, wall_cap)
         response: dict[str, Any] = {
             "protocolVersion": 1,
             "status": status,
@@ -137,6 +155,9 @@ def solve(payload: dict[str, Any]) -> dict[str, Any]:
             "branches": solver.num_branches,
             "conflicts": solver.num_conflicts,
         }
+        if status != solved_status:
+            response["diagnostic"] = "WALL_TIME_SAFETY_CAP"
+            return response
         if status in ("OPTIMAL", "FEASIBLE"):
             assignments: list[dict[str, Any]] = []
             for task in tasks:

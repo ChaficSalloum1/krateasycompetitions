@@ -4,7 +4,7 @@
 //
 // Plain JavaScript on purpose: it must run against a pruned install where tsx is absent.
 //   node scripts/smoke-production-host.mjs                 # built, pruned working tree
-//   SMOKE_IMAGE=krateasy:ci node scripts/smoke-production-host.mjs   # built container image
+//   SMOKE_IMAGE=krateasy:ci node scripts/smoke-production-host.mjs   # built image, plus its CP-SAT probe
 import { spawnSync } from "node:child_process";
 
 const image = process.env.SMOKE_IMAGE;
@@ -27,3 +27,19 @@ if (!failedClosed) {
   process.exit(1);
 }
 process.stdout.write(`production host failed closed as intended${image ? ` in ${image}` : ""}\n`);
+
+// CP-SAT deployment mode A: inside the image, the pinned solver must pass its own readiness probe.
+if (image) {
+  const probeScript = "const m = await import('/app/packages/competition-engine/dist/src/index.js');"
+    + "process.stdout.write(JSON.stringify(m.probeCpSatSolver(new Date().toISOString())));";
+  const solver = spawnSync("docker", ["run", "--rm", "--entrypoint", "node", image, "--input-type=module", "-e", probeScript],
+    { encoding: "utf8", timeout: 120_000 });
+  let probe;
+  try { probe = JSON.parse(solver.stdout); } catch { probe = undefined; }
+  if (solver.status !== 0 || probe?.name !== "cp-sat-solver" || probe?.status !== "HEALTHY") {
+    process.stderr.write(`CP-SAT readiness probe failed in ${image} (exit ${solver.status})\n`
+      + `--- stdout ---\n${solver.stdout ?? ""}\n--- stderr ---\n${solver.stderr ?? ""}\n`);
+    process.exit(1);
+  }
+  process.stdout.write(`CP-SAT readiness probe healthy in ${image}: ${probe.detail}\n`);
+}
