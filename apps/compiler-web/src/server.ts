@@ -8,6 +8,7 @@ import {
   deriveLiveControlRoom,
   submitLiveOperationsCommand,
   tournamentFormatCapabilities,
+  type CompetitionGuardReport,
   type CompiledIntent,
   type OrganizationPlatformApi,
   type PlatformApiPrincipal,
@@ -22,7 +23,7 @@ import { creatorHtml } from "./creator-view.js";
 import { productHtml } from "./product-view.js";
 import { createCompetitionProposal, parseCreationProposalPayload } from "./creation-proposal.js";
 import { CompetitionJourney, parseConnectedLiveCommand, parseCreationSource,
-  type CompetitionJourneyOptions } from "./competition-journey.js";
+  type CompetitionJourneyOptions, type CompetitionJourneyStatus } from "./competition-journey.js";
 import { renderCompetitionGuardPreflight } from "./guard-preflight-view.js";
 import { renderCompetitionPortfolio } from "./competition-portfolio-view.js";
 import { renderOrganiserStudio } from "./organiser-studio-view.js";
@@ -395,13 +396,41 @@ export function clientApiResponse(path: string): unknown | undefined {
   return api[match[2] as "blueprint" | "schedule" | "operations" | "findings" | "certification"];
 }
 
+type JourneyCertificationReadiness = "UNCERTIFIED" | "CERTIFIED" | "PUBLISHED" | "STALE";
+
+/**
+ * The read model docs/competition-guard-publication.md defines for tenant
+ * dashboards: UNCERTIFIED (no Guard certificate exists), CERTIFIED (current
+ * evidence exists but publication has not committed), PUBLISHED, and STALE
+ * (stored evidence no longer matches the latest revision). This journey's
+ * compiled evidence is always freshly bound to its own current draft version
+ * -- editing a draft produces a new immutable revision rather than leaving
+ * old evidence attached to a moved-on one -- so STALE cannot occur here; the
+ * type still carries it so this stays the same contract the doc describes.
+ *
+ * `certificationStatus` alongside this field is a separate, older, binary
+ * CERTIFIED/REJECTED value already shipped in the Mac/iOS client's decoder.
+ * It is kept as-is (an un-compiled draft reading "REJECTED" is a known,
+ * minor mislabel, not a functional defect) because changing its wire values
+ * would break that client's Codable enum, and this repository has no Swift
+ * toolchain to verify a client-side fix. `certificationReadiness` is the
+ * additive, spec-accurate replacement new and web consumers should read.
+ */
+function journeyCertificationReadiness(status: CompetitionJourneyStatus,
+  guardStatus: CompetitionGuardReport["status"] | undefined): JourneyCertificationReadiness {
+  if (status === "PUBLISHED" || status === "CLOSED") return "PUBLISHED";
+  if (guardStatus === "PASSED") return "CERTIFIED";
+  return "UNCERTIFIED";
+}
+
 function journeyClientApiResponse(path: string, journey: CompetitionJourney): unknown | undefined {
   const snapshots = journey.list();
   if (path === "/v1/tournaments") {
     return immutable({ apiVersion: CLIENT_API_VERSION, items:
       snapshots.map((snapshot) => ({ id: snapshot.id, name: snapshot.name, revision: snapshot.revision,
         certificationStatus: ["PUBLISHED", "CLOSED"].includes(snapshot.status) && snapshot.compiled?.guardStatus === "PASSED"
-          ? "CERTIFIED" as const : "REJECTED" as const })) });
+          ? "CERTIFIED" as const : "REJECTED" as const,
+        certificationReadiness: journeyCertificationReadiness(snapshot.status, snapshot.compiled?.guardStatus) })) });
   }
   const match = /^\/v1\/tournaments\/([^/]+)\/(blueprint|schedule|operations|findings|certification)$/.exec(path);
   if (!match) return undefined;
@@ -410,9 +439,10 @@ function journeyClientApiResponse(path: string, journey: CompetitionJourney): un
   const compiled = snapshot.compiled;
   const certificationStatus = ["PUBLISHED", "CLOSED"].includes(snapshot.status) && compiled?.guardStatus === "PASSED"
     ? "CERTIFIED" as const : "REJECTED" as const;
+  const certificationReadiness = journeyCertificationReadiness(snapshot.status, compiled?.guardStatus);
   const section = match[2]!;
   if (section === "blueprint") return immutable({ apiVersion: CLIENT_API_VERSION, id: snapshot.id, name: snapshot.name,
-    revision: snapshot.revision, certificationStatus, solverStatus: compiled?.solverStatus ?? "UNKNOWN",
+    revision: snapshot.revision, certificationStatus, certificationReadiness, solverStatus: compiled?.solverStatus ?? "UNKNOWN",
     participantCount: snapshot.blueprint.participantCount ?? 0, actualContestCount: compiled?.actualContestCount ?? 0,
     scheduledContestCount: compiled?.scheduledContestCount ?? 0,
     actionRequired: !["PUBLISHED", "CLOSED"].includes(snapshot.status) });
@@ -462,6 +492,7 @@ function journeyClientApiResponse(path: string, journey: CompetitionJourney): un
       path: finding.path, message: finding.message, accessibilityLabel: `${finding.severity}: ${finding.message}`,
       debugID: `${compiled.guardReportHash.slice(0, 12)}.${finding.sourceCode}.${index + 1}` })) ?? [] });
   return immutable({ apiVersion: CLIENT_API_VERSION, tournamentID: snapshot.id, status: certificationStatus,
+    readinessStatus: certificationReadiness,
     statement: snapshot.publication
       ? `Competition Guard ${compiled?.guardStatus}; published revision ${snapshot.publication.revision}.`
       : "No published revision.",
