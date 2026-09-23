@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { createCpSatSolver, probeCpSatSolver } from "../src/cp-sat-solver.js";
+import { cpSatProblemContentHash, createCpSatSolver, createPresolvedCpSatSolver, probeCpSatSolver, type CpSatSolver } from "../src/cp-sat-solver.js";
 import { deterministicExactSolver, type SchedulingProblem } from "../src/schedule-solver.js";
 
 const twoTaskProblem = (): SchedulingProblem => ({
@@ -207,4 +207,54 @@ test("the worker never publishes a feasible answer that the wall-time safety cap
   assert.equal(run.status, 0, run.stderr);
   assert.deepEqual(JSON.parse(run.stdout), { budget: 30, cap: 65, capped: "UNKNOWN", deterministic: "FEASIBLE",
     optimal: "OPTIMAL", infeasible: "INFEASIBLE" });
+});
+
+const combinatorialProblem = (): SchedulingProblem => ({
+  id: "async-combinatorial",
+  tasks: Array.from({ length: 24 }, (_, index) => ({ id: `task.${String(index).padStart(2, "0")}`,
+    durationMinutes: 20 + (index * 7) % 25, eligibleResourceIds: ["court.1", "court.2", "court.3"],
+    dependencyIds: [], participantIds: [`p${index % 9}`, `p${(index * 5 + 3) % 9}`] })),
+  resources: ["court.1", "court.2", "court.3"].map((id) => ({ id, calendars: [{ startMinute: 0, endMinute: 1_440 }], closures: [] })),
+  locks: [],
+  minimumRestMinutes: 10,
+});
+
+test("solveAsync returns the same schedule as solve without blocking the event loop", async () => {
+  const solver = createCpSatSolver();
+  const problem = combinatorialProblem();
+  let ticks = 0;
+  const ticker = setInterval(() => { ticks += 1; }, 5);
+  const asyncResult = await solver.solveAsync(problem, { maxTimeSeconds: 2 });
+  clearInterval(ticker);
+  assert.ok(ticks > 0, "timers kept running while CP-SAT solved in its child process");
+  const syncResult = solver.solve(problem, { maxTimeSeconds: 2 });
+  assert.equal(asyncResult.status, "CERTIFIED");
+  assert.deepEqual({ status: asyncResult.status, assignments: asyncResult.assignments, objective: asyncResult.objective },
+    { status: syncResult.status, assignments: syncResult.assignments, objective: syncResult.objective },
+    "the deterministic budget gives both paths the same answer");
+
+  const unavailable = await createCpSatSolver({ pythonExecutable: "/definitely/missing/python" }).solveAsync(problem, { maxTimeSeconds: 1 });
+  assert.equal(unavailable.status, "UNKNOWN");
+  assert.match(unavailable.proof.findings[0] ?? "", /CPS001/);
+});
+
+test("a presolved result is replayed only for a problem with the same content", async () => {
+  const problem = combinatorialProblem();
+  const result = await createCpSatSolver().solveAsync(problem, { maxTimeSeconds: 2 });
+  const refusing: CpSatSolver = {
+    solve: () => { throw new Error("fallback must not run for matching content"); },
+    solveAsync: () => Promise.reject(new Error("fallback must not run for matching content")),
+  };
+  const replay = createPresolvedCpSatSolver({ contentHash: cpSatProblemContentHash(problem), result }, refusing);
+  assert.equal(replay.solve({ ...problem, id: "renamed-but-identical" }, { maxTimeSeconds: 2 }), result,
+    "the id embeds a timestamp and is not part of the content");
+
+  let fallbackCalls = 0;
+  const counting: CpSatSolver = { solve: (p, o) => { fallbackCalls += 1; return createCpSatSolver().solve(p, o); },
+    solveAsync: (p, o) => createCpSatSolver().solveAsync(p, o) };
+  const changed = { ...problem, minimumRestMinutes: 15 };
+  const fresh = createPresolvedCpSatSolver({ contentHash: cpSatProblemContentHash(problem), result }, counting)
+    .solve(changed, { maxTimeSeconds: 2 });
+  assert.equal(fallbackCalls, 1, "different content is solved afresh, never answered from the cache");
+  assert.notEqual(fresh, result);
 });

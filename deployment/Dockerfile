@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS build
+FROM node:24.21.0-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 COPY packages ./packages
@@ -9,7 +9,7 @@ RUN npm prune --omit=dev
 
 # CP-SAT deployment mode A: the pinned OR-Tools worker ships in the runtime image. OR-Tools publishes
 # only glibc (manylinux) wheels, so the runtime is Debian rather than Alpine.
-FROM node:24-bookworm-slim AS runtime
+FROM node:24.21.0-bookworm-slim AS runtime
 ENV NODE_ENV=production PORT=4173 HOST=0.0.0.0 NODE_OPTIONS=--disable-proto=throw \
     TOURNAMENT_OS_CP_SAT_PYTHON=/opt/cp-sat/bin/python
 RUN apt-get update \

@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -51,7 +51,11 @@ export interface CpSatResult {
 }
 
 export interface CpSatSolveOptions { readonly maxTimeSeconds: number; }
-export interface CpSatSolver { solve(problem: SchedulingProblem, options: CpSatSolveOptions): CpSatResult; }
+export interface CpSatSolver {
+  solve(problem: SchedulingProblem, options: CpSatSolveOptions): CpSatResult;
+  /** The same result as `solve`, from a child process that does not block the event loop. */
+  solveAsync(problem: SchedulingProblem, options: CpSatSolveOptions): Promise<CpSatResult>;
+}
 export interface CpSatSolverConfig {
   readonly pythonExecutable?: string;
   readonly workerPath?: string;
@@ -338,43 +342,96 @@ function trustedResult(
     proof: { ...proofBase, proofHash: hash({ problem, options, assignments: safeAssignments, objective, proof: proofBase }) } });
 }
 
+interface WorkerRun { readonly errorCode?: string; readonly exitStatus: number | null; readonly stdout: string; }
+
+const workerTimeoutMs = (options: CpSatSolveOptions) =>
+  // Outlasts the worker's wall-time safety cap (2 × budget + 5 s) so the worker reports its own limit.
+  Math.ceil((options.maxTimeSeconds * 2 + 5) * 1_000) + 30_000;
+const workerMaxBuffer = 16 * 1024 * 1024;
+
 export function createCpSatSolver(config: CpSatSolverConfig = {}): CpSatSolver {
   const pythonExecutable = config.pythonExecutable ?? process.env.TOURNAMENT_OS_CP_SAT_PYTHON ?? "python3";
   const workerPath = config.workerPath ?? defaultWorkerPath();
   const requiredBackendVersion = config.requiredBackendVersion ?? CP_SAT_BACKEND_VERSION;
+  /** Checks shared by both paths: the model before it is sent, then everything the worker returns. */
+  const precheck = (problem: SchedulingProblem, options: CpSatSolveOptions): CpSatResult | undefined => {
+    if (!Number.isFinite(options.maxTimeSeconds) || options.maxTimeSeconds <= 0 || options.maxTimeSeconds > 3_600) {
+      throw new Error("CP-SAT maximum time must be greater than zero and at most 3600 seconds");
+    }
+    const modelErrors = preflightProblem(problem);
+    return modelErrors.length > 0
+      ? unknownResult(problem, options, requiredBackendVersion, "MODEL_INVALID", `CPS007: Scheduling model is invalid (${modelErrors.join(" ")})`)
+      : undefined;
+  };
+  const request = (problem: SchedulingProblem, options: CpSatSolveOptions) =>
+    JSON.stringify({ protocolVersion: 1, requiredBackendVersion, problem, options });
+  const interpret = (problem: SchedulingProblem, options: CpSatSolveOptions, run: WorkerRun): CpSatResult => {
+    if (run.errorCode) {
+      return unknownResult(problem, options, requiredBackendVersion, "UNAVAILABLE", `CPS001: CP-SAT worker unavailable (${run.errorCode}).`);
+    }
+    if (run.exitStatus !== 0) {
+      return unknownResult(problem, options, requiredBackendVersion, "UNAVAILABLE", `CPS002: CP-SAT worker exited without a trusted result (exit ${run.exitStatus ?? "unknown"}).`);
+    }
+    const response = parseWorkerResponse(run.stdout);
+    if (!response) return unknownResult(problem, options, requiredBackendVersion, "UNAVAILABLE", "CPS002: CP-SAT worker returned malformed protocol output.");
+    if (response.backendVersion !== undefined && response.backendVersion !== requiredBackendVersion) {
+      return unknownResult(problem, options, requiredBackendVersion, "UNAVAILABLE", "CPS003: CP-SAT backend version does not match the pinned runtime.", true, response.backendVersion);
+    }
+    if (response.status === "UNAVAILABLE") {
+      return unknownResult(problem, options, requiredBackendVersion, "UNAVAILABLE", "CPS001: Pinned CP-SAT backend is unavailable.", false, response.backendVersion ?? null);
+    }
+    return trustedResult(problem, options, requiredBackendVersion, response);
+  };
   return freeze({
     solve(problem: SchedulingProblem, options: CpSatSolveOptions): CpSatResult {
-      if (!Number.isFinite(options.maxTimeSeconds) || options.maxTimeSeconds <= 0 || options.maxTimeSeconds > 3_600) {
-        throw new Error("CP-SAT maximum time must be greater than zero and at most 3600 seconds");
-      }
-      const modelErrors = preflightProblem(problem);
-      if (modelErrors.length > 0) {
-        return unknownResult(problem, options, requiredBackendVersion, "MODEL_INVALID", `CPS007: Scheduling model is invalid (${modelErrors.join(" ")})`);
-      }
+      const rejected = precheck(problem, options);
+      if (rejected) return rejected;
       const process = spawnSync(pythonExecutable, [workerPath], {
-        input: JSON.stringify({ protocolVersion: 1, requiredBackendVersion, problem, options }),
-        encoding: "utf8",
-        // Outlasts the worker's wall-time safety cap (2 × budget + 5 s) so the worker reports its own limit.
-        timeout: Math.ceil((options.maxTimeSeconds * 2 + 5) * 1_000) + 30_000,
-        maxBuffer: 16 * 1024 * 1024,
+        input: request(problem, options), encoding: "utf8", timeout: workerTimeoutMs(options), maxBuffer: workerMaxBuffer,
       });
-      if (process.error) {
-        const errorCode = (process.error as NodeJS.ErrnoException).code ?? "PROCESS_ERROR";
-        return unknownResult(problem, options, requiredBackendVersion, "UNAVAILABLE", `CPS001: CP-SAT worker unavailable (${errorCode}).`);
-      }
-      if (process.status !== 0) {
-        return unknownResult(problem, options, requiredBackendVersion, "UNAVAILABLE", `CPS002: CP-SAT worker exited without a trusted result (exit ${process.status ?? "unknown"}).`);
-      }
-      const response = parseWorkerResponse(process.stdout);
-      if (!response) return unknownResult(problem, options, requiredBackendVersion, "UNAVAILABLE", "CPS002: CP-SAT worker returned malformed protocol output.");
-      if (response.backendVersion !== undefined && response.backendVersion !== requiredBackendVersion) {
-        return unknownResult(problem, options, requiredBackendVersion, "UNAVAILABLE", "CPS003: CP-SAT backend version does not match the pinned runtime.", true, response.backendVersion);
-      }
-      if (response.status === "UNAVAILABLE") {
-        return unknownResult(problem, options, requiredBackendVersion, "UNAVAILABLE", "CPS001: Pinned CP-SAT backend is unavailable.", false, response.backendVersion ?? null);
-      }
-      return trustedResult(problem, options, requiredBackendVersion, response);
+      return interpret(problem, options, { exitStatus: process.status, stdout: process.stdout ?? "",
+        ...(process.error ? { errorCode: (process.error as NodeJS.ErrnoException).code ?? "PROCESS_ERROR" } : {}) });
     },
+    solveAsync(problem: SchedulingProblem, options: CpSatSolveOptions): Promise<CpSatResult> {
+      let rejected: CpSatResult | undefined;
+      try { rejected = precheck(problem, options); } catch (error) { return Promise.reject(error); }
+      if (rejected) return Promise.resolve(rejected);
+      return new Promise((resolve) => {
+        const child = spawn(pythonExecutable, [workerPath], { stdio: ["pipe", "pipe", "ignore"] });
+        let stdout = ""; let overflow = false; let settled = false;
+        const finish = (run: WorkerRun) => { if (settled) return; settled = true; clearTimeout(timer); resolve(interpret(problem, options, run)); };
+        const timer = setTimeout(() => { child.kill("SIGKILL"); finish({ errorCode: "ETIMEDOUT", exitStatus: null, stdout: "" }); }, workerTimeoutMs(options));
+        child.stdout.setEncoding("utf8");
+        child.stdout.on("data", (chunk: string) => {
+          stdout += chunk;
+          if (stdout.length > workerMaxBuffer && !overflow) { overflow = true; child.kill("SIGKILL"); }
+        });
+        child.on("error", (error: NodeJS.ErrnoException) => finish({ errorCode: error.code ?? "PROCESS_ERROR", exitStatus: null, stdout: "" }));
+        child.on("close", (code) => finish(overflow ? { errorCode: "ENOBUFS", exitStatus: null, stdout: "" } : { exitStatus: code, stdout }));
+        child.stdin.on("error", () => { /* reported through the process close or error event */ });
+        child.stdin.end(request(problem, options));
+      });
+    },
+  });
+}
+
+/** Identity of a scheduling problem's content, ignoring its id (which embeds the compile timestamp). */
+export function cpSatProblemContentHash(problem: SchedulingProblem): string {
+  return hash({ ...problem, id: null });
+}
+
+/**
+ * A solver that answers with a result computed earlier (typically by `solveAsync` off the request
+ * path) when asked to solve a problem with the same content, and otherwise solves normally. The
+ * caller still validates whatever comes back; a stale result for different content is never reused.
+ */
+export function createPresolvedCpSatSolver(presolved: { readonly contentHash: string; readonly result: CpSatResult },
+  fallback: CpSatSolver = createCpSatSolver()): CpSatSolver {
+  return freeze({
+    solve: (problem: SchedulingProblem, options: CpSatSolveOptions) =>
+      cpSatProblemContentHash(problem) === presolved.contentHash ? presolved.result : fallback.solve(problem, options),
+    solveAsync: (problem: SchedulingProblem, options: CpSatSolveOptions) =>
+      cpSatProblemContentHash(problem) === presolved.contentHash ? Promise.resolve(presolved.result) : fallback.solveAsync(problem, options),
   });
 }
 

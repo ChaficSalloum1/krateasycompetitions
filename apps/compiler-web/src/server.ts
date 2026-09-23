@@ -904,7 +904,9 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         if (operation === "compile") {
           if (Object.keys(command).some((key) => key !== "expectedDraftVersion")
             || !Number.isSafeInteger(command.expectedDraftVersion)) throw new Error("invalid_journey_command");
-          json(response, 200, competitionJourney.compile(competitionId, command.expectedDraftVersion as number));
+          // Solve off the event loop first, so a compile does not stall live operations on this host.
+          const prepared = await competitionJourney.prepareCompile(competitionId, command.expectedDraftVersion as number);
+          json(response, 200, competitionJourney.compile(competitionId, command.expectedDraftVersion as number, prepared));
           return;
         }
         if (operation === "approve") {

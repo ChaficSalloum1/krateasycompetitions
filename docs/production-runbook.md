@@ -50,7 +50,7 @@ fixture and is not the chosen mode.
   `ortools==9.15.6755` into `/opt/cp-sat`, with every transitive package pinned
   by `packages/competition-engine/solver/constraints-cp-sat.txt`, and sets
   `TOURNAMENT_OS_CP_SAT_PYTHON`. OR-Tools publishes only glibc wheels, so the
-  runtime base is `node:24-bookworm-slim`. The worker refuses any other OR-Tools
+  runtime base is `node:24.21.0-bookworm-slim`. The worker refuses any other OR-Tools
   version (`CPS003`), and a version change needs `CP_SAT_BACKEND_VERSION`,
   both requirement files and the image to move together.
 - **Readiness.** `cp-sat-solver` is a mandatory readiness probe. A deployment
@@ -69,10 +69,19 @@ fixture and is not the chosen mode.
 - **Evidence.** CI builds the image and runs `scripts/smoke-production-host.mjs`
   with `SMOKE_IMAGE`, which requires the host to fail closed without
   configuration and the in-image probe to be healthy.
-- **Known limit.** The solver call is synchronous (`spawnSync`) and blocks the
-  Node event loop for the whole solve. Until compilation moves to an
-  asynchronous worker queue, keep compile traffic off hosts that serve live
-  operations, or accept that a compile pauses other requests.
+- **Off the request path.** The HTTP compile route first runs the CP-SAT
+  solve in a child process (`CompetitionJourney.prepareCompile`, using
+  `solveAsync`), so other requests, including live operations and health
+  checks, keep being served while it solves. `compile` then reuses that result
+  only for the same draft and identical problem content, and still validates
+  it independently; a solver answer that fails validation stops the compile
+  (`journey_solver_rejected`). CP-SAT is used only by compilation; live
+  repairs use the deterministic engines.
+- **Known limit.** The deterministic steps around the solve (scenario, Guard)
+  still run on the event loop, briefly. Direct `compile` calls without a
+  prepared result (tests, scripts) and a prepared result whose content no
+  longer matches fall back to the blocking solve. There is no queue yet, so
+  concurrent compiles each start their own solver process.
 
 ## Health and service levels
 

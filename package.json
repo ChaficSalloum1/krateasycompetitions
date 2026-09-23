@@ -1,6 +1,7 @@
 {
   "name": "tournament-os",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -14,6 +15,7 @@
     "stress:scale": "node --import tsx scripts/run-scale-envelope.ts",
     "stress:protocols": "node --import tsx scripts/run-protocol-model-check.ts",
     "test": "node --import tsx --test packages/*/test/*.test.ts apps/*/test/*.test.ts",
+    "test:ci": "node --import tsx --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=evidence/test-results.xml packages/*/test/*.test.ts apps/*/test/*.test.ts",
     "demo": "node --import tsx apps/compiler-web/src/demo.ts",
     "start": "node --import tsx apps/compiler-web/src/server.ts",
     "rehearse:run-control-options": "node --import tsx scripts/serve-run-control-options.ts",

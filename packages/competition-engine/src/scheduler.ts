@@ -1,7 +1,7 @@
 import { canonicalHash, type SchedulingDefinition, type TournamentSpec, type ValidationFinding } from "@tournament-os/tournament-schema";
 import type { CompetitionGraph, ContestNode, ScheduleSolution, ScheduledContest } from "./types.js";
 import { calculateSchedulingLowerBounds } from "./lower-bounds.js";
-import { deriveContestEntrantsIndependently } from "./independent-entrants.js";
+import { deriveContestEntrantsIndependently, deriveQualificationOccupancy } from "./independent-entrants.js";
 
 const minutes = (value: number) => value * 60_000;
 const iso = (value: number) => new Date(value).toISOString();
@@ -210,8 +210,15 @@ export function solveSchedule(spec: TournamentSpec, graph: CompetitionGraph): Sc
   const scheduled: ScheduledContest[] = [];
   const startFloor = Date.parse(spec.scheduling.start);
   const minimumRest = Number(spec.scheduling.constraints.find(({ rule, strength }) => rule === "minimum_rest" && strength === "HARD")?.value ?? 0);
+  // Any feeder entrant can qualify into a contest reached by a `complete` edge, so hard rest must also
+  // separate it from every feeder, not only from the qualifiers named by the planning simulation.
+  const qualificationFeeders = new Map<string, Set<string>>();
+  for (const edge of graph.edges) if (edge.outcome === "complete") {
+    qualificationFeeders.set(edge.toContestId, (qualificationFeeders.get(edge.toContestId) ?? new Set()).add(edge.fromContestId));
+  }
   for (const node of topologicalNodes(graph)) {
-    const dependencyEnd = Math.max(startFloor, ...(dependencies.get(node.id) ?? []).map((id) => readyEnd.get(id) ?? startFloor));
+    const dependencyEnd = Math.max(startFloor, ...(dependencies.get(node.id) ?? []).map((id) => (readyEnd.get(id) ?? startFloor)
+      + (qualificationFeeders.get(node.id)?.has(id) ? minutes(minimumRest) : 0)));
     if (node.kind === "bye") { readyEnd.set(node.id, dependencyEnd); continue; }
     const participantReady = Math.max(startFloor, ...[...(potentials.get(node.id) ?? [])].map((id) => (participantLastEnd.get(id) ?? (startFloor - minutes(minimumRest))) + minutes(minimumRest)));
     const earliestLegalStart = Math.max(dependencyEnd, participantReady);
@@ -309,7 +316,37 @@ export function validateSchedule(spec: TournamentSpec, graph: CompetitionGraph, 
     entries.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
     for (let index = 1; index < entries.length; index += 1) if (Date.parse(entries[index]!.start) - Date.parse(entries[index - 1]!.end) < minutes(minimumRest)) findings.push({ code: "TSV406", severity: "ERROR", path: `/schedule/${entries[index]!.contestId}`, message: "Participant rest/collision invariant failed.", evidence: { entrantId } });
   }
+  findings.push(...qualificationOutcomeFindings(graph, solution, minimumRest));
   return findings;
+}
+
+/**
+ * TSV412: hard rest and no-collision must hold for every entrant who can reach a contest through
+ * qualification, not only for the qualifiers the graph names from one simulated outcome. Pairs where
+ * both sides are fixed membership stay with TSV406; slots fed from the same source stage are mutually
+ * exclusive, so parallel knockout matches fed by one qualification are not a collision.
+ */
+function qualificationOutcomeFindings(graph: CompetitionGraph, solution: ScheduleSolution, minimumRest: number): ValidationFinding[] {
+  const occupancy = deriveQualificationOccupancy(graph);
+  const byEntrant = new Map<string, Array<{ entry: ScheduledContest; origins: ReadonlySet<string> }>>();
+  for (const entry of solution.contests) for (const [entrantId, origins] of occupancy.byContest.get(entry.contestId) ?? []) {
+    byEntrant.set(entrantId, [...(byEntrant.get(entrantId) ?? []), { entry, origins }]);
+  }
+  const violations = new Map<string, Set<string>>();
+  for (const [entrantId, appearances] of byEntrant) {
+    appearances.sort((a, b) => Date.parse(a.entry.start) - Date.parse(b.entry.start) || a.entry.contestId.localeCompare(b.entry.contestId));
+    for (let later = 1; later < appearances.length; later += 1) for (let earlier = 0; earlier < later; earlier += 1) {
+      const first = appearances[earlier]!; const second = appearances[later]!;
+      const bothFixed = [...first.origins, ...second.origins].every((origin) => origin === "FIXED");
+      if (bothFixed || !occupancy.canMeet(first.origins as never, second.origins as never)) continue;
+      if (Date.parse(second.entry.start) - Date.parse(first.entry.end) >= minutes(minimumRest)) continue;
+      violations.set(second.entry.contestId, (violations.get(second.entry.contestId) ?? new Set()).add(entrantId));
+    }
+  }
+  return [...violations].sort(([left], [right]) => left.localeCompare(right)).map(([contestId, entrantIds]) => ({
+    code: "TSV412", severity: "ERROR" as const, path: `/schedule/${contestId}`,
+    message: "A possible qualifier would break the hard rest or collision rule in some qualification outcome.",
+    evidence: { entrantIds: [...entrantIds].sort(), minimumRestMinutes: minimumRest } }));
 }
 
 export function attachValidationAudit(solution: ScheduleSolution, findings: ValidationFinding[]): ScheduleSolution {

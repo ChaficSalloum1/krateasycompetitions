@@ -12,6 +12,7 @@ export * from "./competition-guard.js";
 export * from "./competition-guard-preflight.js";
 export * from "./publication-change-set.js";
 export * from "./cp-sat-solver.js";
+export * from "./independent-entrants.js";
 export * from "./declarative-qualification.js";
 export * from "./draw-constraints.js";
 export * from "./draw.js";
