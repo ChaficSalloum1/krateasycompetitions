@@ -45,6 +45,9 @@ jobs:
       - name: Type-check and build
         run: npm run build
 
+      - name: Install Chromium for browser tests
+        run: npx playwright-core install --with-deps chromium
+
       - name: Test
         run: |
           mkdir -p evidence
