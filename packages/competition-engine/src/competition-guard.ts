@@ -171,7 +171,7 @@ export function classifyCompetitionGuardFinding(finding: ValidationFinding): Com
 
 function suggestedCorrection(finding: ValidationFinding): string {
   if (finding.code === "KCG001") return "Resolve and compile the exact authoritative definition revision, then rerun Guard.";
-  if (/^KCG00[2345]$/.test(finding.code)) return "Regenerate the graph from the authoritative definition and rerun independent Guard validation.";
+  if (/^KCG00[23456]$/.test(finding.code)) return "Regenerate the graph from the authoritative definition and rerun independent Guard validation.";
   if (/^TSV/.test(finding.code)) return "Repair the schedule against the declared resources, durations and dependencies, then rerun Guard.";
   if (/^TSW/.test(finding.code)) return "Review the operational risk, choose an explicit policy and record the required acknowledgement.";
   if (/^TSC/.test(finding.code)) return "Resolve the cited definition or rule evidence and recompile before publication.";
@@ -290,6 +290,12 @@ export function evaluateCompetitionGuard(input: CompetitionGuardInput): Readonly
     code: "KCG004", severity: "ERROR", path: "/graph/generatedActualContestCount",
     message: "The proposed graph omits or invents contests relative to the Guard's independent derivation from the compiled specification.",
     evidence: { expected: independentlyRequiredContestCount, actual: input.graph.generatedActualContestCount },
+  });
+  const countedContests = input.graph.nodes.filter(({ kind }) => kind === "contest").length;
+  if (countedContests !== input.graph.generatedActualContestCount) bindingFindings.push({
+    code: "KCG006", severity: "ERROR", path: "/graph/nodes",
+    message: "The graph's reported contest count disagrees with the contests the Guard counted in the graph itself.",
+    evidence: { counted: countedContests, reported: input.graph.generatedActualContestCount },
   });
   bindingFindings.push(...independentlyValidateAdvancementPaths(input.spec, input.graph));
   const findings = [...certification.findings, ...bindingFindings]
