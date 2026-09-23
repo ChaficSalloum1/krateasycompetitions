@@ -240,18 +240,27 @@ export function compileGraphSchedulingProblem(spec: TournamentSpec, graph: Compe
   ));
   const locked = spec.scheduling.constraints.filter(({ rule, strength }) => rule === "locked_match_start" && strength === "HARD");
   if (locked.length) findings.push(error("TSQ102", "/scheduling/constraints", "Graph-to-CP-SAT adapter does not infer a resource for legacy time-only locks."));
+  const minimumRestMinutes = Number(spec.scheduling.constraints.find(({ rule, strength }) => rule === "minimum_rest" && strength === "HARD")?.value ?? 0);
+  // Any feeder entrant can qualify through a `complete` edge, so with hard rest each such feeder and its
+  // qualification-fed contest share a synthetic participant: CP-SAT then keeps the rest gap between them
+  // for every possible qualifier, not only the simulated ones in the participant sets.
+  const qualificationRestTokens = new Map<string, string[]>();
+  if (minimumRestMinutes > 0) for (const edge of graph.edges) {
+    if (edge.outcome !== "complete" || nodeById.get(edge.fromContestId)?.kind !== "contest" || nodeById.get(edge.toContestId)?.kind !== "contest") continue;
+    const token = `qualification-rest:${edge.fromContestId}>${edge.toContestId}`;
+    for (const id of [edge.fromContestId, edge.toContestId]) qualificationRestTokens.set(id, [...(qualificationRestTokens.get(id) ?? []), token]);
+  }
   const tasks = graph.nodes.filter(({ kind }) => kind === "contest").map((node) => ({ id: node.id, durationMinutes: durationMinutes(spec, node),
     eligibleResourceIds: units.filter(({ type }) => type === node.requiredResourceType).map(({ id }) => id).sort(),
     dependencyIds: [...new Set(incoming.get(node.id) ?? [])].filter((id) => nodeById.get(id)?.kind === "contest").sort(),
-    participantIds: [...(potential.get(node.id) ?? [])].sort() }));
+    participantIds: [...new Set([...(potential.get(node.id) ?? []), ...(qualificationRestTokens.get(node.id) ?? [])])].sort() }));
   const resources = units.map((unit) => ({ id: unit.id, calendars: unit.availability.map((window) => ({
     startMinute: Math.max(0, (window.start - start) / 60_000), endMinute: Math.min((end - start) / 60_000, (window.end - start) / 60_000),
   })).filter(({ startMinute, endMinute }) => Number.isInteger(startMinute) && Number.isInteger(endMinute) && startMinute < endMinute), closures: [] }));
   if (tasks.some(({ eligibleResourceIds }) => eligibleResourceIds.length === 0)) findings.push(error(
     "TSQ103", "/resources", "At least one contest has no compatible concrete resource unit.",
   ));
-  const problem: SchedulingProblem = { id: `graph:${spec.metadata.compiledSpecHash}`, tasks, resources, locks: [],
-    minimumRestMinutes: Number(spec.scheduling.constraints.find(({ rule, strength }) => rule === "minimum_rest" && strength === "HARD")?.value ?? 0) };
+  const problem: SchedulingProblem = { id: `graph:${spec.metadata.compiledSpecHash}`, tasks, resources, locks: [], minimumRestMinutes };
   const body = { status: findings.length ? "REJECTED" as const : "COMPILED" as const, problem: findings.length ? null : problem,
     horizonStart: iso(start), findings };
   return deepFreeze({ ...body, proofHash: canonicalHash(body) });
