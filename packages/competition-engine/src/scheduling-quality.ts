@@ -1,5 +1,5 @@
 import { canonicalHash, deepFreeze, type TournamentSpec, type ValidationFinding } from "@tournament-os/tournament-schema";
-import { createCpSatSolver, type CpSatResult } from "./cp-sat-solver.js";
+import { cpSatProblemContentHash, createCpSatSolver, type CpSatResult, type CpSatSolver } from "./cp-sat-solver.js";
 import { calculateSchedulingLowerBounds } from "./lower-bounds.js";
 import { possibleEntrants, validateSchedule } from "./scheduler.js";
 import type { SchedulingProblem } from "./schedule-solver.js";
@@ -266,14 +266,36 @@ export function compileGraphSchedulingProblem(spec: TournamentSpec, graph: Compe
   return deepFreeze({ ...body, proofHash: canonicalHash(body) });
 }
 
+export interface GraphCpSatOptions {
+  readonly maxTimeSeconds: number;
+  readonly pythonExecutable?: string;
+  /** Overrides the solver, e.g. one that replays a result computed off the request path. */
+  readonly solver?: CpSatSolver;
+}
+
+/**
+ * Solves the graph's CP-SAT problem in a child process without blocking the event loop, so a request
+ * handler can await it and later hand the result to `solveGraphWithCpSat` through
+ * `createPresolvedCpSatSolver`. Returns null when the graph has no solvable problem.
+ */
+export async function presolveGraphWithCpSat(spec: TournamentSpec, graph: CompetitionGraph, options: GraphCpSatOptions):
+  Promise<{ readonly contentHash: string; readonly result: CpSatResult } | null> {
+  const compilation = compileGraphSchedulingProblem(spec, graph);
+  if (compilation.status === "REJECTED" || !compilation.problem) return null;
+  const solver = options.solver ?? createCpSatSolver(options.pythonExecutable ? { pythonExecutable: options.pythonExecutable } : {});
+  const result = await solver.solveAsync(compilation.problem, { maxTimeSeconds: options.maxTimeSeconds });
+  return { contentHash: cpSatProblemContentHash(compilation.problem), result };
+}
+
 export function solveGraphWithCpSat(spec: TournamentSpec, graph: CompetitionGraph,
-  options: { readonly maxTimeSeconds: number; readonly pythonExecutable?: string } = { maxTimeSeconds: 10 }): CpSatScheduleResult {
+  options: GraphCpSatOptions = { maxTimeSeconds: 10 }): CpSatScheduleResult {
   const compilation = compileGraphSchedulingProblem(spec, graph);
   if (compilation.status === "REJECTED" || !compilation.problem) {
     const body = { status: "REJECTED" as const, problem: null, solution: null, cpSat: null, validationFindings: compilation.findings };
     return deepFreeze({ ...body, proofHash: canonicalHash(body) });
   }
-  const cpSat = createCpSatSolver(options.pythonExecutable ? { pythonExecutable: options.pythonExecutable } : {}).solve(compilation.problem,
+  const solver = options.solver ?? createCpSatSolver(options.pythonExecutable ? { pythonExecutable: options.pythonExecutable } : {});
+  const cpSat = solver.solve(compilation.problem,
     { maxTimeSeconds: options.maxTimeSeconds });
   if (cpSat.status !== "CERTIFIED") {
     const body = { status: cpSat.status, problem: compilation.problem, solution: null, cpSat, validationFindings: [] as readonly ValidationFinding[] };

@@ -18,6 +18,9 @@ import {
   replayLiveOperationsEvents,
   runScenario,
   solveGraphWithCpSat,
+  presolveGraphWithCpSat,
+  createPresolvedCpSatSolver,
+  createCpSatSolver,
   submitLiveOperationsCommand,
   type CompetitionGraph,
   type CompetitionGuardReport,
@@ -809,8 +812,17 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
   };
 }
 
-function compileReferenceRevision(record: StoredJourneyRecord, compiledAt: string,
-  solverPythonExecutable?: string): CompiledJourneyRevision {
+/** A CP-SAT result computed off the request path for one exact draft; server-owned, never client input. */
+export interface PreparedCompilation {
+  readonly competitionId: string;
+  readonly draftVersion: number;
+  readonly presolved: Awaited<ReturnType<typeof presolveGraphWithCpSat>>;
+}
+
+const JOURNEY_SOLVE_SECONDS = 30;
+
+/** Everything a compilation derives before scheduling: identical for the prepare and compile steps. */
+function referenceCompilationInputs(record: StoredJourneyRecord, compiledAt: string) {
   const workbench = record.workbench ?? analyseCompetitionSources(record.sources ?? [record.source], record.createdAt);
   const blueprint = connectedBlueprintFromWorkbench(record.proposal.blueprint, workbench);
   const productionLockDefinition = record.workbench ? definitionFromProductionLock(record.workbench) : null;
@@ -838,9 +850,31 @@ function compileReferenceRevision(record: StoredJourneyRecord, compiledAt: strin
     : connectedBlueprintDefinition ? genericRosterEntrants(record) : null;
   if ((productionLockDefinition || connectedBlueprintDefinition) && !entrants) throw new Error("journey_roster_unavailable");
   const scenario = runScenario(spec, entrants ?? createEntrants(spec), `journey:${record.id}:revision:${revision}`);
-  const genericSolve = connectedBlueprintDefinition ? solveGraphWithCpSat(spec, scenario.graph,
-    { maxTimeSeconds: 30, ...(solverPythonExecutable ? { pythonExecutable: solverPythonExecutable } : {}) }) : null;
-  if (genericSolve && !genericSolve.solution) throw new Error(`journey_solver_${genericSolve.status.toLowerCase()}`);
+  return { spec, scenario, revision, productionLockDefinition, connectedBlueprintDefinition };
+}
+
+/** Solves a draft's CP-SAT problem without blocking the event loop; null when the draft needs no solver. */
+async function prepareReferenceCompilation(record: StoredJourneyRecord, compiledAt: string,
+  solverPythonExecutable?: string): Promise<PreparedCompilation> {
+  const { spec, scenario, connectedBlueprintDefinition } = referenceCompilationInputs(record, compiledAt);
+  const presolved = connectedBlueprintDefinition ? await presolveGraphWithCpSat(spec, scenario.graph,
+    { maxTimeSeconds: JOURNEY_SOLVE_SECONDS, ...(solverPythonExecutable ? { pythonExecutable: solverPythonExecutable } : {}) }) : null;
+  return { competitionId: record.id, draftVersion: record.draftVersion, presolved };
+}
+
+function compileReferenceRevision(record: StoredJourneyRecord, compiledAt: string,
+  solverPythonExecutable?: string, prepared?: PreparedCompilation): CompiledJourneyRevision {
+  const { spec, scenario, revision, productionLockDefinition, connectedBlueprintDefinition } = referenceCompilationInputs(record, compiledAt);
+  const pythonOption = solverPythonExecutable ? { pythonExecutable: solverPythonExecutable } : {};
+  // A prepared result is reused only for the same draft and only when its problem content matches.
+  const presolved = prepared && prepared.competitionId === record.id && prepared.draftVersion === record.draftVersion
+    ? prepared.presolved : null;
+  const genericSolve = connectedBlueprintDefinition ? solveGraphWithCpSat(spec, scenario.graph, { maxTimeSeconds: JOURNEY_SOLVE_SECONDS,
+    ...pythonOption, ...(presolved ? { solver: createPresolvedCpSatSolver(presolved, createCpSatSolver(pythonOption)) } : {}) }) : null;
+  // A solver answer that failed its own independent validation is not a candidate plan, even though
+  // the Guard would block it later: stop here instead of storing it labelled with the solver's status.
+  if (genericSolve && (!genericSolve.solution || genericSolve.status === "REJECTED"))
+    throw new Error(`journey_solver_${genericSolve.status.toLowerCase()}`);
   const schedule = productionLockDefinition
     ? (verifiedScheduleFromProductionLock(record.workbench!, spec, scenario.graph) ?? scenario.schedule)
     : genericSolve?.solution ?? scenario.schedule;
@@ -1026,7 +1060,7 @@ export class CompetitionJourney {
     return snapshotOf(revised);
   }
 
-  public compile(id: string, expectedDraftVersion: number): CompetitionJourneySnapshot {
+  private compilableRecord(id: string, expectedDraftVersion: number): StoredJourneyRecord {
     const current = this.require(id);
     if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
     const workbenchReady = Boolean(current.workbench && definitionFromProductionLock(current.workbench));
@@ -1034,8 +1068,21 @@ export class CompetitionJourney {
       || current.workbench?.conflicts.length || current.workbench?.unsupportedSemantics.some(({ blocking }) => blocking))
       throw new Error("journey_not_ready");
     if (current.approval) throw new Error("approved_revision_is_immutable");
+    return current;
+  }
+
+  /**
+   * Runs the slow solver step for a compile without blocking the event loop. Pass the result to
+   * `compile` for the same draft; it is only a cache, so `compile` still validates everything.
+   */
+  public async prepareCompile(id: string, expectedDraftVersion: number): Promise<PreparedCompilation> {
+    return prepareReferenceCompilation(this.compilableRecord(id, expectedDraftVersion), this.canonicalNow(), this.solverPythonExecutable);
+  }
+
+  public compile(id: string, expectedDraftVersion: number, prepared?: PreparedCompilation): CompetitionJourneySnapshot {
+    const current = this.compilableRecord(id, expectedDraftVersion);
     const compiledAt = this.canonicalNow();
-    const compiled = compileReferenceRevision(current, compiledAt, this.solverPythonExecutable);
+    const compiled = compileReferenceRevision(current, compiledAt, this.solverPythonExecutable, prepared);
     const revised = sealRecord({ ...withoutSeal(current), updatedAt: compiledAt, compiled });
     this.records.set(id, revised);
     this.persist();
