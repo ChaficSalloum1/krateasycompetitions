@@ -50,6 +50,12 @@ jobs:
           mkdir -p evidence
           npm run test:ci
 
+      - name: Install Chromium for browser tests
+        run: npx playwright-core install --with-deps chromium
+
+      - name: Browser tests
+        run: npm run test:browser:ci
+
       - name: Protocol model check
         shell: bash
         run: npm run --silent stress:protocols | tee evidence/protocol-model-check.json

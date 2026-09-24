@@ -18,8 +18,21 @@ over decorative novelty.
 - **Deep Forest Ink** (#17201D) — primary text and navigation depth; never pure black.
 - **Slate Metadata** (#65706B) — timestamps, supporting descriptions, and inactive states.
 - **Quiet Border** (#D8D7CF) — structural separators.
-- **Signal Terracotta** (#C95635) — the single accent for primary action, active focus,
+- **Signal Terracotta** (#B74E30) — the single accent for primary action, active focus,
   and exceptional attention. Status meaning must always include text or icon shape.
+  The original #C95635 measured 4.25:1 as text on Paper Surface and 4.32:1 under white
+  button labels, below WCAG AA 4.5:1; #B74E30 keeps the hue at 4.98:1 and 5.07:1.
+
+All web surfaces take these values from one token set in `src/design-system.ts`; a page
+never defines its own palette, fonts or organiser navigation.
+
+On screens up to 40rem the organiser header needs no script and takes two rows: the brand
+and the global places, then the competition's places. Long labels shorten visually
+("New", "Guard", "Receipt") while the accessible name stays whole (WCAG 2.5.3). Close
+receipt never shortens to "Close", because that would read as a command. Every competition
+in the portfolio names its one next step (for example "Approve and publish" or "Open Run
+Control"), derived from its state. The step links to where it happens and never performs
+it from the list.
 
 Green, amber, and red may appear only as semantic status tokens, never as accents,
 and must always be paired with explicit words.
