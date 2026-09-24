@@ -386,6 +386,17 @@ export function submitLiveOperationsCommand(state: LiveOperationsState, command:
       if (contestState?.status !== "SCHEDULED") findings.push({ code: "LIVE422", path: "/contestId", message: "Only a scheduled contest can start." });
       if (!state.definition.courts.includes(command.courtId)) findings.push({ code: "LIVE404", path: "/courtId", message: "Actual court is not registered." });
       if (!canonicalTimestamp(command.startedAt)) findings.push({ code: "LIVE400", path: "/startedAt", message: "Actual start must be a canonical timestamp." });
+      // Hard rules hold at live time too: a closed court stays closed until it is reopened or the
+      // approved reopen time arrives, and a court holds one contest in play at a time.
+      const court = state.resources.courts[command.courtId];
+      if (court && !court.available && (court.expectedAvailableAt === undefined
+        || !canonicalTimestamp(command.startedAt) || Date.parse(command.startedAt) < Date.parse(court.expectedAvailableAt)))
+        findings.push({ code: "LIVE422", path: "/courtId", message: "The court is closed; a contest cannot start on it before it reopens.",
+          evidence: { courtId: command.courtId, ...(court.expectedAvailableAt ? { expectedAvailableAt: court.expectedAvailableAt } : {}) } });
+      const occupying = Object.entries(state.contests).filter(([id, other]) => id !== command.contestId
+        && other.status === "IN_PROGRESS" && other.actualCourtId === command.courtId).map(([id]) => id);
+      if (occupying.length) findings.push({ code: "LIVE422", path: "/courtId", message: "The court already has a contest in progress.",
+        evidence: { courtId: command.courtId, contestIds: occupying } });
       if (missing.length) findings.push({ code: "LIVE422", path: "/entrantPresence", message: "All contest entrants must be checked in or marked late before start.", evidence: { entrantIds: missing } });
       if (pendingDependencies.length) findings.push({ code: "LIVE422", path: "/dependencyContestIds", message: "All predecessor contests must be settled before start.", evidence: { contestIds: pendingDependencies } });
     } else if (command.kind === "RECORD_SCORE") {

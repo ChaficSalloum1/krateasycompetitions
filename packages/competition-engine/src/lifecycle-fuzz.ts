@@ -25,6 +25,8 @@ export interface LifecycleFuzzReport {
   readonly idempotentReplays: number;
   readonly deterministicReplayChecks: number;
   readonly tamperAndReorderRejections: number;
+  /** Starts attempted on a closed court, each of which must be refused by the court rule and change nothing. */
+  readonly courtRuleRejections: number;
   readonly adjudicationLineageChecks: number;
   readonly scenarioKinds: readonly ["COMPLETION_APPEAL", "WITHDRAWAL_WALKOVER", "RETIREMENT"];
   readonly findings: readonly string[];
@@ -74,6 +76,7 @@ export function runLifecycleFuzzCampaign(options: LifecycleFuzzOptions): Readonl
   let idempotentReplays = 0;
   let deterministicReplayChecks = 0;
   let tamperAndReorderRejections = 0;
+  let courtRuleRejections = 0;
   let adjudicationLineageChecks = 0;
 
   for (let iteration = 0; iteration < options.iterations; iteration += 1) {
@@ -118,6 +121,14 @@ export function runLifecycleFuzzCampaign(options: LifecycleFuzzOptions): Readonl
 
     for (let cycle = 0; cycle < outageCycles; cycle += 1) {
       submit({ kind: "CLOSE_COURT", commandId: `i${iteration}.close.${cycle}`, courtId: "court.1", reason: "chaos closure" });
+      if (cycle === 0) {
+        commandsAttempted += 1;
+        const closedStart = submitLiveOperationsCommand(state, { kind: "START_CONTEST", commandId: `i${iteration}.start.closed`,
+          contestId: "match.1", courtId: "court.1", startedAt: time(sequence), expectedVersion: state.version,
+          actorId: "fuzz.director", occurredAt: time(sequence) } as LiveOperationsCommand);
+        if (!closedStart.accepted && closedStart.state === state && closedStart.findings.some(({ path }) => path === "/courtId")) courtRuleRejections += 1;
+        else findings.push(`iteration ${iteration}: a start on a closed court was not refused by the court rule.`);
+      }
       submit({ kind: "REOPEN_COURT", commandId: `i${iteration}.open.${cycle}`, courtId: "court.1", reason: "chaos recovery" });
       submit({ kind: "REPORT_EQUIPMENT_FAILURE", commandId: `i${iteration}.fail.${cycle}`, equipmentId: "net.1", reason: "chaos failure" });
       submit({ kind: "RESTORE_EQUIPMENT", commandId: `i${iteration}.restore.${cycle}`, equipmentId: "net.1", reason: "chaos recovery" });
@@ -176,10 +187,11 @@ export function runLifecycleFuzzCampaign(options: LifecycleFuzzOptions): Readonl
     idempotentReplays,
     deterministicReplayChecks,
     tamperAndReorderRejections,
+    courtRuleRejections,
     adjudicationLineageChecks,
     scenarioKinds: ["COMPLETION_APPEAL", "WITHDRAWAL_WALKOVER", "RETIREMENT"] as const,
     findings: [...findings].sort(),
-    envelope: `${options.iterations} seeded histories; ${outageCycles} court/equipment failure-recovery cycles per history; completion, appeal, withdrawal, walkover, retirement, score, correction, void, duplicate, stale, reorder, and tamper paths.`,
+    envelope: `${options.iterations} seeded histories; ${outageCycles} court/equipment failure-recovery cycles per history; completion, appeal, withdrawal, walkover, retirement, score, correction, void, duplicate, stale, closed-court start, reorder, and tamper paths.`,
   };
   return deepFreeze({ ...base, proofHash: canonicalHash(base) });
 }

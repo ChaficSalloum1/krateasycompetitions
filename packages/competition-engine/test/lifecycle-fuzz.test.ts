@@ -9,6 +9,7 @@ test("seeded lifecycle fuzz preserves exactly-once effects and deterministic aut
   assert.equal(report.intentionalRejections, 120);
   assert.equal(report.deterministicReplayChecks, 120);
   assert.equal(report.tamperAndReorderRejections, 240);
+  assert.equal(report.courtRuleRejections, 120, "every history probes a start on a closed court");
   assert.equal(report.adjudicationLineageChecks, 120);
   assert.equal(runLifecycleFuzzCampaign({ seed: "lifecycle-v1", iterations: 120, outageCycles: 5 }).proofHash, report.proofHash);
 });
