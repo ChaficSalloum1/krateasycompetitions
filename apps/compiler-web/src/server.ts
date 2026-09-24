@@ -32,6 +32,7 @@ import { playerHtml } from "./player-view.js";
 import { participantRecoveryHtml } from "./participant-recovery-view.js";
 import { participantOperationsHtml, venueDisplayHtml } from "./attention-views.js";
 import { renderRunControl, runControlHtml } from "./run-control-view.js";
+import { renderCourtTimeline, renderCourtTimelineUnavailable } from "./court-timeline-view.js";
 import { organiserContextOf, withDemoBanner } from "./design-system.js";
 import { verifyOfflineEventPack } from "./offline-event-pack.js";
 import { renderPrintableManualFallback } from "./manual-fallback-view.js";
@@ -759,6 +760,28 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
         });
         response.end(renderCloseIntegrityReceipt(competitionId, organiserContextOf(competitionJourney.read(competitionId)!)));
+        return;
+      }
+      const timelinePage = !production && /^\/competitions\/([^/?#]+)\/timeline$/.exec(request.url ?? "");
+      if (timelinePage && request.method === "GET") {
+        const competitionId = decodeURIComponent(timelinePage[1]!);
+        const snapshot = competitionJourney.read(competitionId);
+        if (!snapshot) {
+          json(response, 404, { apiVersion: "1.0", error: "journey_not_found" });
+          return;
+        }
+        const context = organiserContextOf(snapshot);
+        // Read-only and script-free: the page renders the server projection and carries no command.
+        let html: string; let status = 200;
+        if (context.operationalRevision === null || !snapshot.compiled) { html = renderCourtTimelineUnavailable(context); status = 409; }
+        else html = renderCourtTimeline(competitionJourney.readCourtTimeline({ organizationId, competitionId,
+          expectedOperationalRevision: context.operationalRevision }), context, snapshot.compiled.timezone);
+        response.writeHead(status, {
+          "content-type": "text/html; charset=utf-8", "cache-control": "no-store",
+          "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+          "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
+        });
+        response.end(html);
         return;
       }
       const journeyPage = !production && /^\/competitions\/([^/?#]+)$/.exec(request.url ?? "");

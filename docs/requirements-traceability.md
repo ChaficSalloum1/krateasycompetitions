@@ -341,4 +341,16 @@ No authority conflict required product-owner direction. The smallest connected s
 
     The header, count and Studio-mode checks each fail against the previous code.
 
+49. **E3 court timeline and live court rules (read-only court timeline into guarded change · `readCourtTimeline`, `court-timeline-view.ts`, `live-operations.ts`):**
+    - **The page.** `/competitions/:id/timeline` renders on the server with no script (its CSP allows none) and no form. It shows every live fixture once, on its court, in time order, at the current operational revision, with times in the competition's timezone.
+    - **Operational truth.** The court and start come from the operational assignments, so an approved repair is what the timeline shows. A superseded revision is refused.
+    - **Changes go through Run Control only.** Each fixture and court offers "report" links. They open Run Control's existing guarded Change Review with the incident preselected, apply only values the live projection offers, and submit nothing. Finished fixtures offer none.
+    - **Court names.** Courts are named for people, as "Court 3", by one `courtLabel` on the timeline, in Run Control, on the venue display and on the participant page. Resource identities such as `venue.courts.3` had been shown to participants.
+    - **Two engine defects found while building it, both fixed.**
+      - `organiser-live` took each contest's court from the live definition, so after an approved outage Run Control would start a fixture on the closed court.
+      - The live runtime accepted `START_CONTEST` on a closed court, and on a court that already had a contest in play.
+
+      Starts are now refused until the court reopens: explicitly, or at the approved reopen time. A court also holds one contest in play at a time.
+    - **Evidence:** `court-timeline.test.ts`, `live-operations.test.ts` (closed and occupied courts, explicit reopen) and the lifecycle fuzzer, which now probes a closed-court start in each of its 120 histories. `test/browser/court-timeline.test.ts` covers the keyboard handoff, a forged fixture link, court names, public surfaces, and 320–1280px without overflow. The engine, organiser-projection, handoff and naming checks each fail against the previous code.
+
 Broader format/sport connection, non-pilot loser-path/hard-rematch reconstruction and a verified on-device advisory model remain governed follow-ons rather than St Albans deployment blockers. The remaining pilot gates require external authority or deployment inputs: provider/fallback selection and credentials, authorised emergency details, named-assistive-technology/outdoor accessibility acceptance, full staff/manual recovery rehearsal, production persistence/restore evidence, support assignment and final role approvals. The emergency pack cannot be declared ready until the venue/pilot safety owner supplies and approves the named responders, contacts, venue/access and evacuation facts; until then the explicit fallback is the venue's separately controlled printed safety plan. External delivery remains fail closed until the pilot owner selects credentials, a provider and its declared fallback. The executable release manifest lists every remaining gate, accountable role and fixed fallback against the exact closed rehearsal scope; no missing external fact is represented as passed.

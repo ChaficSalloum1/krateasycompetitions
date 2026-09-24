@@ -33,6 +33,18 @@ export const escapeHtml = (value: unknown): string => String(value ?? "").replac
   "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;",
 })[character]!);
 
+/**
+ * A court's display name from its resource identity: "venue.courts.3" reads "Court 3". Identities are
+ * never shown to people; anything unrecognised falls back to its last segment. Serialised into page
+ * scripts, so it must stay self-contained.
+ */
+export function courtLabel(resourceId: string): string {
+  const numbered = /(?:^|[.\s_-])courts?(?:[.\s_-][a-z]+)*[.\s_-]?0*(\d+)$/i.exec(String(resourceId));
+  if (numbered) return `Court ${Number(numbered[1])}`;
+  const last = String(resourceId).split(".").at(-1) ?? String(resourceId);
+  return last.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
 export type CompetitionStateKey = "NEEDS_INPUT" | "DRAFT" | "BLOCKED" | "CERTIFIED" | "PUBLISHED" | "LIVE" | "CLOSED"
   | "STALE" | "DEMO" | "UNAVAILABLE";
 

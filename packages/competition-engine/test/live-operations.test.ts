@@ -265,3 +265,42 @@ test("linked corrections preserve immutable history while replay rejects event t
   assert.equal(rejected.valid, false);
   if (!rejected.valid) assert.equal(rejected.findings[0]?.code, "LIVE401");
 });
+
+test("a contest cannot start on a closed court before it reopens, nor on a court already in play", () => {
+  const parallel: LiveOperationsDefinition = { tournamentId: "court-rules", lateToleranceMinutes: 5, courts: ["court-1", "court-2"],
+    officials: [], equipment: [], contests: [
+      { contestId: "a", entrantIds: ["pair-a", "pair-b"], courtId: "court-1", scheduledStart: "2026-09-07T09:00:00.000Z", scheduledEnd: "2026-09-07T09:45:00.000Z" },
+      { contestId: "b", entrantIds: ["pair-c", "pair-d"], courtId: "court-2", scheduledStart: "2026-09-07T09:00:00.000Z", scheduledEnd: "2026-09-07T09:45:00.000Z" },
+    ] };
+  let state = createLiveOperationsState(parallel);
+  for (const entrantId of ["pair-a", "pair-b", "pair-c", "pair-d"])
+    state = execute(state, { kind: "CHECK_IN", commandId: `in-${entrantId}`, entrantId });
+  state = execute(state, { kind: "CLOSE_COURT", commandId: "close-2", courtId: "court-2", reason: "Net broken", expectedReopenAt: "2026-09-07T09:20:00.000Z" });
+
+  const refused = (input: CommandInput, occurredAt: string) => {
+    const result = submitLiveOperationsCommand(state, command(input, state, occurredAt));
+    assert.equal(result.accepted, false);
+    assert.equal(result.state, state, "a refused start changes nothing");
+    return result.findings.find(({ path }) => path === "/courtId");
+  };
+  assert.deepEqual(refused({ kind: "START_CONTEST", commandId: "b-closed", contestId: "b", courtId: "court-2", startedAt: "2026-09-07T09:05:00.000Z" }, "2026-09-07T09:05:00.000Z")?.evidence,
+    { courtId: "court-2", expectedAvailableAt: "2026-09-07T09:20:00.000Z" }, "closed until the approved reopen time");
+
+  state = execute(state, { kind: "START_CONTEST", commandId: "a-start", contestId: "a", courtId: "court-1", startedAt: "2026-09-07T09:05:00.000Z" }, "2026-09-07T09:05:00.000Z");
+  assert.deepEqual(refused({ kind: "START_CONTEST", commandId: "b-on-a", contestId: "b", courtId: "court-1", startedAt: "2026-09-07T09:06:00.000Z" }, "2026-09-07T09:06:00.000Z")?.evidence,
+    { courtId: "court-1", contestIds: ["a"] }, "one contest in play per court");
+
+  state = execute(state, { kind: "START_CONTEST", commandId: "b-after-reopen", contestId: "b", courtId: "court-2", startedAt: "2026-09-07T09:20:00.000Z" }, "2026-09-07T09:20:00.000Z");
+  assert.equal(state.contests.b?.actualCourtId, "court-2", "the court is usable from its approved reopen time");
+});
+
+test("a court closed without a reopen time needs an explicit reopen before play resumes on it", () => {
+  let state = createLiveOperationsState(definition);
+  for (const entrantId of ["pair-a", "pair-b"]) state = execute(state, { kind: "CHECK_IN", commandId: `in-${entrantId}`, entrantId });
+  state = execute(state, { kind: "CLOSE_COURT", commandId: "close-1", courtId: "court-1", reason: "Flooded" });
+  const start = { kind: "START_CONTEST", commandId: "start-semi", contestId: "semi-1", courtId: "court-1", startedAt: "2026-09-07T12:00:00.000Z" } as const;
+  assert.equal(submitLiveOperationsCommand(state, command(start, state, "2026-09-07T12:00:00.000Z")).accepted, false);
+  state = execute(state, { kind: "REOPEN_COURT", commandId: "reopen-1", courtId: "court-1", reason: "Dried" }, "2026-09-07T11:59:00.000Z");
+  state = execute(state, start, "2026-09-07T12:00:00.000Z");
+  assert.equal(state.contests["semi-1"]?.status, "IN_PROGRESS");
+});

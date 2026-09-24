@@ -1,40 +1,19 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
-import type { AddressInfo } from "node:net";
 import { after, before, test } from "node:test";
-import { chromium, type Browser, type Page } from "playwright-core";
+import type { Browser, Page } from "playwright-core";
 import { CompetitionJourney } from "../../src/competition-journey.js";
-import { createCompilerServer } from "../../src/server.js";
 import { clock, journeyWithLiveCompetition } from "../support/harbour-journey.js";
+import { launchBrowser, noHorizontalOverflow, servers } from "./support.js";
 
 // Slice 1's primary portfolio task in a real browser: reach and open a competition by keyboard alone,
 // see focus at every step, and read the page at phone widths without horizontal scrolling.
-// This suite needs a provisioned Chromium, so it runs as `npm run test:browser`, outside `npm test`.
-// CI installs one with `npx playwright-core install --with-deps chromium`; KRATEASY_CHROMIUM names any other build.
-
-const localChromium = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
-const executablePath = process.env.KRATEASY_CHROMIUM ?? (existsSync(localChromium) ? localChromium : undefined);
-const notProvisioned = "Chromium is not provisioned for the browser suite: run `npx playwright-core install --with-deps chromium` "
-  + "or set KRATEASY_CHROMIUM to a Chromium executable, then `npm run test:browser`.";
 
 let browser: Browser;
-const servers: Array<ReturnType<typeof createCompilerServer>> = [];
+const hosts = servers();
+const serve = hosts.serve;
 
-async function serve(journey: CompetitionJourney): Promise<string> {
-  const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId: "org.flexible" });
-  servers.push(server);
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-}
-
-before(async () => {
-  if (executablePath === undefined && !existsSync(chromium.executablePath())) throw new Error(notProvisioned);
-  browser = await chromium.launch(executablePath ? { executablePath } : {});
-});
-after(async () => {
-  await browser?.close();
-  await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
-});
+before(async () => { browser = await launchBrowser(); });
+after(async () => { await browser?.close(); await hosts.close(); });
 
 async function focused(page: Page) {
   return page.evaluate(() => {
@@ -46,8 +25,6 @@ async function focused(page: Page) {
       inViewport: Boolean(box && box.bottom > 0 && box.right > 0 && box.left < innerWidth && box.top < innerHeight) };
   });
 }
-const noHorizontalOverflow = (page: Page) => page.evaluate(() =>
-  Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) <= document.documentElement.clientWidth);
 
 test("an organiser reaches and opens a competition from the portfolio by keyboard alone", async () => {
   const { journey, live } = journeyWithLiveCompetition();
