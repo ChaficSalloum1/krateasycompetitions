@@ -45,13 +45,16 @@ jobs:
       - name: Type-check and build
         run: npm run build
 
-      - name: Install Chromium for browser tests
-        run: npx playwright-core install --with-deps chromium
-
       - name: Test
         run: |
           mkdir -p evidence
           npm run test:ci
+
+      - name: Install Chromium for browser tests
+        run: npx playwright-core install --with-deps chromium
+
+      - name: Browser tests
+        run: npm run test:browser:ci
 
       - name: Protocol model check
         shell: bash

@@ -64,6 +64,7 @@ used by compilation, Scenario Lab, simulation, certification, and the web consol
 ```bash
 npm install
 npm run check
+npm run test:browser   # needs Chromium: npx playwright-core install --with-deps chromium
 npm run check:apple
 npm run check:all
 npm run demo

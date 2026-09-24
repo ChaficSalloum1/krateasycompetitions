@@ -3,16 +3,19 @@ import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { after, before, test } from "node:test";
 import { chromium, type Browser, type Page } from "playwright-core";
-import { CompetitionJourney } from "../src/competition-journey.js";
-import { createCompilerServer } from "../src/server.js";
-import { clock, journeyWithLiveCompetition } from "./support/harbour-journey.js";
+import { CompetitionJourney } from "../../src/competition-journey.js";
+import { createCompilerServer } from "../../src/server.js";
+import { clock, journeyWithLiveCompetition } from "../support/harbour-journey.js";
 
 // Slice 1's primary portfolio task in a real browser: reach and open a competition by keyboard alone,
 // see focus at every step, and read the page at phone widths without horizontal scrolling.
-// CI installs Chromium for playwright-core; locally the preinstalled build is used when present.
+// This suite needs a provisioned Chromium, so it runs as `npm run test:browser`, outside `npm test`.
+// CI installs one with `npx playwright-core install --with-deps chromium`; KRATEASY_CHROMIUM names any other build.
 
 const localChromium = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 const executablePath = process.env.KRATEASY_CHROMIUM ?? (existsSync(localChromium) ? localChromium : undefined);
+const notProvisioned = "Chromium is not provisioned for the browser suite: run `npx playwright-core install --with-deps chromium` "
+  + "or set KRATEASY_CHROMIUM to a Chromium executable, then `npm run test:browser`.";
 
 let browser: Browser;
 const servers: Array<ReturnType<typeof createCompilerServer>> = [];
@@ -24,7 +27,10 @@ async function serve(journey: CompetitionJourney): Promise<string> {
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
-before(async () => { browser = await chromium.launch(executablePath ? { executablePath } : {}); });
+before(async () => {
+  if (executablePath === undefined && !existsSync(chromium.executablePath())) throw new Error(notProvisioned);
+  browser = await chromium.launch(executablePath ? { executablePath } : {});
+});
 after(async () => {
   await browser?.close();
   await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
