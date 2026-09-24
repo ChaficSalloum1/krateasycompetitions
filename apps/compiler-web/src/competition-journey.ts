@@ -85,6 +85,7 @@ import {
   type ParticipantRecoveryGrant,
   type ParticipantNextProjection,
   type OrganiserLiveProjection,
+  type PublicLiveContestProjection,
   type PublicLiveProjection,
 } from "./participant-information.js";
 import { advanceLiveProgression, verifyLiveProgression } from "./live-progression.js";
@@ -314,6 +315,27 @@ export interface CompetitionJourneySnapshot {
   readonly closure: CompetitionClosure | null;
   readonly duplication: JourneyDuplication | null;
   readonly webPath: string;
+}
+
+/**
+ * The read-only court timeline: each court's fixtures in time order at one operational revision.
+ * Names and statuses come from the public live projection; times and courts come from the live state
+ * and operational assignments. It carries no command capability, and courts are identities: the view names them.
+ */
+export interface CourtTimelineProjection {
+  readonly competition: { readonly id: string; readonly name: string };
+  readonly publishedRevision: number;
+  readonly operationalRevision: number;
+  readonly courts: readonly {
+    readonly courtId: string;
+    readonly contests: readonly {
+      readonly contestId: string;
+      readonly startsAt: string;
+      readonly endsAt: string | null;
+      readonly participantNames: readonly string[];
+      readonly status: PublicLiveContestProjection["status"];
+    }[];
+  }[];
 }
 
 export interface CompetitionStructureMap {
@@ -1897,6 +1919,34 @@ export class CompetitionJourney {
       operation: live.operations.publicStatus });
   }
 
+  public readCourtTimeline(input: { readonly organizationId: string; readonly competitionId: string;
+    readonly expectedOperationalRevision: number }): CourtTimelineProjection {
+    const current = this.requireScoped(input.organizationId, input.competitionId);
+    const live = this.requireProjectedLive(current, input.expectedOperationalRevision);
+    const publicProjection = this.readPublicLive(input);
+    const publicContests = new Map(publicProjection.contests.map((contest) => [contest.contestId, contest]));
+    const assignments = new Map((live.publication?.operationalAssignments ?? current.compiled!.schedule.contests)
+      .map((assignment) => [assignment.contestId, assignment]));
+    const courts = new Map<string, { courtId: string; contests: CourtTimelineProjection["courts"][number]["contests"][number][] }>();
+    for (const contest of live.state.definition.contests) {
+      const publicContest = publicContests.get(contest.contestId);
+      if (!publicContest) throw new Error("court_timeline_contest_missing_public_projection");
+      const courtId = live.state.contests[contest.contestId]?.actualCourtId
+        ?? assignments.get(contest.contestId)?.resourceId ?? contest.courtId;
+      const court = courts.get(courtId) ?? { courtId, contests: [] };
+      court.contests.push({ contestId: contest.contestId, startsAt: publicContest.startsAt,
+        endsAt: assignments.get(contest.contestId)?.end ?? null,
+        participantNames: publicContest.participantNames, status: publicContest.status });
+      courts.set(courtId, court);
+    }
+    const byStart = (a: { startsAt: string; contestId: string }, b: { startsAt: string; contestId: string }) =>
+      Date.parse(a.startsAt) - Date.parse(b.startsAt) || a.contestId.localeCompare(b.contestId);
+    return { competition: publicProjection.competition, publishedRevision: publicProjection.publishedRevision,
+      operationalRevision: publicProjection.operationalRevision,
+      courts: [...courts.values()].map((court) => ({ ...court, contests: court.contests.sort(byStart) }))
+        .sort((a, b) => a.courtId.localeCompare(b.courtId, "en", { numeric: true })) };
+  }
+
   public readOrganiserLive(input: { readonly organizationId: string; readonly competitionId: string;
     readonly expectedOperationalRevision: number; readonly at: string }): OrganiserLiveProjection {
     const current = this.requireScoped(input.organizationId, input.competitionId);
@@ -1918,12 +1968,15 @@ export class CompetitionJourney {
     });
     const publicProjection = this.readPublicLive(input);
     const publicContests = new Map(publicProjection.contests.map((contest) => [contest.contestId, contest]));
+    // A contest's court is where it started, else where the plan in force puts it: an approved repair
+    // moves assignments without rewriting the live definition, so the definition's court can be stale.
+    const operationalCourts = new Map(assignments.map(({ contestId, resourceId }) => [contestId, resourceId]));
     const controlContests = live.state.definition.contests.map((contest) => {
       const publicContest = publicContests.get(contest.contestId);
       if (!publicContest) throw new Error("organiser_control_contest_missing_public_projection");
       const resolved = live.state.resolvedEntrants[contest.contestId] ?? [];
       return { contestId: contest.contestId,
-        courtId: live.state.contests[contest.contestId]?.actualCourtId ?? contest.courtId,
+        courtId: live.state.contests[contest.contestId]?.actualCourtId ?? operationalCourts.get(contest.contestId) ?? contest.courtId,
         scheduledStart: contest.scheduledStart,
         status: publicContest.status,
         sidesResolved: resolved.length === 2,
