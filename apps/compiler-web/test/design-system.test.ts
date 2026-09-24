@@ -4,7 +4,7 @@ import test from "node:test";
 import { CompetitionJourney, type CompetitionJourneySnapshot } from "../src/competition-journey.js";
 import { clock, journeyWithLiveCompetition } from "./support/harbour-journey.js";
 import { renderCompetitionPortfolio } from "../src/competition-portfolio-view.js";
-import { COMPETITION_STATES, competitionStateOf, DESIGN_SYSTEM_ID } from "../src/design-system.js";
+import { COMPETITION_STATES, competitionStateOf, DESIGN_SYSTEM_ID, nextActionOf } from "../src/design-system.js";
 import { createCompilerServer } from "../src/server.js";
 
 // Slice 1: one design system, one organiser navigation model and one state vocabulary across every
@@ -20,7 +20,9 @@ async function get(server: ReturnType<typeof createCompilerServer>, url: string)
 }
 
 const organiserNav = (html: string) => /<nav class="app-nav" aria-label="Organiser">(.*?)<\/nav>/.exec(html)?.[1];
-const navLabels = (nav: string) => [...nav.matchAll(/>([^<>]+)</g)].map(([, label]) => label!.trim()).filter(Boolean);
+/** Each place's full accessible label: visually shortened parts included, the unavailable reason left out. */
+const navLabels = (nav: string) => [...nav.matchAll(/<a [^>]*>(.*?)<\/a>|<span class="unavailable"[^>]*>(.*?)<span class="visually-hidden">/g)]
+  .map(([, linked, unlinked]) => (linked ?? unlinked)!.replace(/<[^>]+>/g, "").trim());
 
 test("every product page uses the one design system and none defines its own palette, font or accent", async () => {
   const { journey, live } = journeyWithLiveCompetition();
@@ -70,7 +72,7 @@ test("organiser pages share one navigation, marking the current place and linkin
     assert.ok(nav, `${url} has the organiser navigation`);
     assert.deepEqual(navLabels(nav!), expectedLabels, `${url} offers the same places in the same order`);
     assert.equal(nav!.match(/aria-current="page"/g)?.length, 1, `${url} marks exactly one current place`);
-    assert.match(nav!, new RegExp(`aria-current="page">${current}</a>`), `${url} marks ${current} as current`);
+    assert.equal(/aria-current="page">(.*?)<\/a>/.exec(nav!)?.[1]?.replace(/<[^>]+>/g, ""), current, `${url} marks ${current} as current`);
   }
   const studioNav = organiserNav((await get(server, `/competitions/${id}`)).body)!;
   assert.match(studioNav, new RegExp(`href="/attention\\?competition=${id.replace(/\./g, "\\.")}&amp;revision=${revision}"`),
@@ -81,11 +83,11 @@ test("routes that do not apply yet are named but not linked, so the navigation n
   const { journey, draft } = journeyWithLiveCompetition();
   const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId: "org.flexible" });
   const nav = organiserNav((await get(server, `/competitions/${encodeURIComponent(draft.id)}`)).body)!;
-  assert.deepEqual(navLabels(nav).filter((label) => !label.startsWith("(")),
-    ["Competitions", "New competition", "Studio", "Guard pre-flight", "Run Control", "Close receipt"]);
+  assert.deepEqual(navLabels(nav), ["Competitions", "New competition", "Studio", "Guard pre-flight", "Run Control", "Close receipt"]);
   assert.doesNotMatch(nav, /href="[^"]*preflight"/, "no pre-flight link before compilation");
   assert.doesNotMatch(nav, /href="\/attention/, "no Run Control link before live activation");
   assert.match(nav, /Run Control<span class="visually-hidden"> \(after live activation\)<\/span>/);
+  assert.match(nav, /Guard<span class="short-hide"> pre-flight<\/span><\/span><span class="visually-hidden"> \(after compilation\)<\/span>/);
 });
 
 test("public and participant pages never expose organiser routes", async () => {
@@ -147,4 +149,45 @@ test("the portfolio has explicit empty, failure and permission states and never 
     assert.notEqual(response.status, 200, `${url} is not served without a production projection and authorisation`);
     assert.doesNotMatch(response.body, /aria-label="Organiser"/);
   }
+});
+
+test("each competition offers one next step, derived from its state and routed to where that step happens", () => {
+  const { journey, draft, live } = journeyWithLiveCompetition();
+  const needsInput = journey.read(draft.id)!;
+  const running = journey.read(live.id)!;
+  const id = (snapshot: CompetitionJourneySnapshot) => `/competitions/${encodeURIComponent(snapshot.id)}`;
+
+  assert.deepEqual(nextActionOf(needsInput), { label: "Answer open questions", href: id(needsInput),
+    detail: `${needsInput.questions.length} decisions needed before it can be compiled.` });
+  assert.deepEqual(nextActionOf(running), { label: "Open Run Control",
+    href: `/attention?competition=${encodeURIComponent(running.id)}&revision=${running.publication!.revision}`,
+    detail: `Play is running from published revision ${running.publication!.revision}.` });
+
+  const as = (status: CompetitionJourneySnapshot["status"], live: unknown = null) => ({ ...running, status, live }) as CompetitionJourneySnapshot;
+  assert.deepEqual(Object.fromEntries((["DRAFT", "GUARD_BLOCKED", "READY_FOR_APPROVAL", "PUBLISHED", "CLOSED"] as const)
+    .map((status) => [status, (({ label, href }) => ({ label, href }))(nextActionOf(as(status)))])), {
+    DRAFT: { label: "Compile and check", href: id(running) },
+    GUARD_BLOCKED: { label: "Review Guard findings", href: `${id(running)}/preflight` },
+    READY_FOR_APPROVAL: { label: "Approve and publish", href: id(running) },
+    PUBLISHED: { label: "Go live", href: id(running) },
+    CLOSED: { label: "View close receipt", href: `${id(running)}/receipt` },
+  }, "approval, publication and activation are named as steps, never performed from the portfolio");
+});
+
+test("a question the workbench repeats as a missing decision is counted once", () => {
+  const { journey, draft } = journeyWithLiveCompetition();
+  const snapshot = journey.read(draft.id)!;
+  const repeated = snapshot.questions.slice(0, 2).map(({ field, prompt }) => ({ id: String(field), path: `/blueprint/${String(field)}`, prompt, critical: true as const }));
+  const imported = { ...snapshot, workbench: { ...snapshot.workbench, missingDecisions: [...repeated,
+    { id: "entrant-roster", path: "/entrants", prompt: "Add an authoritative CSV or XLSX entrant roster before compilation.", critical: true as const }] } };
+  assert.equal(nextActionOf(imported).detail, `${snapshot.questions.length + 1} decisions needed before it can be compiled.`);
+});
+
+test("the portfolio links each competition's name to its Studio and its button to the next step", () => {
+  const { journey, live } = journeyWithLiveCompetition();
+  const html = renderCompetitionPortfolio(journey.list());
+  const card = html.slice(html.indexOf(`data-competition-state="LIVE"`));
+  assert.match(card, new RegExp(`<h2><a class="name" href="/competitions/${encodeURIComponent(live.id).replace(/\./g, "\\.")}">`));
+  assert.match(card, /<a class="open" href="\/attention\?competition=[^"]+&amp;revision=1" data-next-action>Open Run Control<span class="visually-hidden"> for /);
+  assert.match(card, /<p class="next"><strong>Next:<\/strong> Play is running from published revision 1\.<\/p>/);
 });

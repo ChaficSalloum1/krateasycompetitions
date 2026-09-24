@@ -26,6 +26,14 @@ over decorative novelty.
 All web surfaces take these values from one token set in `src/design-system.ts`; a page
 never defines its own palette, fonts or organiser navigation.
 
+On screens up to 40rem the organiser header needs no script and takes two rows: the brand
+and the global places, then the competition's places. Long labels shorten visually
+("New", "Guard", "Receipt") while the accessible name stays whole (WCAG 2.5.3). Close
+receipt never shortens to "Close", because that would read as a command. Every competition
+in the portfolio names its one next step (for example "Approve and publish" or "Open Run
+Control"), derived from its state. The step links to where it happens and never performs
+it from the list.
+
 Green, amber, and red may appear only as semantic status tokens, never as accents,
 and must always be paired with explicit words.
 

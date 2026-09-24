@@ -99,7 +99,8 @@ test("Run Control exposes contextual controls while keeping stable identities in
     "Ranked by urgency, then affected scope"])
     assert.ok(runControlHtml.includes(expected), `Run Control is missing ${expected}`);
   const withCompetition = renderRunControl({ id: "competition.run", name: "Run", operationalRevision: 2, compiled: true });
-  assert.ok(withCompetition.includes('href="/competitions/competition.run/receipt">Close receipt</a>'),
+  const receiptLink = /<a href="\/competitions\/competition\.run\/receipt">(.*?)<\/a>/.exec(withCompetition)?.[1]?.replace(/<[^>]+>/g, "");
+  assert.equal(receiptLink, "Close receipt",
     "Run Control reaches the competition's Close receipt through the shared organiser navigation");
   assert.ok(withCompetition.includes('aria-current="page">Run Control</a>'));
   assert.ok(!runControlHtml.includes("<strong>'+esc(x.contestId)"));
