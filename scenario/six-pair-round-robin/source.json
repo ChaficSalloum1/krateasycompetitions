@@ -1,0 +1,22 @@
+{
+  "name": "six-pair-round-robin",
+  "sport": "padel",
+  "participantUnit": "pairs",
+  "participantCount": 6,
+  "resourceCount": 2,
+  "resourceLabel": "courts",
+  "format": "round_robin",
+  "poolSize": null,
+  "qualifiersPerPool": null,
+  "minimumMatches": 1,
+  "minimumRestMinutes": 10,
+  "matchDurationMinutes": 30,
+  "startsAt": "2026-09-27T09:00:00.000Z",
+  "endsAt": "2026-09-27T19:00:00.000Z",
+  "timezone": "Europe/London",
+  "priority": "finish_on_time",
+  "scoringPolicy": "head_to_head_total_score_no_draw",
+  "tiebreakPolicy": "wins_score_difference_score_for_manual",
+  "withdrawalPolicy": "preserve_played_walkover_future",
+  "drawPolicy": "seeded_input_order"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "play-konnect-reference",
+  "title": "St Albans historical planning candidate",
+  "source": "apps/compiler-web/test/fixtures/pk-st-albans-production-lock-candidate-2.json@71b7160b60295d8f43aba9ba51cd221dc8a4b146",
+  "basis": "Existing historical planning source. Date and policy decisions are explicit test-fixture assumptions; source audit claims are untrusted; results below are synthetic, not historical outcomes.",
+  "sourceHash": "fda7ef29fa8f5deed042fe88fda1c0e0097d4f82504e801da9ace2943ff1b851",
+  "definitionHash": "6149c80851411f7572931f278f0d7ded5bc417b26f4c9bb7778b52841cfeda8c",
+  "results": "SYNTHETIC_AUDIT_RESULTS",
+  "reproduce": "npm run audit:scenarios",
+  "gate": "A3 observability only; not Phase B or production certification"
+}

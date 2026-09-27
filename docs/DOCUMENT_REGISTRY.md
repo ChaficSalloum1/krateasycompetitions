@@ -86,3 +86,10 @@ ACTIVE governs the current programme. REFERENCE supplies technical context/evide
 | [outputs/universality-program-delivery.md](../outputs/universality-program-delivery.md) | ARCHIVE | Historical delivery/research record; no current completion or scope authority | `9b3a6afa0b9dec4ea3100e07caebdb962359f9f2f21ffac90fec4d355b71e6d0` |
 
 Inventory: 59 pre-existing documentation files; all classified. The PDF is retained byte-for-byte and classified here. Solver requirements/constraints are configuration, not scope documents.
+
+## A3 additions
+
+| Document | Classification | Role |
+|---|---|---|
+| [A3_SLICE.md](A3_SLICE.md) | ACTIVE | Current A2/A3 slice contract and source limits |
+| [A3_EXIT_GATE.md](A3_EXIT_GATE.md) | ACTIVE | Executed acceptance evidence and next gate |

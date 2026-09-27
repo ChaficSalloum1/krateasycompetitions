@@ -20,3 +20,5 @@ Status: ACTIVE holding record, **not implementation authority**. Items enter the
 | Ticket Tailor, Wallet, identity/league UX/sponsors/organisation tooling | After N, independent product bets | Do not reopen architecture or import historic backlog authority |
 
 A1 discovered competing authority hierarchies in MASTER-PRODUCT-SPECIFICATION, AI_AGENT_IMPLEMENTATION_BRIEF, pilot/phase/execution plans. Their scope authority is retired by this reset; the original material and technical safeguards remain available with explicit classification.
+
+A3 follow-up: preserve the supported selector envelope in the new independent qualifier verifier; extend its semantics only with a separate proof corpus. Seed production still resides in qualification and requires B2 separation. Real-browser inspection is not established by the controller-render test. Historical played results and the problematic draw remain distinct from the planning candidate used by A3.
