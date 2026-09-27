@@ -1,0 +1,41 @@
+✔ D commands: stale, blocked and malformed commands leave the complete draft unchanged (46.366502ms)
+✔ D commands: duplicate delivery is idempotent and conflicting reuse is rejected (67.752065ms)
+✔ D commands: exact revision review, blocked edits, monotonic undo and deterministic replay (95.509863ms)
+✔ D commands: returned snapshots cannot mutate draft truth or committed evidence (22.119019ms)
+✔ D readiness includes graph failures instead of only definition findings (2.92308ms)
+✔ C: Pools to cups becomes the same canonical definition type (120.080562ms)
+✔ C: Knockout becomes the same canonical definition type (3.929593ms)
+✔ C: Round robin becomes the same canonical definition type (4.999014ms)
+✔ C: St Albans structure becomes the same canonical definition type (41.921162ms)
+✔ undefined best-runners-up comparison is an open decision, never inferred (1.07061ms)
+✔ conflicts and unrecognised restrictions stay visible; source changes invalidate answers (2.719141ms)
+✔ JSON/YAML share the draft contract and preserve unsupported properties as questions (16.720429ms)
+✔ CSV entrants are facts, not invented format or rules (1.318406ms)
+✔ ten qualifiers into eight slots gives the exact missing-destination counterexample (6.350762ms)
+✔ top N in each pool translates to per-position selectors, not a global top-N (17.310267ms)
+✔ D4b: start lock stays plan-owned, projects a hard scheduler input, invalidates review and replays (76.140892ms)
+✔ D4b: forged identity, malformed time, outside windows and premature final reject atomically (20.119327ms)
+✔ D4b: structural edits cannot silently retarget locks; incompatible duration blocks until undo (14.127458ms)
+✔ D4b: overlapping locks beyond court capacity reject without changing the first lock (13.28276ms)
+✔ D4b: same entrant locked before minimum rest is rejected (19.510558ms)
+✔ D1: pool swap preserves identities and exact sizes, then replay reproduces graph (168.678272ms)
+✔ D1: protected together/separate constraints reject violating swap atomically (44.698069ms)
+✔ D1: stale membership stays visible and blocks review until explicit clear or undo (66.530035ms)
+✔ D1: duplicate/foreign entries, malformed rule and forged basis cannot commit (59.336664ms)
+✔ D1: named imported roster survives pool editing without synthetic identities (41.878022ms)
+✔ D1: malformed membership payload cannot omit the policy boundary (19.504639ms)
+✔ D4a: individual windows and stage/round durations reach canonical spec with exact replay (72.213942ms)
+✔ D4a: bad windows, duplicate courts, nonexistent rounds and invalid durations reject atomically (24.077644ms)
+✔ D4a: changed court count preserves overrides and blocks rather than silently discarding (14.803377ms)
+✔ D: text → question → live structure → invalid rule → undo → review invalidation (95.06738ms)
+✔ browser hash implementation is byte-identical to server for unicode and canonical-sized inputs (3.604698ms)
+✔ browser XLSX decompression matches bytes and enforces expansion boundary (2.294321ms)
+✔ an imported roster retains exact identities and cannot be silently resized (3.262982ms)
+ℹ tests 33
+ℹ suites 0
+ℹ pass 33
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1963.300142

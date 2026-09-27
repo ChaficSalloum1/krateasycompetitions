@@ -33,3 +33,7 @@ test("D1: named imported roster survives pool editing without synthetic identiti
  const e=edit(s),a=e.planAssignments[0]!,b=e.planAssignments[4]!;[a.poolId,b.poolId]=[b.poolId,a.poolId];assert.equal(s.setMembership(e).status,"COMMITTED");
  const roster=s.evaluate().interpretation.roster;assert.equal(roster[0]!.displayName,"Named pair 0");assert.deepEqual(roster[0]!.memberIds,["person-0-a","person-0-b"]);assert.ok(s.evaluate().compilation.memberships![0]!.planAssignments.every(a=>a.entrantId.startsWith("pair-")));
 });
+
+test("D1: malformed membership payload cannot omit the policy boundary",()=>{
+ const s=ready(),e=edit(s),before=s.export();delete (e as Partial<MembershipEdit>).definitionRules;assert.equal(s.setMembership(e).status,"REJECTED");assert.deepEqual(s.export(),before);
+});

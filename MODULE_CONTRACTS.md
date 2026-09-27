@@ -30,3 +30,13 @@ Status: ACTIVE. Logical boundaries, not instructions to create new packages. Ful
 A module change must instantiate every column above for its specific slice, including concrete inputs, output schema, applicable failures, telemetry and tests. These contracts do not claim implementation completion. A3 first measures existing boundaries; B verifies correctness without extending runtime; C onwards admit their respective features only after the preceding gate.
 
 No new core primitive is justified by presentation convenience. Phase N classifies a failed probe before introducing concepts. Existing broader capabilities are preserved but do not advance the programme automatically.
+
+## D editor submodules — current bounded contracts
+
+| Module | Owns | Does not own | Contract / proof |
+|---|---|---|---|
+| creator/membership | Projection of definition membership rules and draft plan assignments, bound to roster/pool shape | New allocation algorithm, roster admission, publication | docs/D_MEMBERSHIP_SLICE.md; creator-membership tests |
+| creator/operations | Draft resource commitment windows and duration-policy edits | Facility authority, reservations, generated schedule | docs/D_OPERATIONS_SLICE.md; creator-operations tests |
+| creator/plan-locks | Draft Plan start locks and necessary consistency checks | Definition semantics, fixed court assignment, solver feasibility, Reality | docs/D_LOCK_SLICE.md; creator-locks tests |
+
+All three use CreatorSession's revision-checked commands and immutable snapshots. Successful commands clear review and append transition evidence; rejected commands commit no input/history changes. UI modules own presentation only. Their READY_FOR_REVIEW/REVIEWED states never mean LOCKED, published or Guard-certified.

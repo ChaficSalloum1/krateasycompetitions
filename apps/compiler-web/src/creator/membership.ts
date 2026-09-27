@@ -11,6 +11,7 @@ export function membershipBasis(stage: TournamentDefinition["stages"][number],en
 }
 export function applyMembership(definition:TournamentDefinition,entries:Record<string,Entrant[]>,edits:MembershipEdit[]) {
   for(const edit of edits){
+    if(!Array.isArray(edit.definitionRules)||!Array.isArray(edit.planAssignments))throw new Error("Membership rules and assignments must be explicit arrays.");
     const stage=definition.stages.find(s=>s.id===edit.stageId);
     if(!stage?.pool || edit.basisHash!==membershipBasis(stage,entries[stage.divisionId]??[]))throw new Error("Saved pool membership is stale. Clear it explicitly or restore its roster and pool sizes.");
     const roster=entries[stage.divisionId]!;

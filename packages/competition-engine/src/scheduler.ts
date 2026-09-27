@@ -6,7 +6,7 @@ import { deriveContestEntrantsIndependently, deriveQualificationOccupancy } from
 const minutes = (value: number) => value * 60_000;
 const iso = (value: number) => new Date(value).toISOString();
 
-function durationFor(node: ContestNode, scheduling: SchedulingDefinition): number {
+export function durationFor(node: ContestNode, scheduling: SchedulingDefinition): number {
   const exact = [...scheduling.durations].reverse().find(({ stageId, round }) => stageId === node.stageId && round === node.round);
   const general = [...scheduling.durations].reverse().find(({ stageId, round }) => stageId === node.stageId && round === undefined);
   const selected = exact ?? general;

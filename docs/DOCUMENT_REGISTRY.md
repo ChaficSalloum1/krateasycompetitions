@@ -98,3 +98,7 @@ Inventory: 59 pre-existing documentation files; all classified. The PDF is retai
 
 - `docs/D_COMMAND_SLICE.md`: ACTIVE bounded D command contract, subordinate to the supplied domain and finite plan.
 - `docs/D_REVIEW_GATE.md`: ACTIVE gate/evidence record; does not independently authorise later phases.
+
+- `docs/D_MEMBERSHIP_SLICE.md`: ACTIVE bounded D1 ownership/state/invariant/acceptance contract and gate record.
+- `docs/D_OPERATIONS_SLICE.md`: ACTIVE bounded D4a resource/duration contract and gate record.
+- `docs/D_LOCK_SLICE.md`: ACTIVE bounded D4b start-lock contract and gate record.

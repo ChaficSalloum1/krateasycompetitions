@@ -1,0 +1,11 @@
+✔ D4b: start lock stays plan-owned, projects a hard scheduler input, invalidates review and replays (47.422708ms)
+✔ D4b: forged identity, malformed time, outside windows and premature final reject atomically (10.160422ms)
+✔ D4b: structural edits cannot silently retarget locks; incompatible duration blocks until undo (10.784719ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 652.324568
