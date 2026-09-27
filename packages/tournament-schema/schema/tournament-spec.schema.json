@@ -340,6 +340,7 @@
     "draw": {
       "type": "object", "additionalProperties": false, "required": ["id", "structureId", "placement", "priorities"],
       "properties": {
+        "protectedSeedCount": { "enum": [2, 4] },
         "id": { "$ref": "#/$defs/id" }, "structureId": { "$ref": "#/$defs/id" }, "placement": { "enum": ["seeded", "random", "manual", "optimised"] },
         "priorities": {
           "type": "array",

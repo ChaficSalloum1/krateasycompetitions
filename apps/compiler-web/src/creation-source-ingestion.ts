@@ -1,5 +1,5 @@
 import { inflateRawSync } from "node:zlib";
-import { importEntrantsCsv, type ImportedEntrant } from "@tournament-os/competition-engine";
+import { importEntrantsCsv, type ImportedEntrant } from "../../../packages/competition-engine/src/interoperability.js";
 import { isAlias, parseDocument, visit } from "yaml";
 import type { CreationSource } from "./creation-proposal.js";
 
