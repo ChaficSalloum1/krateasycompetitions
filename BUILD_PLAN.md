@@ -1,6 +1,4 @@
-> Current authorised sequence: B → C → D → E, one gated slice at a time, under the user's latest explicit instruction. Current slice: [B_SLICE](docs/B_SLICE.md). Prior ticket stop wording below is historical. No migration or production-readiness claim.
-
-> Current prototype implementation: **Ticket 2 / A2–A3**, with acceptance evidence in [docs/A3_EXIT_GATE.md](docs/A3_EXIT_GATE.md). The A1 current-delivery wording below is the preserved prior ticket record. A3 is implemented; B is the next allowed functional slice.
+> Current status: **D live visual creator review milestone**. See [D_REVIEW_GATE](docs/D_REVIEW_GATE.md). B/C bounded evidence exists; full D remains open, E/F and later programme gates are not passed. Historical A1 handoff sections below remain reference records of earlier tickets, not current execution instructions.
 
 # Finite migration and implementation plan
 
@@ -28,7 +26,7 @@ Every slice must contain JOB, INPUT, OUTPUT, AUTHORITATIVE OWNER, INVARIANTS, TE
 
 ## Ordered programme
 
-All gates below are **NOT YET ESTABLISHED under this reset**. Existing implementations/tests may provide reusable evidence when inspected in their slice; absence of new gate evidence is not a claim that code is absent.
+The table below preserves the complete required gates. A/B/C evidence is separately scoped in the exit records; D is a review milestone with remaining work, not a full gate pass. Existing implementations/tests may provide reusable evidence when inspected in their slice; absence of new gate evidence is not a claim that code is absent.
 
 | Phase | Job / required delivery | Acceptance and exit gate | Stop / non-goal |
 |---|---|---|---|

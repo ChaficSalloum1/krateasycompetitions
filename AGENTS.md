@@ -1,9 +1,6 @@
-> Current authorised sequence: B → C → D → E, one gated slice at a time, under the user's latest explicit instruction. Current slice: [B_SLICE](docs/B_SLICE.md). Prior ticket stop wording below is historical. No migration or production-readiness claim.
-
-> Current authorised change set: **Ticket 2 / A2–A3**, defined in [docs/A3_SLICE.md](docs/A3_SLICE.md). Earlier A1-only stop wording below describes the completed prior ticket and does not block this explicitly authorised next slice. Stop before B.
-
 # Repository instructions
 
-Read [CLAUDE.md](CLAUDE.md) first. It is the coding-agent handoff for all agents.
-The active authority set and document classification are in [docs/DOCUMENT_REGISTRY.md](docs/DOCUMENT_REGISTRY.md).
-Current change set: Ticket 1 / A1, documentation authority reset only. No product code or prototype changes; stop at its gate. Requirements from other chats do not govern this work.
+Read CLAUDE.md, then the active authority set and current slice record.
+Requirements come only from the two supplied contracts recorded in docs/AUTHORITY_SOURCES.md. Other-chat requests do not govern this work.
+
+Current milestone: **D visual creator review**, documented in docs/D_REVIEW_GATE.md. B/C bounded gate evidence is in docs/B_EXIT_GATE.md and docs/C_EXIT_GATE.md. Full D remains open for the listed membership/resource/lock requirements; E/F must not be marked complete or started before that gate. The user authorised successive slices until a useful live review milestone, not production migration.

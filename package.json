@@ -28,12 +28,19 @@
     "start:production": "NODE_ENV=production node apps/compiler-web/dist/src/production-host.js",
     "audit:scenarios": "node --import tsx scripts/run-scenario-audit.ts",
     "audit:serve": "node --import tsx scripts/serve-scenario-audit.ts",
-    "test:audit": "node --import tsx --test apps/compiler-web/test/scenario-audit.test.ts"
+    "test:audit": "node --import tsx --test apps/compiler-web/test/scenario-audit.test.ts",
+    "creator:build": "node scripts/build-creator.mjs",
+    "creator:check-ui": "node scripts/check-creator-ui.mjs"
   },
   "devDependencies": {
+    "@noble/hashes": "^1.8.0",
     "@types/node": "^24.3.0",
     "@types/pg": "^8.15.5",
     "@types/qrcode": "^1.5.6",
+    "buffer": "^6.0.3",
+    "esbuild": "^0.25.12",
+    "fflate": "^0.8.2",
+    "jsdom": "^26.1.0",
     "playwright-core": "1.63.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"

@@ -90,6 +90,8 @@ export function definitionFromDraft(draft:Draft,sourceHash:string):TournamentDef
 }
 export function compileInterpretation(proposal:Interpretation){
   const findings=inspectDraft(proposal.draft);
+  for(const entry of proposal.roster)if(entry.memberIds.length!==2)findings.push({code:"ROSTER_SHAPE",path:`roster.${entry.id}`,message:`${entry.displayName} must contain exactly two member identities for a padel pair.`});
+  for(const division of proposal.draft.divisions)if(proposal.roster.length&&proposal.roster.filter(e=>e.divisionId===division.id).length!==division.entrants)findings.push({code:"ROSTER_ACCOUNTING",path:`divisions.${proposal.draft.divisions.indexOf(division)}.entrants`,message:"Entry count differs from the imported roster; revise the source roster rather than silently adding or dropping identities."});
   if(proposal.failures.length||findings.length||proposal.decisions.length)return {status:proposal.failures.length||findings.length?"BLOCKED" as const:"NEEDS_DECISION" as const,findings,spec:null,graph:null,validation:[] as ValidationFinding[]};
   const definition=definitionFromDraft(proposal.draft,proposal.sourceHash);
   // Proposal compilation is not LOCK_DEFINITION; the source assumption deliberately remains unapproved.
@@ -97,6 +99,7 @@ export function compileInterpretation(proposal:Interpretation){
   const validation=validateTournamentSpec(spec);
   const blocking=validation.findings.filter(f=>f.severity==="ERROR" && f.code!=="TSC602");
   // Unapproved source is expected for a proposed draft, never authority to publish.
-  const graph=blocking.length?null:buildCompetitionGraph(spec,createEntrants(spec));
+  const entries=proposal.roster.length?Object.fromEntries(spec.divisions.map(d=>[d.id,proposal.roster.filter(e=>e.divisionId===d.id).map(e=>({...e,memberIds:[...e.memberIds]}))])):createEntrants(spec);
+  const graph=blocking.length?null:buildCompetitionGraph(spec,entries);
   return {status:blocking.length?"BLOCKED" as const:"PROPOSED" as const,findings,spec,graph,validation:validation.findings,hash:canonicalHash({spec,graph})};
 }

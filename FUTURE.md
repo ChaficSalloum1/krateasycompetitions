@@ -22,3 +22,8 @@ Status: ACTIVE holding record, **not implementation authority**. Items enter the
 A1 discovered competing authority hierarchies in MASTER-PRODUCT-SPECIFICATION, AI_AGENT_IMPLEMENTATION_BRIEF, pilot/phase/execution plans. Their scope authority is retired by this reset; the original material and technical safeguards remain available with explicit classification.
 
 A3 follow-up: preserve the supported selector envelope in the new independent qualifier verifier; extend its semantics only with a separate proof corpus. Seed production still resides in qualification and requires B2 separation. Real-browser inspection is not established by the controller-render test. Historical played results and the problematic draw remain distinct from the planning candidate used by A3.
+
+## Review follow-up observed in the D milestone
+
+- Investigate the existing CP-SAT asynchronous test's concurrency/runtime-budget sensitivity: full suite 633/634, isolated solver 11/11. Preserve UNKNOWN semantics; never turn a timed-out search into a fabricated feasible result.
+- Full Phase D requirements remain in docs/D_REVIEW_GATE.md as current gate work, not deferred optional features. Do not advance E/F on the strength of a visual review milestone.
