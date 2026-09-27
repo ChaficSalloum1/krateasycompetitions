@@ -1,3 +1,5 @@
+> Continuation: **D revision-safe command slice passed**; see [contract](docs/D_COMMAND_SLICE.md) and [evidence](docs/D_REVIEW_GATE.md#d-command-integrity-continuation). Next: remaining D membership and operational controls. Full D/E/F gates unchanged.
+
 > Current status: **D live visual creator review milestone**. See [D_REVIEW_GATE](docs/D_REVIEW_GATE.md). B/C bounded evidence exists; full D remains open, E/F and later programme gates are not passed. Historical A1 handoff sections below remain reference records of earlier tickets, not current execution instructions.
 
 # Finite migration and implementation plan

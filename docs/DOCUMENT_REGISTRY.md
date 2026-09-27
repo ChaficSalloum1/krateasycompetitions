@@ -93,3 +93,8 @@ Inventory: 59 pre-existing documentation files; all classified. The PDF is retai
 |---|---|---|
 | [A3_SLICE.md](A3_SLICE.md) | ACTIVE | Current A2/A3 slice contract and source limits |
 | [A3_EXIT_GATE.md](A3_EXIT_GATE.md) | ACTIVE | Executed acceptance evidence and next gate |
+
+## Current D continuation
+
+- `docs/D_COMMAND_SLICE.md`: ACTIVE bounded D command contract, subordinate to the supplied domain and finite plan.
+- `docs/D_REVIEW_GATE.md`: ACTIVE gate/evidence record; does not independently authorise later phases.

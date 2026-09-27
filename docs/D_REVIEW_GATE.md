@@ -33,3 +33,11 @@ These remain current D gate work, not deleted requirements or a claimed pass. E 
 A deterministic, bounded interpreter for the supported grammar and draft schema. There is no connected LLM and no universal-tournament claim. Unsupported statements are preserved, not silently downgraded. St Albans is a structural study using source-backed pool counts and explicitly stated review-scenario operations, not a full event replay.
 
 Final verification record: the full core/web suite executed 634 tests: 633 passed and one existing asynchronous CP-SAT check returned UNKNOWN instead of CERTIFIED under the concurrent run. Its entire solver file then passed 11/11 in isolation. This suggests sensitivity to the bounded runtime budget, but is not represented as a fully green 634-test rerun. The affected solver code was not changed. The focused creator flow and browser-bundle checks remain green after the final UI stale-input flush correction.
+
+## D command-integrity continuation
+
+Implemented under [D_COMMAND_SLICE](D_COMMAND_SLICE.md). The draft aggregate now enforces typed commands, expected revisions, idempotent receipts, conflicting-ID rejection, immutable input snapshots and atomic candidate evaluation. REVIEW binds the exact new draft revision; changes and undo clear it. The UI displays draft state and transition history, and exports replayable commands with before/after hashes. Graph errors now block review readiness.
+
+Evidence: `scenario/verification/phase-d-commands.txt` — 19 focused tests pass, including stale/duplicate/malformed commands, unchanged state on rejection, full command replay, detached snapshots and a duplicate-roster graph counterexample. TypeScript and browser bundle builds pass. Updated DOM-emulated UI check passes, including the REVIEWED state and visible transition history. No new full-suite or real-browser claim is made.
+
+This bounded integrity slice passes. Full D remains open for the four requirements above. The next implementation slice is named membership constraints/moves, followed by the remaining operational controls; E is still gated.
