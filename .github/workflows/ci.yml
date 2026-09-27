@@ -56,6 +56,9 @@ jobs:
       - name: Browser tests
         run: npm run test:browser:ci
 
+      - name: Format benchmark
+        run: npm run bench:formats
+
       - name: Protocol model check
         shell: bash
         run: npm run --silent stress:protocols | tee evidence/protocol-model-check.json
