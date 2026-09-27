@@ -1,3 +1,6 @@
+> Documentation status: **REFERENCE** under the 2026-09-27 compiler-runtime reset.
+> See [active authority and current slice](DOCUMENT_REGISTRY.md). Original content below is preserved; any earlier authority or sequencing claim is superseded. This document does not independently authorise features.
+
 # St Albans pilot release readiness
 
 This is the operational release authority for the first controlled St Albans pilot. It does not declare the pilot ready. A pilot may proceed only when `assessPilotRelease` returns `READY` for the exact server-owned closure evidence bundle that is being accepted.

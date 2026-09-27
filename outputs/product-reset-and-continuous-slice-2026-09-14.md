@@ -1,3 +1,6 @@
+> Documentation status: **ARCHIVE** under the 2026-09-27 compiler-runtime reset.
+> See [active authority and current slice](../docs/DOCUMENT_REGISTRY.md). Original content below is preserved; any earlier authority or sequencing claim is superseded. This document does not independently authorise features.
+
 # Krateasy Competitions product reset and continuous-slice contract
 
 Date: 2026-09-14

@@ -1,3 +1,6 @@
+> Documentation status: **REFERENCE** under the 2026-09-27 compiler-runtime reset.
+> See [active authority and current slice](../docs/DOCUMENT_REGISTRY.md). Original content below is preserved; any earlier authority or sequencing claim is superseded. This document does not independently authorise features.
+
 # Deployment boundary
 
 The reference container is deliberately fail-closed. Its production entry point

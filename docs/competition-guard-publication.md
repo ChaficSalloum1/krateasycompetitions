@@ -1,3 +1,6 @@
+> Documentation status: **REFERENCE** under the 2026-09-27 compiler-runtime reset.
+> See [active authority and current slice](DOCUMENT_REGISTRY.md). Original content below is preserved; any earlier authority or sequencing claim is superseded. This document does not independently authorise features.
+
 # Competition Guard publication contract
 
 ## Invariant

@@ -1,3 +1,6 @@
+> Documentation status: **REFERENCE** under the 2026-09-27 compiler-runtime reset.
+> See [active authority and current slice](DOCUMENT_REGISTRY.md). Original content below is preserved; any earlier authority or sequencing claim is superseded. This document does not independently authorise features.
+
 # Run Control operational triage acceptance matrix
 
 **Baseline:** `a7f96c1f9d4cb0942e3a9f0ccde25439c939f0f9`
