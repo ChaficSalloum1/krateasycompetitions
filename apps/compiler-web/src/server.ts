@@ -21,7 +21,7 @@ import { compilerHtml } from "./ui.js";
 import { creatorHtml } from "./creator-view.js";
 import { productHtml } from "./product-view.js";
 import { createCompetitionProposal, parseCreationProposalPayload } from "./creation-proposal.js";
-import { CompetitionJourney, parseConnectedLiveCommand, parseCreationSource,
+import { CompetitionJourney, JourneyExplainedError, parseConnectedLiveCommand, parseCreationSource,
   type CompetitionJourneyOptions } from "./competition-journey.js";
 import { renderCompetitionGuardPreflight } from "./guard-preflight-view.js";
 import { renderCompetitionPortfolio, renderCompetitionPortfolioUnavailable } from "./competition-portfolio-view.js";
@@ -1284,7 +1284,8 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
       json(response, 404, { error: "not_found" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown_error";
-      json(response, message === "request_too_large" ? 413 : 400, { error: message });
+      const explanation = error instanceof JourneyExplainedError ? { explanation: error.explanation } : {};
+      json(response, message === "request_too_large" ? 413 : 400, { error: message, ...explanation });
     }
   });
 }

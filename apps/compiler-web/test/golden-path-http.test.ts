@@ -151,3 +151,22 @@ test("a fresh round robin runs the whole golden path over HTTP, including reconf
   assert.equal(duplicate.publication, null);
   assert.equal(duplicate.live, null);
 });
+
+test("an event that cannot fit its courts and hours is refused with the numbers, not a code", async () => {
+  const journey = new CompetitionJourney(journeyOptions);
+  const server = createCompilerServer({ production: false, competitionJourney: journey, organizationId: "org.local" });
+  servers.push(server);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const post = (path: string, body: unknown) => fetch(origin + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const twelve = Array.from({ length: 12 }, (_, index) => `crowded.pair.${index + 1}`);
+  let c = await (await post("/v1/competition-journey", { source: { mode: "quick", value: { ...facts, participantCount: 12,
+    minimumMatches: 11, resourceCount: 2, matchDurationMinutes: 30 } } })).json() as any;
+  c = await (await post(`/v1/competition-journey/${encodeURIComponent(c.id)}/sources`, { expectedDraftVersion: c.draftVersion, source: { mode: "csv",
+    text: ["entrant_id,display_name,division_id,member_ids,seed", ...twelve.map((id, index) => `${id},Crowded Pair ${index + 1},open,${id}.a|${id}.b,${index + 1}`)].join("\n") } })).json();
+  const refused = await post(`/v1/competition-journey/${encodeURIComponent(c.id)}/compile`, { expectedDraftVersion: c.draftVersion });
+  assert.equal(refused.status, 400);
+  const body = await refused.json() as { error: string; explanation?: string };
+  assert.equal(body.error, "journey_capacity_insufficient");
+  assert.equal(body.explanation, "These matches need 1,980 court-minutes (66 matches), but the courts and hours give 1,080. Add courts, shorten matches or extend the day.");
+});
