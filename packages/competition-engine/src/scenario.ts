@@ -10,20 +10,26 @@ import { validateEligibility } from "./eligibility.js";
 import type { Entrant, ScenarioResult, Standing } from "./types.js";
 
 /**
- * A tie the registered policy leaves to a manual decision blocks publication only when that ranking
- * decides who qualifies or progresses. In final standings it is the organiser's decision at close, so it
- * is raised for acknowledgement at approval instead of blocking a legal plan.
+ * Whether a manual-decision tie can arise is a property of the standings policy, not of one simulated
+ * result set, so a sampled tie never decides publication. A policy that leaves ties to the organiser is
+ * raised once, deterministically, for acknowledgement at approval. When the ranking decides who
+ * progresses, the organiser records the order in Run Control during the event and the next stage waits
+ * for it; in final standings they decide it at close.
  */
 export function standingsFindingsForPublication(
   spec: Pick<TournamentSpec, "qualificationPolicies" | "progressionPolicies">,
-  policy: Pick<TournamentSpec["standingsPolicies"][number], "stageIds">,
+  policy: Pick<TournamentSpec["standingsPolicies"][number], "id" | "stageIds" | "tieFallback">,
   findings: readonly ValidationFinding[],
 ): ValidationFinding[] {
+  const kept = findings.filter(({ code }) => code !== "TSC712");
+  if (policy.tieFallback !== "manual_decision") return kept;
   const decidesProgression = policy.stageIds.some((stageId) => spec.qualificationPolicies.some(({ sourceStageId }) => sourceStageId === stageId)
     || spec.progressionPolicies.some(({ fromStageId, outcome }) => fromStageId === stageId && (outcome === "rank" || outcome === "pool_position")));
-  return findings.map((finding) => finding.code === "TSC712" && !decidesProgression
-    ? { ...finding, severity: "WARNING" as const, message: "Final standings may remain tied after every registered tiebreak; the organiser decides the order manually at close." }
-    : finding);
+  return [...kept, { code: "TSC712", severity: "WARNING", path: `/standingsPolicies/${policy.id}`,
+    message: decidesProgression
+      ? "Entrants may finish level after every registered tiebreak where the ranking decides who progresses. You record their order in Run Control during the event before the next stage can be filled."
+      : "Final standings may finish level after every registered tiebreak; you decide the order at close.",
+    evidence: { standingsPolicyId: policy.id, decidesProgression } }];
 }
 
 export function runScenario(spec: TournamentSpec, entrantsByDivision: Record<string, Entrant[]>, seed: string): ScenarioResult {

@@ -53,6 +53,7 @@ export type LiveOperationsCommand = CommandAudit & (
   | { readonly kind: "RESTORE_OFFICIAL"; readonly officialId: string; readonly reason: string }
   | { readonly kind: "REPORT_EQUIPMENT_FAILURE"; readonly equipmentId: string; readonly reason: string }
   | { readonly kind: "RESTORE_EQUIPMENT"; readonly equipmentId: string; readonly reason: string }
+  | { readonly kind: "DECIDE_STANDINGS_TIE"; readonly standingsPolicyId: string; readonly poolId: string; readonly orderedEntrantIds: readonly string[]; readonly reason: string }
 );
 
 export type EntrantPresenceStatus = "CHECKED_IN" | "LATE" | "NO_SHOW" | "WITHDRAWN";
@@ -140,7 +141,8 @@ type LiveOperationsEventData =
   | { readonly kind: "APPEAL_FILED"; readonly appealId: string; readonly protestId: string; readonly filedById: string; readonly reason: string }
   | { readonly kind: "APPEAL_RESOLVED"; readonly appealId: string; readonly outcome: DisputeOutcome; readonly reason: string }
   | { readonly kind: "OPERATION_CORRECTED"; readonly supersedesEventId: string; readonly replacement: LiveOperationCorrection; readonly reason: string }
-  | { readonly kind: "RESOURCE_AVAILABILITY_CHANGED"; readonly resourceKind: "COURT" | "OFFICIAL" | "EQUIPMENT"; readonly resourceId: string; readonly available: boolean; readonly reason: string; readonly expectedAvailableAt?: string };
+  | { readonly kind: "RESOURCE_AVAILABILITY_CHANGED"; readonly resourceKind: "COURT" | "OFFICIAL" | "EQUIPMENT"; readonly resourceId: string; readonly available: boolean; readonly reason: string; readonly expectedAvailableAt?: string }
+  | { readonly kind: "STANDINGS_TIE_DECIDED"; readonly standingsPolicyId: string; readonly poolId: string; readonly orderedEntrantIds: readonly string[]; readonly reason: string };
 
 export type LiveOperationsEvent = LiveOperationsEventAudit & LiveOperationsEventData;
 
@@ -294,6 +296,7 @@ function eventData(command: LiveOperationsCommand): LiveOperationsEventData {
   if (command.kind === "MARK_OFFICIAL_ABSENT") return { kind: "RESOURCE_AVAILABILITY_CHANGED", resourceKind: "OFFICIAL", resourceId: command.officialId, available: false, reason: command.reason };
   if (command.kind === "RESTORE_OFFICIAL") return { kind: "RESOURCE_AVAILABILITY_CHANGED", resourceKind: "OFFICIAL", resourceId: command.officialId, available: true, reason: command.reason };
   if (command.kind === "REPORT_EQUIPMENT_FAILURE") return { kind: "RESOURCE_AVAILABILITY_CHANGED", resourceKind: "EQUIPMENT", resourceId: command.equipmentId, available: false, reason: command.reason };
+  if (command.kind === "DECIDE_STANDINGS_TIE") return { kind: "STANDINGS_TIE_DECIDED", standingsPolicyId: command.standingsPolicyId, poolId: command.poolId, orderedEntrantIds: [...command.orderedEntrantIds], reason: command.reason };
   return { kind: "RESOURCE_AVAILABILITY_CHANGED", resourceKind: "EQUIPMENT", resourceId: command.equipmentId, available: true, reason: command.reason };
 }
 
@@ -419,6 +422,14 @@ export function submitLiveOperationsCommand(state: LiveOperationsState, command:
       if (!command.source.trim()) findings.push({ code: "LIVE400", path: "/source", message: "Result receipt source is required." });
     }
   }
+  if (command.kind === "DECIDE_STANDINGS_TIE") {
+    // The engine checks the decision is well formed; whether it matches a tie the standings actually
+    // leave open is checked by the caller that holds the competition's standings policy.
+    if (!command.standingsPolicyId.trim() || !command.poolId.trim()) findings.push({ code: "LIVE400", path: "/standingsPolicyId", message: "A tie decision names its standings policy and pool." });
+    if (command.orderedEntrantIds.length < 2 || new Set(command.orderedEntrantIds).size !== command.orderedEntrantIds.length
+      || command.orderedEntrantIds.some((entrantId) => !knownEntrants.has(entrantId)))
+      findings.push({ code: "LIVE422", path: "/orderedEntrantIds", message: "A tie decision orders two or more distinct registered entrants." });
+  }
   if (command.kind === "FILE_PROTEST") {
     if (!command.protestId.trim() || !command.filedById.trim()) findings.push({ code: "LIVE400", path: "/protest", message: "Protest identity and filing party are required." });
     if (state.protests[command.protestId]) findings.push({ code: "LIVE409", path: "/protestId", message: "Protest identity is already registered." });
@@ -515,6 +526,7 @@ function projectLiveOperations(definition: LiveOperationsDefinition, events: rea
     else if (event.kind === "PROTEST_RESOLVED") protests[event.protestId] = { ...protests[event.protestId]!, status: event.outcome, resolutionReason: event.reason };
     else if (event.kind === "APPEAL_FILED") appeals[event.appealId] = { appealId: event.appealId, protestId: event.protestId, filedById: event.filedById, reason: event.reason, status: "PENDING" };
     else if (event.kind === "APPEAL_RESOLVED") appeals[event.appealId] = { ...appeals[event.appealId]!, status: event.outcome, resolutionReason: event.reason };
+    else if (event.kind === "STANDINGS_TIE_DECIDED") continue;
     else setResource(event.resourceKind, event.resourceId, event.available, event.occurredAt, event.reason, event.expectedAvailableAt);
   }
   const last = events.at(-1);
@@ -532,6 +544,23 @@ function projectLiveOperations(definition: LiveOperationsDefinition, events: rea
     commandFingerprints,
   };
   return freezeState(withoutProof);
+}
+
+/**
+ * The organiser's decisions on standings ties, read from the event log, by standings policy and pool:
+ * for each tied group, the latest decision that has not been superseded by a correction.
+ */
+export function standingsTieDecisions(state: Pick<LiveOperationsState, "events">): Readonly<Record<string, Readonly<Record<string, readonly (readonly string[])[]>>>> {
+  const superseded = new Set(state.events.flatMap((event) => event.kind === "OPERATION_CORRECTED" ? [event.supersedesEventId] : []));
+  const latest = new Map<string, { policyId: string; poolId: string; order: readonly string[] }>();
+  for (const event of state.events) {
+    if (event.kind !== "STANDINGS_TIE_DECIDED" || superseded.has(event.eventId)) continue;
+    latest.set(canonicalHash([event.standingsPolicyId, event.poolId, [...event.orderedEntrantIds].sort()]),
+      { policyId: event.standingsPolicyId, poolId: event.poolId, order: event.orderedEntrantIds });
+  }
+  const decisions: Record<string, Record<string, (readonly string[])[]>> = {};
+  for (const { policyId, poolId, order } of latest.values()) ((decisions[policyId] ??= {})[poolId] ??= []).push(order);
+  return decisions;
 }
 
 export function replayLiveOperationsEvents(definition: LiveOperationsDefinition, events: readonly LiveOperationsEvent[]): LiveOperationsReplay {

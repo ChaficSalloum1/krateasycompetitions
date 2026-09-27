@@ -4,6 +4,7 @@ import {
   createLiveOperationsState,
   deriveLiveControlRoom,
   replayLiveOperationsEvents,
+  standingsTieDecisions,
   submitLiveOperationsCommand,
   type LiveOperationsCommand,
   type LiveOperationsDefinition,
@@ -330,4 +331,27 @@ test("the control room follows the plan in force and the approved reopen time", 
   assert.equal(courtClosed(moved), false, "a fixture repaired onto an open court is not blocked by its old court");
   const row = [...moved.now, ...moved.next, ...moved.late, ...moved.blocked].find(({ contestId }) => contestId === "semi-1")!;
   assert.deepEqual({ courtId: row.courtId, scheduledStart: row.scheduledStart }, { courtId: "court-2", scheduledStart: "2026-09-07T09:10:00.000Z" });
+});
+
+test("a standings tie decision is an audited, well-formed event; the latest decision for a tied group stands", () => {
+  let state = createLiveOperationsState(definition);
+  const decide = (commandId: string, orderedEntrantIds: string[], reason = "Coin toss at the desk") =>
+    submitLiveOperationsCommand(state, command({ kind: "DECIDE_STANDINGS_TIE", commandId, standingsPolicyId: "open.standings",
+      poolId: "open.pools.P1", orderedEntrantIds, reason }, state));
+  for (const [orderedEntrantIds, reason] of [[["pair-a"], "why"], [["pair-a", "pair-a"], "why"], [["pair-a", "pair-z"], "why"], [["pair-a", "pair-b"], " "]] as const) {
+    const refused = decide(`bad.${orderedEntrantIds.join(".")}.${reason.length}`, [...orderedEntrantIds], reason);
+    assert.equal(refused.accepted, false, `refused: ${orderedEntrantIds.join(", ")} / "${reason}"`);
+    assert.equal(refused.state, state, "a refused decision changes nothing");
+  }
+  state = execute(state, { kind: "DECIDE_STANDINGS_TIE", commandId: "tie-1", standingsPolicyId: "open.standings",
+    poolId: "open.pools.P1", orderedEntrantIds: ["pair-b", "pair-a"], reason: "Coin toss at the desk" });
+  state = execute(state, { kind: "DECIDE_STANDINGS_TIE", commandId: "tie-2", standingsPolicyId: "open.standings",
+    poolId: "open.pools.P1", orderedEntrantIds: ["pair-a", "pair-b"], reason: "Referee corrected the toss" });
+  state = execute(state, { kind: "DECIDE_STANDINGS_TIE", commandId: "tie-3", standingsPolicyId: "open.standings",
+    poolId: "open.pools.P1", orderedEntrantIds: ["pair-c", "pair-b", "pair-a"], reason: "Three-way tie after a correction" });
+  assert.deepEqual(standingsTieDecisions(state), { "open.standings": { "open.pools.P1": [["pair-a", "pair-b"], ["pair-c", "pair-b", "pair-a"]] } });
+  assert.deepEqual(state.contests, createLiveOperationsState(definition).contests, "a decision records an order; it changes no fixture");
+  const replayed = replayLiveOperationsEvents(definition, state.events);
+  assert.equal(replayed.valid, true);
+  assert.equal(replayed.state.proofHash, state.proofHash, "decisions replay to the same proof");
 });

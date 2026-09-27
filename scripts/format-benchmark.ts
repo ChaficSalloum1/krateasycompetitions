@@ -6,8 +6,10 @@
 // Exits non-zero when any case fails, so CI can hold the bar.
 import { writeFileSync, mkdirSync } from "node:fs";
 import { CompetitionJourney } from "../apps/compiler-web/src/competition-journey.js";
+import { evenPoolSizes } from "../apps/compiler-web/src/generic-blueprint-definition.js";
 
-type Case = { id: string; format: "round_robin" | "single_elimination"; entrants: number; courts: number; minutes: number };
+type Case = { id: string; format: "round_robin" | "single_elimination" | "pools_to_knockout"; entrants: number; courts: number; minutes: number;
+  poolSize?: number; qualifiers?: number };
 const LIMIT_SECONDS = 10;
 const cases: Case[] = [];
 for (const format of ["round_robin", "single_elimination"] as const)
@@ -16,11 +18,19 @@ for (const format of ["round_robin", "single_elimination"] as const)
       for (const minutes of [20, 30])
         cases.push({ id: `${format}.${entrants}p.${courts}c.${minutes}m`, format, entrants, courts, minutes });
 
+// Pools into a knockout: even and uneven pools, one and two qualifiers per pool.
+for (const entrants of [12, 16, 24])
+  for (const courts of [2, 3, 4, 6])
+    cases.push({ id: `pools_to_knockout.${entrants}p.pools4.q2.${courts}c.20m`, format: "pools_to_knockout", entrants, courts, minutes: 20, poolSize: 4, qualifiers: 2 });
+cases.push({ id: "pools_to_knockout.13p.pools4.q1.3c.20m", format: "pools_to_knockout", entrants: 13, courts: 3, minutes: 20, poolSize: 4, qualifiers: 1 });
+cases.push({ id: "pools_to_knockout.32p.pools4.q2.6c.25m", format: "pools_to_knockout", entrants: 32, courts: 6, minutes: 25, poolSize: 4, qualifiers: 2 });
+
 const only = process.argv.find((arg) => arg.startsWith("--only="))?.slice(7);
 const results: Array<Case & { status: string; guard: string | null; seconds: number; pass: boolean; detail: string }> = [];
 for (const c of cases.filter(({ id }) => !only || id.includes(only))) {
   const facts = { name: `Benchmark ${c.id}`, sport: "padel", participantUnit: "pairs", participantCount: c.entrants,
     resourceCount: c.courts, resourceLabel: "courts", format: c.format, minimumMatches: c.format === "round_robin" ? c.entrants - 1 : 1,
+    ...(c.poolSize ? { poolSize: c.poolSize, qualifiersPerPool: c.qualifiers } : {}),
     minimumRestMinutes: 10, matchDurationMinutes: c.minutes, timezone: "Europe/London", priority: "fair_recovery",
     scoringPolicy: "head_to_head_total_score_no_draw", tiebreakPolicy: "wins_score_difference_score_for_manual",
     withdrawalPolicy: "preserve_played_walkover_future", drawPolicy: "seeded_input_order",
@@ -41,7 +51,10 @@ for (const c of cases.filter(({ id }) => !only || id.includes(only))) {
   } catch (error) { detail = (error as Error).message; }
   const seconds = (Date.now() - started) / 1000;
   // An event whose matches cannot fit its courts and hours must be refused with the reason, not planned.
-  const matches = c.format === "round_robin" ? c.entrants * (c.entrants - 1) / 2 : c.entrants - 1;
+  const pools = c.poolSize ? evenPoolSizes(c.entrants, c.poolSize) : [];
+  const matches = c.format === "round_robin" ? c.entrants * (c.entrants - 1) / 2
+    : c.format === "pools_to_knockout" ? pools.reduce((sum, size) => sum + size * (size - 1) / 2, 0) + pools.length * c.qualifiers! - 1
+      : c.entrants - 1;
   const impossible = matches * c.minutes > c.courts * 12 * 60;
   const pass = impossible ? detail === "journey_capacity_insufficient" : guard === "PASSED" && seconds <= LIMIT_SECONDS;
   if (impossible) status = "REFUSED";

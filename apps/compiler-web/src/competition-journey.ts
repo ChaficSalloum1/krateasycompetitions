@@ -38,6 +38,8 @@ import {
   deriveLiveControlRoom,
 } from "@tournament-os/competition-engine";
 import {
+  isStAlbansMilestoneTemplate,
+  usesGenericRoster,
   createCompetitionProposal,
   type CompetitionBlueprint,
   type CreationProposal,
@@ -89,7 +91,7 @@ import {
   type PublicLiveContestProjection,
   type PublicLiveProjection,
 } from "./participant-information.js";
-import { advanceLiveProgression, verifyLiveProgression } from "./live-progression.js";
+import { advanceLiveProgression, openStandingsTies, verifyLiveProgression } from "./live-progression.js";
 import {
   approveCourtOutageProposal,
   authoritativeOperationalAssignments,
@@ -404,25 +406,13 @@ function isOrganiserFacts(source: CreationSource): boolean {
   return !(value && typeof value === "object" && value.kind === "structured-organiser-edit");
 }
 
-function supportedMilestoneFindings(blueprint: CompetitionBlueprint): string[] {
-  const findings: string[] = [];
-  if (blueprint.sport !== "padel") findings.push("This milestone compiles the validated Play & Konnect padel envelope only.");
-  if (blueprint.participantUnit !== "pairs" || blueprint.participantCount !== 47)
-    findings.push("This milestone requires exactly 47 pairs split by the approved 11/17/19 division template.");
-  if (blueprint.resourceCount !== 7 || !["court", "courts"].includes(blueprint.resourceLabel ?? "courts"))
-    findings.push("This milestone requires seven courts.");
-  if (blueprint.format !== "pools_to_knockout" || blueprint.poolSize !== 4 || blueprint.qualifiersPerPool !== 1)
-    findings.push("This milestone requires the approved mixed 3/4-pair pools-to-knockout template, entered as pool size 4 and one qualifier per pool.");
-  if (blueprint.minimumRestMinutes !== 0)
-    findings.push("This milestone has no mandatory rest; preferred recovery remains an explicit soft rule in the compiled specification.");
-  if (blueprint.matchDurationMinutes !== 30)
-    findings.push("This milestone requires the approved 30-minute standard slot; featured semi-finals and finals retain their explicit longer durations.");
-  return [...new Set(findings)].sort();
+/** The St Albans pools-to-knockout template keeps its approved definition (two cups, featured durations). */
+function isStAlbansTemplate(blueprint: CompetitionBlueprint): boolean {
+  return isStAlbansMilestoneTemplate(blueprint);
 }
 
 function connectedJourneyFindings(blueprint: CompetitionBlueprint): string[] {
-  return blueprint.format === "pools_to_knockout"
-    ? supportedMilestoneFindings(blueprint) : [...connectedBlueprintFindings(blueprint)];
+  return isStAlbansTemplate(blueprint) ? [] : [...connectedBlueprintFindings(blueprint)];
 }
 
 function findingsForWorkbench(workbench: CompetitionWorkbenchProjection, blueprint: CompetitionBlueprint): string[] {
@@ -501,8 +491,7 @@ function authoritativeEntrants(record: StoredJourneyRecord): Record<string, Retu
   if (!record.compiled) return null;
   const productionLock = record.workbench ? entrantsFromProductionLock(record.workbench) : null;
   if (productionLock) return productionLock;
-  if (record.proposal.blueprint.format === "round_robin" || record.proposal.blueprint.format === "single_elimination")
-    return genericRosterEntrants(record);
+  if (usesGenericRoster(record.proposal.blueprint)) return genericRosterEntrants(record);
   return createEntrants(record.compiled.spec);
 }
 
@@ -579,8 +568,7 @@ function nextParticipantAccessEvent(events: readonly ParticipantAccessControlEve
 function verifyRecord(record: StoredJourneyRecord): boolean {
   const { recordHash, ...body } = record;
   if (recordHash !== makeRecordHash(body)) return false;
-  if (record.compiled && (record.proposal.blueprint.format === "round_robin"
-    || record.proposal.blueprint.format === "single_elimination") && !genericSourceRoster(record)) return false;
+  if (record.compiled && usesGenericRoster(record.proposal.blueprint) && !genericSourceRoster(record)) return false;
   if (record.duplication) {
     const memory = { sourceCompetitionId: record.duplication.sourceCompetitionId,
       sourceClosureHash: record.duplication.sourceClosureHash,
@@ -754,7 +742,7 @@ function canonicalDesignFor(blueprint: CompetitionBlueprint, workbench: Competit
     matchDurationMinutes: 30,
   } : connectedBlueprintFromWorkbench(blueprint, workbench);
   const definition = definitionFromProductionLock(workbench)
-    ?? definitionFromConnectedBlueprint(effectiveBlueprint, sources)
+    ?? (isStAlbansTemplate(effectiveBlueprint) ? null : definitionFromConnectedBlueprint(effectiveBlueprint, sources))
     ?? (supportFindings.length === 0 && workbench.missingDecisions.length === 0
       && workbench.conflicts.length === 0 && !workbench.unsupportedSemantics.some(({ blocking }) => blocking)
       ? playAndKonnectDefinition : null);
@@ -1227,6 +1215,12 @@ export class CompetitionJourney {
       && ["CALL_CONTEST", "START_CONTEST"].includes(command.kind))
       throw new Error("operational_mode_blocks_live_command");
     if (command.kind === "RESOLVE_CONTEST_ENTRANTS") throw new Error("live_command_is_server_owned");
+    // A tie decision must order exactly a tie the standings policy leaves open now; it cannot rerank
+    // entrants the registered tiebreaks already separate.
+    if (command.kind === "DECIDE_STANDINGS_TIE" && !openStandingsTies(current.compiled!.spec, current.compiled!.graph, live.state)
+      .some(({ standingsPolicyId, poolId, entrantIds }) => standingsPolicyId === command.standingsPolicyId && poolId === command.poolId
+        && canonicalHash(entrantIds) === canonicalHash([...command.orderedEntrantIds].sort())))
+      throw new Error("standings_tie_not_open");
     const result = submitLiveOperationsCommand(live.state, command);
     if (!result.accepted) throw new Error(`live_command_rejected:${result.findings.map(({ code }) => code).join(",")}`);
     if (result.idempotentReplay) return snapshotOf(current);
@@ -2055,8 +2049,10 @@ export class CompetitionJourney {
       affectedCredentialCount: event.affectedCredentialHashes.length,
       replacementIssued: event.resultCredentialHash !== undefined,
     }));
+    const openTies = openStandingsTies(current.compiled!.spec, current.compiled!.graph, live.state).map((tie) => ({
+      ...tie, entrants: tie.entrantIds.map((entrantId) => ({ entrantId, displayName: participantNames[entrantId] ?? entrantId })) }));
     const body = { apiVersion: "1.0" as const, organizationId: input.organizationId,
-      public: publicProjection, liveVersion: live.state.version, stateProofHash: live.state.proofHash,
+      public: publicProjection, liveVersion: live.state.version, stateProofHash: live.state.proofHash, openTies,
       authorityAssignments: live.operations.authorityAssignments, incidents: live.operations.incidents,
       restartClearances: live.operations.restartClearances, participants, controlContests, attention,
       deliveryEvidence, accessEvidence };
@@ -2274,6 +2270,12 @@ export function parseConnectedLiveCommand(value: unknown, actorId: string, occur
     && typeof command.source === "string"
     && exact(["kind", "commandId", "expectedVersion", "contestId", "source"]))
     return { ...audit, kind: "RECORD_RESULT_RECEIPT", contestId: command.contestId, source: command.source };
+  if (command.kind === "DECIDE_STANDINGS_TIE" && typeof command.standingsPolicyId === "string"
+    && typeof command.poolId === "string" && typeof command.reason === "string"
+    && Array.isArray(command.orderedEntrantIds) && command.orderedEntrantIds.every((id) => typeof id === "string")
+    && exact(["kind", "commandId", "expectedVersion", "standingsPolicyId", "poolId", "orderedEntrantIds", "reason"]))
+    return { ...audit, kind: "DECIDE_STANDINGS_TIE", standingsPolicyId: command.standingsPolicyId, poolId: command.poolId,
+      orderedEntrantIds: command.orderedEntrantIds as string[], reason: command.reason };
   if (command.kind === "AWARD_WALKOVER" && typeof command.contestId === "string"
     && typeof command.winnerEntrantId === "string" && typeof command.absentEntrantId === "string"
     && typeof command.reason === "string" && exact(["kind", "commandId", "expectedVersion", "contestId",

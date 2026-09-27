@@ -47,7 +47,8 @@ test("the Competition Guard binds a passing report to the exact proposed definit
   assert.match(report.reportHash, /^[a-f0-9]{64}$/);
 
   const preflight = createCompetitionGuardPreflight(report);
-  assert.equal(preflight.outcome, "READY");
+  assert.equal(preflight.outcome, "ACKNOWLEDGEMENT_REQUIRED", "a pool tie deciding progression may need the organiser's decision");
+  assert.deepEqual(report.requiredAcknowledgementCodes, ["TSC712"]);
   assert.deepEqual(preflight.simple.requiredAcknowledgementCodes, report.requiredAcknowledgementCodes);
   assert.equal(preflight.detailed.assurance.integrityGrade, "CERTIFIED");
   assert.equal(preflight.detailed.assurance.operationalQuality, "ATTENTION_REQUIRED");

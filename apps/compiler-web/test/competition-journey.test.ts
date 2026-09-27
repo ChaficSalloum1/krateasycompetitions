@@ -46,7 +46,10 @@ test("one durable journey creates, compiles, Guards, approves, and reopens the s
     assert.equal(compiled.compiled?.actualContestCount, 98);
     assert.equal(compiled.compiled?.scheduledContestCount, 98);
     assert.equal(compiled.compiled?.guardPreflight.guardReportHash, compiled.compiled?.guardReportHash);
-    assert.equal(compiled.compiled?.guardPreflight.outcome, "READY");
+    // Pool ties that decide progression are left to the organiser, so approval acknowledges they may
+    // need a decision in Run Control during the event.
+    assert.equal(compiled.compiled?.guardPreflight.outcome, "ACKNOWLEDGEMENT_REQUIRED");
+    assert.deepEqual(compiled.compiled?.requiredAcknowledgementCodes, ["TSC712"]);
     assert.equal(compiled.compiled?.guardPreflight.detailed.accounting.reconciled, true);
     assert.match(compiled.compiled?.changeSetHash ?? "", /^[a-f0-9]{64}$/);
     assert.match(compiled.compiled?.preflightPath ?? "", /\/preflight$/);
@@ -71,12 +74,18 @@ test("one durable journey creates, compiles, Guards, approves, and reopens the s
   }
 });
 
-test("the journey fails closed outside its declared milestone envelope", () => {
+test("off the St Albans template, pools into a knockout goes through the generic envelope and fails closed on what it lacks", () => {
   const journey = new CompetitionJourney({ now: () => "2026-09-14T10:00:00.000Z" });
   const draft = journey.create({ mode: "quick", value: { ...source.value, participantCount: 46 } });
   assert.equal(draft.status, "NEEDS_INPUT");
-  assert.ok(draft.supportFindings.some((finding) => finding.includes("47 pairs")));
+  assert.ok(!draft.supportFindings.some((finding) => finding.includes("47 pairs")), "46 pairs is no longer outside a fixed template");
+  assert.ok(draft.supportFindings.some((finding) => finding.includes("scoring policy")), "it still needs its registered scoring policy");
   assert.throws(() => journey.compile(draft.id, draft.draftVersion), /journey_not_ready/);
+
+  const oversizedPools = journey.create({ mode: "quick", value: { ...source.value, participantCount: 46, poolSize: 9 } });
+  assert.ok(oversizedPools.supportFindings.some((finding) => finding.includes("pool size from 3 to 8")));
+  const allQualify = journey.create({ mode: "quick", value: { ...source.value, participantCount: 46, qualifiersPerPool: 4 } });
+  assert.ok(allQualify.supportFindings.some((finding) => finding.includes("fewer than the smallest pool")));
 });
 
 test("the public source boundary rejects proposer-owned Guard artefacts", () => {

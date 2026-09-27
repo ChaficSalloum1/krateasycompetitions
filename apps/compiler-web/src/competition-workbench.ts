@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { canonicalHash, semanticDiff, type SemanticChange } from "@tournament-os/tournament-schema";
-import { createCompetitionProposal, type CompetitionBlueprint, type CreationSource } from "./creation-proposal.js";
+import { createCompetitionProposal, usesGenericRoster, type CompetitionBlueprint, type CreationSource } from "./creation-proposal.js";
 import { ingestCreationSource } from "./creation-source-ingestion.js";
 
 export interface WorkbenchSourceDocument {
@@ -364,8 +364,7 @@ function analyseBlueprintSources(sources: readonly CreationSource[], documents: 
       description: "Complete roster seeds must be unique and contiguous from 1 through the entrant count.",
     });
   }
-  const connectedFormat = primary.proposal.blueprint.format === "round_robin"
-    || primary.proposal.blueprint.format === "single_elimination";
+  const connectedFormat = usesGenericRoster(primary.proposal.blueprint);
   const missingDecisions = [...primary.proposal.questions.map(({ field, prompt }) => ({
     id: String(field), path: `/blueprint/${String(field)}`, prompt, critical: true as const,
   }))];

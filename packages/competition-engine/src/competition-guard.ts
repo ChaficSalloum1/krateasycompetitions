@@ -160,6 +160,8 @@ function entitiesFrom(finding: ValidationFinding): string[] {
 
 export function classifyCompetitionGuardFinding(finding: ValidationFinding): CompetitionGuardSeverity {
   if (finding.severity === "WARNING") {
+    // A tie left to the organiser is a decision they must be ready to make, whatever the wording.
+    if (finding.code === "TSC712") return "OPERATIONAL";
     if (/optim|better plan|unused capacity/i.test(`${finding.code} ${finding.message}`)) return "OPTIMIZATION";
     if (/information|observation|informational/i.test(`${finding.code} ${finding.message}`)) return "INFORMATION";
     if (/^TSW|experience|fairness|wait|rest|opportunity/i.test(`${finding.code} ${finding.message}`)) return "EXPERIENCE";

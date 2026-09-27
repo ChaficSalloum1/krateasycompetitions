@@ -106,6 +106,13 @@ export interface OrganiserLiveProjection {
   readonly public: PublicLiveProjection;
   readonly liveVersion: number;
   readonly stateProofHash: string;
+  /** Standings ties the registered tiebreaks leave to the organiser; the stage they feed waits on each. */
+  readonly openTies?: readonly {
+    readonly standingsPolicyId: string;
+    readonly poolId: string;
+    readonly entrantIds: readonly string[];
+    readonly entrants: readonly { readonly entrantId: string; readonly displayName: string }[];
+  }[];
   readonly authorityAssignments: OperationalAuthorityAssignments;
   readonly incidents: readonly OperationalIncident[];
   readonly restartClearances: {

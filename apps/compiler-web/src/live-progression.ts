@@ -3,6 +3,7 @@ import {
   buildCompetitionGraph,
   calculateStandings,
   qualify,
+  standingsTieDecisions,
   submitLiveOperationsCommand,
   type CompetitionGraph,
   type ContestNode,
@@ -40,23 +41,51 @@ function resultFor(state: LiveOperationsState, contestId: string): ContestResult
     status: contest.status === "WALKOVER" ? "walkover" : "completed" };
 }
 
-function actualGraph(spec: TournamentSpec, planningGraph: CompetitionGraph,
-  entrantsByDivision: Record<string, Entrant[]>, state: LiveOperationsState): CompetitionGraph | null {
+export interface OpenStandingsTie {
+  readonly standingsPolicyId: string;
+  readonly poolId: string;
+  readonly entrantIds: readonly string[];
+}
+
+/** Actual pool standings once every pool result is in, with the organiser's recorded tie decisions applied. */
+function actualStandings(spec: TournamentSpec, planningGraph: CompetitionGraph, state: LiveOperationsState) {
   const groupNodes = planningGraph.nodes.filter((node) => node.kind === "contest"
     && spec.stages.find((stage) => stage.id === node.stageId)?.pool);
   const results = groupNodes.map(({ id }) => resultFor(state, id));
   if (results.some((result) => result === null)) return null;
+  const decisions = standingsTieDecisions(state);
   const standingsByStage: Record<string, Standing[]> = {};
   const findings = [];
+  const openTies: OpenStandingsTie[] = [];
   for (const policy of spec.standingsPolicies) {
     const calculated = calculateStandings(planningGraph.nodes, results as ContestResult[], policy,
-      { ...(spec.randomisation.seed ? { randomSeed: spec.randomisation.seed } : {}) });
+      { ...(spec.randomisation.seed ? { randomSeed: spec.randomisation.seed } : {}),
+        ...(decisions[policy.id] ? { manualOrder: decisions[policy.id] } : {}) });
     findings.push(...calculated.findings);
+    for (const finding of calculated.findings) if (finding.code === "TSC712") {
+      const evidence = finding.evidence as { poolId: string; entrants: string[] };
+      openTies.push({ standingsPolicyId: policy.id, poolId: evidence.poolId, entrantIds: [...evidence.entrants].sort() });
+    }
     for (const stageId of policy.stageIds) standingsByStage[stageId] = calculated.standings
       .filter((standing) => planningGraph.nodes.some((node) => node.stageId === stageId && node.poolId === standing.poolId));
   }
-  if (findings.some(({ severity }) => severity === "ERROR")) return null;
-  const qualification = qualify(spec, standingsByStage, entrantsByDivision);
+  return { standingsByStage, findings, openTies };
+}
+
+/**
+ * Ties the registered standings policy leaves to the organiser, still undecided. Until each is decided,
+ * the stage it feeds cannot fill.
+ */
+export function openStandingsTies(spec: TournamentSpec, planningGraph: CompetitionGraph,
+  state: LiveOperationsState): readonly OpenStandingsTie[] {
+  return actualStandings(spec, planningGraph, state)?.openTies ?? [];
+}
+
+function actualGraph(spec: TournamentSpec, planningGraph: CompetitionGraph,
+  entrantsByDivision: Record<string, Entrant[]>, state: LiveOperationsState): CompetitionGraph | null {
+  const standings = actualStandings(spec, planningGraph, state);
+  if (!standings || standings.findings.some(({ severity }) => severity === "ERROR")) return null;
+  const qualification = qualify(spec, standings.standingsByStage, entrantsByDivision);
   if (qualification.findings.some(({ severity }) => severity === "ERROR")) return null;
   const graph = buildCompetitionGraph(spec, entrantsByDivision, qualification.byStructure);
   const plannedIds = planningGraph.nodes.filter(({ kind }) => kind === "contest").map(({ id }) => id).sort();
