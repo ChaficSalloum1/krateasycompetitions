@@ -85,3 +85,32 @@ test("a draft missing its rules is completed from the Studio alone", async () =>
   assert.ok(await page.getByRole("button", { name: "Create certified plan" }).isVisible());
   await page.close();
 });
+
+test("after approval and before play, the organiser changes the courts and publishes revision 2 from the Studio", async () => {
+  const j = journey();
+  let c = j.create({ mode: "quick", value: { ...facts, ...rules } }, "organiser.author");
+  c = j.addSource(c.id, c.draftVersion, { mode: "csv", text: roster });
+  c = j.compile(c.id, c.draftVersion);
+  c = j.approve(c.id, c.revision, "organiser.approver", c.compiled!.requiredAcknowledgementCodes);
+  const origin = await hosts.serve(j);
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await page.goto(`${origin}/competitions/${encodeURIComponent(c.id)}`);
+
+  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Change before play" }).click()]);
+  await page.locator("#amendment-notice").waitFor();
+  assert.match(await page.locator("#amendment-notice").innerText(), /Revision 1 stays in force until you approve this change/);
+  await page.getByText("Change the event's facts").click();
+  await page.locator("#facts-form").getByLabel("Number of courts").fill("3");
+  await Promise.all([page.waitForEvent("load"), page.locator("#facts-form").getByRole("button", { name: "Save facts" }).click()]);
+  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Create certified plan" }).click()]);
+  for (const box of await page.locator("#acks input[type=checkbox]").all()) await box.check();
+  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Approve and publish exact revision" }).click()]);
+
+  const republished = j.read(c.id)!;
+  assert.equal(republished.status, "PUBLISHED");
+  assert.equal(republished.publication!.revision, 2);
+  assert.equal(republished.blueprint.resourceCount, 3);
+  assert.deepEqual(republished.publicationHistory!.map(({ revision }) => revision), [1]);
+  assert.equal(await page.locator("#amendment-notice").count(), 0);
+  await page.close();
+});

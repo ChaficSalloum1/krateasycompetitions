@@ -247,7 +247,26 @@ interface StoredJourneyRecord {
   readonly participantAccessEvents?: readonly ParticipantAccessControlEvent[];
   readonly closure?: CompetitionClosure;
   readonly duplication?: JourneyDuplication;
+  /** A published revision reopened for a change before play; it stays on record until the change is approved. */
+  readonly amendment?: JourneyAmendment;
+  /** Published revisions a later approval has replaced before play. */
+  readonly publicationHistory?: readonly SupersededPublication[];
   readonly recordHash: string;
+}
+
+interface JourneyAmendment {
+  readonly requestedBy: string;
+  readonly requestedAt: string;
+  readonly base: { readonly compiled: CompiledJourneyRevision; readonly approval: JourneyApproval; readonly publication: JourneyPublication };
+}
+
+export interface SupersededPublication {
+  readonly revision: number;
+  readonly certificateHash: string;
+  readonly approvalHash: string;
+  readonly publishedAt: string;
+  readonly amendmentRequestedBy: string;
+  readonly supersededAt: string;
 }
 
 interface StoredJourneyEnvelope {
@@ -263,6 +282,9 @@ export interface CompetitionJourneySnapshot {
   readonly draftVersion: number;
   readonly revision: number;
   readonly status: CompetitionJourneyStatus;
+  /** Set while a published revision is being changed before play. */
+  readonly amendment?: { readonly fromRevision: number; readonly requestedBy: string; readonly requestedAt: string };
+  readonly publicationHistory?: readonly SupersededPublication[];
   readonly sourceMode: CreationSource["mode"];
   readonly blueprint: CompetitionBlueprint;
   readonly understood: readonly string[];
@@ -569,6 +591,12 @@ function verifyRecord(record: StoredJourneyRecord): boolean {
   const { recordHash, ...body } = record;
   if (recordHash !== makeRecordHash(body)) return false;
   if (record.compiled && usesGenericRoster(record.proposal.blueprint) && !genericSourceRoster(record)) return false;
+  if (record.amendment) {
+    const { base } = record.amendment;
+    if (record.live || record.closure || record.approval || record.publication
+      || base.publication.revision !== base.compiled.revision || base.approval.revision !== base.compiled.revision
+      || (record.compiled && record.compiled.revision !== base.compiled.revision + 1)) return false;
+  }
   if (record.duplication) {
     const memory = { sourceCompetitionId: record.duplication.sourceCompetitionId,
       sourceClosureHash: record.duplication.sourceClosureHash,
@@ -788,8 +816,11 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
     id: record.id,
     name: recognisedCompetitionName(workbench) ?? record.proposal.blueprint.name ?? "Untitled competition",
     draftVersion: record.draftVersion,
-    revision: compiled?.revision ?? 0,
+    revision: compiled?.revision ?? record.amendment?.base.compiled.revision ?? 0,
     status: statusOf(record),
+    ...(record.amendment ? { amendment: { fromRevision: record.amendment.base.publication.revision,
+      requestedBy: record.amendment.requestedBy, requestedAt: record.amendment.requestedAt } } : {}),
+    ...(record.publicationHistory?.length ? { publicationHistory: record.publicationHistory } : {}),
     sourceMode: record.source.mode,
     blueprint: effectiveBlueprint,
     understood: record.proposal.understood,
@@ -857,7 +888,7 @@ function referenceCompilationInputs(record: StoredJourneyRecord, compiledAt: str
       quantity: blueprint.resourceCount ?? resource.quantity,
       availability: [{ start: blueprint.startsAt!, end: blueprint.endsAt! }] } : resource),
   };
-  const revision = (record.compiled?.revision ?? 0) + 1;
+  const revision = ((record.compiled ?? record.amendment?.base.compiled)?.revision ?? 0) + 1;
   const spec = compileDefinition(definition, {
     specId: record.id,
     revision,
@@ -934,7 +965,8 @@ function compileReferenceRevision(record: StoredJourneyRecord, compiledAt: strin
     schedule,
     ...(scenario.simulation ? { simulation: scenario.simulation } : {}),
   });
-  const previous = record.compiled;
+  // An amendment is compared with the revision it changes, so the change set shows exactly what moved.
+  const previous = record.compiled ?? record.amendment?.base.compiled;
   const pendingImpact = record.workbench?.pendingImpact;
   const changeSet = createPublicationChangeSet({ fromRevision: previous?.revision ?? null, toRevision: revision,
     ...(previous ? { previousDefinition: previous.spec, previousSchedule: previous.schedule } : {}),
@@ -1047,6 +1079,8 @@ export class CompetitionJourney {
       proposal,
       workbench,
       supportFindings: findingsForWorkbench(workbench, proposal.blueprint),
+      ...(current.amendment ? { amendment: current.amendment } : {}),
+      ...(current.publicationHistory ? { publicationHistory: current.publicationHistory } : {}),
     });
     this.records.set(id, revised);
     this.persist();
@@ -1178,7 +1212,36 @@ export class CompetitionJourney {
       topic: "competition.publication.v1", key: `${current.id}:v${compiled.revision}`,
       payload: { competitionId: current.id, ...publicationBody },
     }] };
-    const revised = sealRecord({ ...withoutSeal(current), updatedAt: approvedAt, approval, publication });
+    const { amendment, ...unamended } = withoutSeal(current);
+    const publicationHistory = amendment ? [...(current.publicationHistory ?? []), {
+      revision: amendment.base.publication.revision, certificateHash: amendment.base.publication.certificateHash,
+      approvalHash: amendment.base.approval.approvalHash, publishedAt: amendment.base.publication.publishedAt,
+      amendmentRequestedBy: amendment.requestedBy, supersededAt: approvedAt }] : current.publicationHistory;
+    const revised = sealRecord({ ...unamended, updatedAt: approvedAt, approval, publication,
+      ...(publicationHistory ? { publicationHistory } : {}) });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  /**
+   * Reopens a published revision for a change before play: a withdrawal, a late entry, another court or
+   * new times. The published revision stays on record; the change is edited as a draft, compiled as the
+   * next revision with a change set against the published one, and replaces it only when approved. Once
+   * live play is active, changes go through the guarded live repairs instead.
+   */
+  public amend(id: string, expectedPublishedRevision: number, requestedBy: string): CompetitionJourneySnapshot {
+    const current = this.require(id);
+    if (current.closure) throw new Error("competition_is_closed");
+    if (current.live) throw new Error("amendment_requires_no_live_play");
+    const { compiled, approval, publication } = current;
+    if (!compiled || !approval || !publication || publication.revision !== expectedPublishedRevision
+      || compiled.revision !== expectedPublishedRevision) throw new Error("journey_revision_conflict");
+    if (!requestedBy.trim()) throw new Error("amendment_requires_actor");
+    const requestedAt = this.canonicalNow();
+    const { compiled: _compiled, approval: _approval, publication: _publication, ...draft } = withoutSeal(current);
+    const revised = sealRecord({ ...draft, draftVersion: current.draftVersion + 1, updatedAt: requestedAt,
+      amendment: { requestedBy, requestedAt, base: { compiled, approval, publication } } });
     this.records.set(id, revised);
     this.persist();
     return snapshotOf(revised);

@@ -869,7 +869,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end(html);
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|participant-access-rotate|participant-access-revoke|participant-recovery-code|participant-recover|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|edit-preview|edit-apply|compile|approve|amend|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|participant-access-rotate|participant-access-revoke|participant-recovery-code|participant-recover|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
@@ -946,6 +946,13 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
             || !command.acknowledgedFindingCodes.every((value) => typeof value === "string")) throw new Error("invalid_journey_command");
           json(response, 200, competitionJourney.approve(competitionId, command.expectedRevision as number,
             "local.organiser", command.acknowledgedFindingCodes as string[]));
+          return;
+        }
+        if (operation === "amend") {
+          if (Object.keys(command).some((key) => key !== "expectedPublishedRevision")
+            || !Number.isSafeInteger(command.expectedPublishedRevision)) throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.amend(competitionId, command.expectedPublishedRevision as number,
+            "local.organiser"));
           return;
         }
         if (operation === "live-activate") {

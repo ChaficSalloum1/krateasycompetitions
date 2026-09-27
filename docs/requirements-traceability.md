@@ -368,7 +368,7 @@ No authority conflict required product-owner direction. The smallest connected s
       1. ~~Solver speed on few courts~~: resolved by item 51.
       2. ~~A simulated tie blocks publication~~: resolved by item 52, which supersedes item 51's rule.
       3. ~~No page for changing facts~~: resolved by item 53.
-      4. **No change after approval except repairs.** An approved revision is immutable. The only changes afterwards are the guarded live repairs: no-show, court outage and overrun. A late entry, a withdrawal before play, or an extra court has no path.
+      4. ~~No change after approval except repairs~~: resolved before play by item 54. During live play, the guarded live repairs remain the only path.
       5. ~~Formats a new tournament can use~~: resolved by item 52. Pools into a knockout is built generically for any size.
 
 51. **Engine reliability measured by a format benchmark (`scripts/format-benchmark.ts`, `npm run bench:formats`, run in CI):** 48 club events are created the way an organiser creates them and compiled through the product journey:
@@ -421,5 +421,18 @@ No authority conflict required product-owner direction. The smallest connected s
       - A draft missing its four rules is completed from the page alone.
     - **Accessibility.** Each label is a sibling of its control, tied by `for`, so a select's accessible name is its label, not the label plus the selected option.
     - **Injected functions.** The Studio injects functions as text. The page defines an identity `__name`, so a function compiled with esbuild's name-keeping helper runs there too.
+
+54. **Changes after approval, before play (`CompetitionJourney.amend`, `POST …/amend`, Studio "Change before play"):** a published revision that is not yet live can be reopened for a change. Examples: a withdrawal, a late entry, another court, new times.
+    - **While the change is edited.** The published revision stays on record (`amendment.base`). The change is edited with the same Studio facts form and roster tools as any draft. The amendment survives every edit and a restart.
+    - **Compiling.** The change compiles as revision N+1, with a publication change set against revision N (`fromRevision: N`), not as a fresh revision 1.
+    - **Approval.** The change replaces revision N only when approved independently. Revision N then moves to `publicationHistory` with its certificate and approval hashes and who asked for the change.
+    - **Refusals.** An amendment is refused on a stale revision, before anything is published, and once live play is active. At that point, only the guarded live repairs apply.
+    - **Record verification** requires all of the following while an amendment is open:
+      - no approval, publication, live play or closure;
+      - a base whose compiled, approved and published revisions agree;
+      - any new compile to be exactly the next revision.
+    - **Tests** (`pre-play-amendment.test.ts`, `browser/studio-facts.test.ts`):
+      - An 8-pair published event loses pair 8, gains pair 9 and a third court. It is published as revision 2, activated, played to the end and closed. Its closure evidence verifies across the amendment.
+      - In a browser, the organiser changes the courts of a published event and publishes revision 2 from the Studio alone.
 
 Broader format/sport connection, non-pilot loser-path/hard-rematch reconstruction and a verified on-device advisory model remain governed follow-ons rather than St Albans deployment blockers. The remaining pilot gates require external authority or deployment inputs: provider/fallback selection and credentials, authorised emergency details, named-assistive-technology/outdoor accessibility acceptance, full staff/manual recovery rehearsal, production persistence/restore evidence, support assignment and final role approvals. The emergency pack cannot be declared ready until the venue/pilot safety owner supplies and approves the named responders, contacts, venue/access and evacuation facts; until then the explicit fallback is the venue's separately controlled printed safety plan. External delivery remains fail closed until the pilot owner selects credentials, a provider and its declared fallback. The executable release manifest lists every remaining gate, accountable role and fixed fallback against the exact closed rehearsal scope; no missing external fact is represented as passed.
