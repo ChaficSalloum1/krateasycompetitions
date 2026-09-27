@@ -72,6 +72,15 @@ test("after an approved court outage the timeline shows the repaired operational
     assert.equal(contest.courtId, operational.get(contest.contestId)!.resourceId, `Run Control starts ${contest.contestId} on its repaired court`);
   assert.ok(control.every(({ courtId, scheduledStart }) => courtId !== closed || Date.parse(scheduledStart) >= Date.parse("2026-10-18T08:40:00.000Z")),
     "Run Control never offers the closed court for a fixture moved off it");
+  const organiser = journey.readOrganiserLive({ organizationId: org, competitionId: live.id, expectedOperationalRevision: next,
+    at: "2026-10-18T08:02:00.000Z" });
+  for (const row of organiser.attention) {
+    const planned = operational.get(row.contestId)!;
+    assert.deepEqual({ courtId: row.courtId, scheduledStart: row.scheduledStart }, { courtId: planned.resourceId, scheduledStart: planned.start },
+      `attention shows ${row.contestId} where the repaired plan puts it`);
+  }
+  assert.ok(!organiser.attention.some(({ contestId, reasons }) => operational.get(contestId)!.resourceId !== closed
+    && reasons.some((reason) => reason.startsWith("COURT_CLOSED"))), "a fixture moved off the closed court is not blocked by it");
   assert.throws(() => journey.readCourtTimeline({ organizationId: org, competitionId: live.id, expectedOperationalRevision: revision }),
     "a superseded operational revision is never shown as current");
 });
@@ -88,7 +97,8 @@ test("the timeline page is read-only and script-free, named for people, and reac
   assert.match(page.body, /<h2 id="court-1">Court 1<\/h2>/);
   assert.match(page.body, /aria-current="page">Run Control<\/a>/, "the timeline belongs to Run Control");
   assert.match(page.body, new RegExp(`href="/attention\\?competition=${id.replace(/\./g, "\\.")}&amp;revision=${revision}&amp;change=COURT_OUTAGE&amp;court=venue\\.courts\\.1#change-review"`));
-  assert.match(page.body, /Report running late<span class="visually-hidden"> for Harbour Pair \d vs Harbour Pair \d at \d\d:\d\d on Court \d<\/span>/);
+  assert.match(page.body, /Report a no-show<span class="visually-hidden"> for Harbour Pair \d vs Harbour Pair \d at \d\d:\d\d on Court \d<\/span>/);
+  assert.doesNotMatch(page.body, /Report running late/, "nothing is in play yet, so nothing can overrun");
   assert.match(page.body, /<time datetime="2026-10-18T08:00:00.000Z">09:00<\/time>/, "times read in the competition's own timezone");
 
   const runControl = await get(server, `/attention?competition=${id}&revision=${revision}`);
@@ -104,9 +114,13 @@ test("the timeline page is read-only and script-free, named for people, and reac
 });
 
 test("finished fixtures offer no change, and courts are named the same way on every surface", () => {
-  assert.deepEqual(timelineChangesFor("SCHEDULED"), ["DELAY_OVERRUN", "NO_SHOW"]);
-  assert.deepEqual(timelineChangesFor("IN_PROGRESS"), ["DELAY_OVERRUN"]);
-  for (const status of ["COMPLETED", "WALKOVER", "RETIRED"] as const) assert.deepEqual(timelineChangesFor(status), []);
+  assert.deepEqual(timelineChangesFor({ status: "SCHEDULED", sidesResolved: true }), ["NO_SHOW"]);
+  assert.deepEqual(timelineChangesFor({ status: "CALLED", sidesResolved: true }), ["NO_SHOW"]);
+  assert.deepEqual(timelineChangesFor({ status: "SCHEDULED", sidesResolved: false }), [],
+    "a fixture whose sides are not yet known cannot be reviewed, so it offers no report");
+  assert.deepEqual(timelineChangesFor({ status: "IN_PROGRESS", sidesResolved: true }), ["DELAY_OVERRUN"],
+    "only a fixture in play can overrun");
+  for (const status of ["COMPLETED", "WALKOVER", "RETIRED"] as const) assert.deepEqual(timelineChangesFor({ status, sidesResolved: true }), []);
   assert.equal(courtLabel("venue.courts.3"), "Court 3");
   assert.equal(courtLabel("venue.courts.main.12"), "Court 12");
   assert.equal(courtLabel("venue.court-07"), "Court 7");
@@ -118,5 +132,8 @@ test("finished fixtures offer no change, and courts are named the same way on ev
   const done = { ...timeline, courts: [{ ...timeline.courts[0]!, contests: [{ ...first, status: "COMPLETED" as const }] }] };
   const html = renderCourtTimeline(done, organiserContextOf(journey.read(live.id)!), "Europe/London");
   assert.doesNotMatch(html.slice(html.indexOf("<li")), /Report running late|Report a no-show/);
+  const undecided = { ...timeline, courts: [{ ...timeline.courts[0]!, contests: [{ ...first, sidesResolved: false }] }] };
+  assert.doesNotMatch(renderCourtTimeline(undecided, organiserContextOf(journey.read(live.id)!), "Europe/London").slice(html.indexOf("<li")),
+    /Report running late|Report a no-show/, "no report is offered for a fixture Run Control could not select");
   assert.match(html, /data-status="COMPLETED"><div class="row">.*?Completed<\/span>/);
 });

@@ -18,10 +18,13 @@ const TONE: Readonly<Record<Contest["status"], string>> = {
   SCHEDULED: "neutral", CALLED: "warning", IN_PROGRESS: "positive", COMPLETED: "neutral", WALKOVER: "neutral", RETIRED: "neutral",
 };
 
-/** Which guarded changes can be proposed for a fixture in this state; a finished fixture has none. */
-export function timelineChangesFor(status: Contest["status"]): readonly TimelineChange[] {
-  if (status === "SCHEDULED" || status === "CALLED") return ["DELAY_OVERRUN", "NO_SHOW"];
-  if (status === "IN_PROGRESS") return ["DELAY_OVERRUN"];
+/**
+ * The guarded changes Run Control can actually review for a fixture: a no-show needs a fixture that has
+ * not started and whose sides are known; an overrun needs one in play. A finished fixture has none.
+ */
+export function timelineChangesFor(contest: Pick<Contest, "status" | "sidesResolved">): readonly TimelineChange[] {
+  if ((contest.status === "SCHEDULED" || contest.status === "CALLED") && contest.sidesResolved) return ["NO_SHOW"];
+  if (contest.status === "IN_PROGRESS") return ["DELAY_OVERRUN"];
   return [];
 }
 
@@ -54,7 +57,7 @@ export function renderCourtTimeline(timeline: CourtTimelineProjection, context: 
       const window = contest.endsAt ? `<time datetime="${escapeHtml(contest.startsAt)}">${from}</time>–<time datetime="${escapeHtml(contest.endsAt)}">${clock(contest.endsAt, timezone)}</time>`
         : `<time datetime="${escapeHtml(contest.startsAt)}">${from}</time>`;
       const about = `<span class="visually-hidden"> for ${escapeHtml(sides)} at ${from} on ${escapeHtml(label)}</span>`;
-      const actions = timelineChangesFor(contest.status).map((change) =>
+      const actions = timelineChangesFor(contest).map((change) =>
         `<a class="report" href="${escapeHtml(changeReviewHref(context, change, { contestId: contest.contestId }))}">${change === "NO_SHOW" ? "Report a no-show" : "Report running late"}${about}</a>`).join("");
       return `<li class="fixture" data-contest-id="${escapeHtml(contest.contestId)}" data-status="${contest.status}"><div class="row">${window}<span class="state-badge" data-tone="${TONE[contest.status]}">${STATUS_WORDS[contest.status]}</span></div><p class="sides">${escapeHtml(sides)}</p>${actions ? `<div class="actions">${actions}</div>` : ""}</li>`;
     }).join("");

@@ -333,6 +333,8 @@ export interface CourtTimelineProjection {
       readonly startsAt: string;
       readonly endsAt: string | null;
       readonly participantNames: readonly string[];
+      /** Whether both sides are known; incidents about a fixture need its sides. */
+      readonly sidesResolved: boolean;
       readonly status: PublicLiveContestProjection["status"];
     }[];
   }[];
@@ -1936,7 +1938,8 @@ export class CompetitionJourney {
       const court = courts.get(courtId) ?? { courtId, contests: [] };
       court.contests.push({ contestId: contest.contestId, startsAt: publicContest.startsAt,
         endsAt: assignments.get(contest.contestId)?.end ?? null,
-        participantNames: publicContest.participantNames, status: publicContest.status });
+        participantNames: publicContest.participantNames,
+        sidesResolved: (live.state.resolvedEntrants[contest.contestId] ?? []).length === 2, status: publicContest.status });
       courts.set(courtId, court);
     }
     const byStart = (a: { startsAt: string; contestId: string }, b: { startsAt: string; contestId: string }) =>
@@ -1970,20 +1973,21 @@ export class CompetitionJourney {
     const publicContests = new Map(publicProjection.contests.map((contest) => [contest.contestId, contest]));
     // A contest's court is where it started, else where the plan in force puts it: an approved repair
     // moves assignments without rewriting the live definition, so the definition's court can be stale.
-    const operationalCourts = new Map(assignments.map(({ contestId, resourceId }) => [contestId, resourceId]));
+    const planInForce = new Map(assignments.map((assignment) => [assignment.contestId, assignment]));
     const controlContests = live.state.definition.contests.map((contest) => {
       const publicContest = publicContests.get(contest.contestId);
       if (!publicContest) throw new Error("organiser_control_contest_missing_public_projection");
       const resolved = live.state.resolvedEntrants[contest.contestId] ?? [];
       return { contestId: contest.contestId,
-        courtId: live.state.contests[contest.contestId]?.actualCourtId ?? operationalCourts.get(contest.contestId) ?? contest.courtId,
-        scheduledStart: contest.scheduledStart,
+        courtId: live.state.contests[contest.contestId]?.actualCourtId ?? planInForce.get(contest.contestId)?.resourceId ?? contest.courtId,
+        scheduledStart: planInForce.get(contest.contestId)?.start ?? contest.scheduledStart,
         status: publicContest.status,
         sidesResolved: resolved.length === 2,
         sides: resolved.map((entrantId) => ({ entrantId,
           displayName: participantNames[entrantId] ?? entrantId })) };
     }).filter(({ sidesResolved }) => sidesResolved);
-    const controlRoom = deriveLiveControlRoom(live.state, input.at);
+    const controlRoom = deriveLiveControlRoom(live.state, input.at,
+      assignments.map(({ contestId, resourceId, start }) => ({ contestId, courtId: resourceId, scheduledStart: start })));
     const attention = [
       ...controlRoom.now.map((row) => ({ kind: "NOW" as const, ...row, reasons: [] })),
       ...controlRoom.next.map((row) => ({ kind: "NEXT" as const, ...row, reasons: [] })),

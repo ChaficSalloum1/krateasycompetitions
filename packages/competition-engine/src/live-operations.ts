@@ -388,11 +388,12 @@ export function submitLiveOperationsCommand(state: LiveOperationsState, command:
       if (!canonicalTimestamp(command.startedAt)) findings.push({ code: "LIVE400", path: "/startedAt", message: "Actual start must be a canonical timestamp." });
       // Hard rules hold at live time too: a closed court stays closed until it is reopened or the
       // approved reopen time arrives, and a court holds one contest in play at a time.
+      // The authoritative occurrence time decides whether the court has reopened; a reported start time
+      // cannot move a start past a closure.
       const court = state.resources.courts[command.courtId];
-      if (court && !court.available && (court.expectedAvailableAt === undefined
-        || !canonicalTimestamp(command.startedAt) || Date.parse(command.startedAt) < Date.parse(court.expectedAvailableAt)))
+      if (courtClosedAt(court, command.occurredAt) || courtClosedAt(court, command.startedAt))
         findings.push({ code: "LIVE422", path: "/courtId", message: "The court is closed; a contest cannot start on it before it reopens.",
-          evidence: { courtId: command.courtId, ...(court.expectedAvailableAt ? { expectedAvailableAt: court.expectedAvailableAt } : {}) } });
+          evidence: { courtId: command.courtId, ...(court?.expectedAvailableAt ? { expectedAvailableAt: court.expectedAvailableAt } : {}) } });
       const occupying = Object.entries(state.contests).filter(([id, other]) => id !== command.contestId
         && other.status === "IN_PROGRESS" && other.actualCourtId === command.courtId).map(([id]) => id);
       if (occupying.length) findings.push({ code: "LIVE422", path: "/courtId", message: "The court already has a contest in progress.",
@@ -557,7 +558,25 @@ export function replayLiveOperationsEvents(definition: LiveOperationsDefinition,
   }
 }
 
-export function deriveLiveControlRoom(state: LiveOperationsState, generatedAt: string): LiveControlRoomView {
+/**
+ * Whether a court is closed at an instant: closed without a reopen time until explicitly reopened, or
+ * closed until its approved reopen time. One rule for accepting starts and for projecting attention.
+ */
+export function courtClosedAt(court: ResourceAvailability | undefined, instant: string): boolean {
+  if (!court || court.available) return false;
+  if (court.expectedAvailableAt === undefined || !canonicalTimestamp(instant)) return true;
+  return Date.parse(instant) < Date.parse(court.expectedAvailableAt);
+}
+
+/** Where and when the plan in force puts a contest, when an approved repair has moved it off its definition. */
+export interface LiveOperationalAssignment {
+  readonly contestId: string;
+  readonly courtId: string;
+  readonly scheduledStart: string;
+}
+
+export function deriveLiveControlRoom(state: LiveOperationsState, generatedAt: string,
+  operational: readonly LiveOperationalAssignment[] = []): LiveControlRoomView {
   if (!canonicalTimestamp(generatedAt)) throw new Error("Control-room time must be a canonical ISO-8601 timestamp.");
   const terminalStatuses = new Set<LiveContestStatus>(["COMPLETED", "WALKOVER", "RETIRED"]);
   const completed = new Set(Object.entries(state.contests).filter(([, value]) => terminalStatuses.has(value.status)).map(([contestId]) => contestId));
@@ -565,7 +584,10 @@ export function deriveLiveControlRoom(state: LiveOperationsState, generatedAt: s
   const next: LiveControlRoomContest[] = [];
   const late: LiveControlRoomLateContest[] = [];
   const blocked: LiveControlRoomBlockedContest[] = [];
-  for (const contest of state.definition.contests) {
+  const planInForce = new Map(operational.map((assignment) => [assignment.contestId, assignment]));
+  for (const definedContest of state.definition.contests) {
+    const moved = planInForce.get(definedContest.contestId);
+    const contest = moved ? { ...definedContest, courtId: moved.courtId, scheduledStart: moved.scheduledStart } : definedContest;
     const contestState = state.contests[contest.contestId]!;
     const entrantIds = effectiveContestEntrants(state, contest);
     const common = { contestId: contest.contestId, scheduledStart: contest.scheduledStart, courtId: contestState.actualCourtId ?? contest.courtId };
@@ -585,7 +607,7 @@ export function deriveLiveControlRoom(state: LiveOperationsState, generatedAt: s
     if (withdrawn.length) reasons.push({ code: "ENTRANT_WITHDRAWN", subjectIds: withdrawn });
     const absent = entrantIds.filter((id) => state.entrantPresence[id] === undefined);
     if (absent.length) reasons.push({ code: "ENTRANT_NOT_CHECKED_IN", subjectIds: absent });
-    if (state.resources.courts[contest.courtId]?.available === false) reasons.push({ code: "COURT_CLOSED", subjectIds: [contest.courtId] });
+    if (courtClosedAt(state.resources.courts[contest.courtId], generatedAt)) reasons.push({ code: "COURT_CLOSED", subjectIds: [contest.courtId] });
     if (contest.officialId && state.resources.officials[contest.officialId]?.available === false) reasons.push({ code: "OFFICIAL_ABSENT", subjectIds: [contest.officialId] });
     const failedEquipment = (contest.equipmentIds ?? []).filter((id) => state.resources.equipment[id]?.available === false);
     if (failedEquipment.length) reasons.push({ code: "EQUIPMENT_FAILED", subjectIds: failedEquipment });

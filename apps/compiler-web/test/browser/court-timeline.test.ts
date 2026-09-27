@@ -20,11 +20,11 @@ test("a timeline report opens Run Control's Change Review with that fixture or c
   const firstFixture = page.locator(".fixture").first();
   const contestId = await firstFixture.getAttribute("data-contest-id");
 
-  await firstFixture.getByRole("link", { name: /^Report running late for / }).focus();
+  await firstFixture.getByRole("link", { name: /^Report a no-show for / }).focus();
   await Promise.all([page.waitForURL("**/attention?**"), page.keyboard.press("Enter")]);
   await page.locator("#change-contest option").first().waitFor({ state: "attached" });
   await page.waitForFunction(() => document.activeElement?.id === "change-review");
-  assert.equal(await page.locator("#change-kind").inputValue(), "DELAY_OVERRUN");
+  assert.equal(await page.locator("#change-kind").inputValue(), "NO_SHOW");
   assert.equal(await page.locator("#change-contest").inputValue(), contestId, "the reported fixture is the one under review");
 
   await page.goto(`${origin}/competitions/${encodeURIComponent(live.id)}/timeline`);

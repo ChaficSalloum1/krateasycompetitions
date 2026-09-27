@@ -304,3 +304,30 @@ test("a court closed without a reopen time needs an explicit reopen before play 
   state = execute(state, start, "2026-09-07T12:00:00.000Z");
   assert.equal(state.contests["semi-1"]?.status, "IN_PROGRESS");
 });
+
+test("the authoritative occurrence time, not a reported start, decides whether a closed court has reopened", () => {
+  let state = createLiveOperationsState(definition);
+  for (const entrantId of ["pair-a", "pair-b"]) state = execute(state, { kind: "CHECK_IN", commandId: `in-${entrantId}`, entrantId });
+  state = execute(state, { kind: "CLOSE_COURT", commandId: "close-1", courtId: "court-1", reason: "Net broken", expectedReopenAt: "2026-09-07T09:20:00.000Z" });
+  const forged = submitLiveOperationsCommand(state, command({ kind: "START_CONTEST", commandId: "forged-start", contestId: "semi-1",
+    courtId: "court-1", startedAt: "2026-09-07T09:20:00.000Z" }, state, "2026-09-07T09:05:00.000Z"));
+  assert.equal(forged.accepted, false, "a start reported at the reopen time but received before it is refused");
+  assert.ok(forged.findings.some(({ path }) => path === "/courtId"));
+});
+
+test("the control room follows the plan in force and the approved reopen time", () => {
+  let state = createLiveOperationsState(definition);
+  for (const entrantId of ["pair-a", "pair-b"]) state = execute(state, { kind: "CHECK_IN", commandId: `in-${entrantId}`, entrantId });
+  state = execute(state, { kind: "CLOSE_COURT", commandId: "close-1", courtId: "court-1", reason: "Net broken", expectedReopenAt: "2026-09-07T09:20:00.000Z" });
+  const courtClosed = (view: ReturnType<typeof deriveLiveControlRoom>) =>
+    view.blocked.find(({ contestId }) => contestId === "semi-1")?.reasons.some(({ code }) => code === "COURT_CLOSED") ?? false;
+
+  assert.equal(courtClosed(deriveLiveControlRoom(state, "2026-09-07T09:10:00.000Z")), true, "closed before the reopen time");
+  assert.equal(courtClosed(deriveLiveControlRoom(state, "2026-09-07T09:20:00.000Z")), false, "open from the approved reopen time, as starts are");
+
+  const moved = deriveLiveControlRoom(state, "2026-09-07T09:10:00.000Z",
+    [{ contestId: "semi-1", courtId: "court-2", scheduledStart: "2026-09-07T09:10:00.000Z" }]);
+  assert.equal(courtClosed(moved), false, "a fixture repaired onto an open court is not blocked by its old court");
+  const row = [...moved.now, ...moved.next, ...moved.late, ...moved.blocked].find(({ contestId }) => contestId === "semi-1")!;
+  assert.deepEqual({ courtId: row.courtId, scheduledStart: row.scheduledStart }, { courtId: "court-2", scheduledStart: "2026-09-07T09:10:00.000Z" });
+});
