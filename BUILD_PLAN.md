@@ -1,3 +1,5 @@
+> Current authorised sequence: B → C → D → E, one gated slice at a time, under the user's latest explicit instruction. Current slice: [B_SLICE](docs/B_SLICE.md). Prior ticket stop wording below is historical. No migration or production-readiness claim.
+
 > Current prototype implementation: **Ticket 2 / A2–A3**, with acceptance evidence in [docs/A3_EXIT_GATE.md](docs/A3_EXIT_GATE.md). The A1 current-delivery wording below is the preserved prior ticket record. A3 is implemented; B is the next allowed functional slice.
 
 # Finite migration and implementation plan

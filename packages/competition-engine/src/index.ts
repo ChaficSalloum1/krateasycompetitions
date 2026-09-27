@@ -81,3 +81,6 @@ export * from "./tournament-state.js";
 export * from "./types.js";
 export * from "./whole-spec-verification.js";
 export * from "./webhook-delivery-provider.js";
+export { qualifyEntries } from "./qualification.js";
+export { assignSeeds } from "./seed-assignment.js";
+export { assurePlacement } from "./draw-assurance.js";

@@ -1,0 +1,45 @@
+✔ ranking points select an exact field with an explicit deterministic cutoff policy (20.76292ms)
+✔ elapsed time ranks lower finite values first without sport-specific logic (0.759981ms)
+✔ a generic threshold selects every candidate satisfying its declared comparison (0.712761ms)
+✔ a score threshold is first-class while using the generic metric evaluator (0.847433ms)
+✔ percentage qualification derives a bounded ratio instead of comparing raw totals (0.949395ms)
+✔ aggregate qualification ranks a declared weighted metric expression (1.607584ms)
+✔ best-N can restrict comparison to runner-ups across groups (0.855194ms)
+✔ wildcard and host places require named authority whose approval binds the selected ids (1.876382ms)
+✔ selectors execute sequentially and remainder excludes prior local and global selections (1.65767ms)
+✔ cutoff ties reject, include all, or break by candidate id only when explicitly pinned (1.427464ms)
+✔ authority conflicts and output drift fail closed with no partial qualifiers (0.680704ms)
+✔ the independent verifier rejects result, provenance, and proof tampering (1.631467ms)
+✔ bounded exhaustive ranking corpus and candidate-order metamorphism close every binary small field (471.315148ms)
+✔ undefined ratios and requests beyond the published scale envelope reject without output (14.28791ms)
+✔ protected byes go to the highest seeds deterministically (322.601451ms)
+✔ the top four seeds occupy distinct quarters (644.911266ms)
+✔ lexicographic policy prefers avoiding same-pool rematches before other rematches (0.916849ms)
+✔ a residual hard conflict fails the draw and reports the unavoidable violation (0.463548ms)
+✔ structurally invalid entrant identity fails before candidate evaluation (0.267565ms)
+✔ proofs bind normalized prior meetings as well as the selected placement (1.161156ms)
+✔ B property 4: pools 2–5, equal/unequal, exact identity, protected tiers/byes and resolvable play-ins (20.510602ms)
+✔ B property 6: pools 2–5, equal/unequal, exact identity, protected tiers/byes and resolvable play-ins (1425.622999ms)
+✔ B property 8: pools 2–5, equal/unequal, exact identity, protected tiers/byes and resolvable play-ins (2822.000114ms)
+✔ B property 10: pools 2–5, equal/unequal, exact identity, protected tiers/byes and resolvable play-ins (99.371072ms)
+✔ B property 12: pools 2–5, equal/unequal, exact identity, protected tiers/byes and resolvable play-ins (106.16194ms)
+✔ B property 16: pools 2–5, equal/unequal, exact identity, protected tiers/byes and resolvable play-ins (226.712651ms)
+✔ seeding cannot add, omit or duplicate a qualifier (0.433737ms)
+✔ incomplete placement search returns UNKNOWN, never a false infeasibility proof (1.448444ms)
+✔ historical P&K stale Tower exclusions cannot duplicate a qualifier or lose another (12.520465ms)
+✔ top-four protection includes top-two opposite halves; previous opponents avoided (422.025522ms)
+✔ qualification is unseeded and two destinations partition entrants without reselection (20.850877ms)
+✔ topology property 2-64: every entrant occupies exactly one opening slot and every actual bracket has n-1 contests (81.86351ms)
+✔ bye property 3-63: only the highest seeds receive byes and no bye creates a result or loser (134.368593ms)
+✔ seed separation property: the top two seeds occupy opposite bracket halves (13.3193ms)
+✔ loser path trap: a played contest resolves its loser but a bye cannot manufacture one (1.218947ms)
+✔ impossible hard rematch avoidance is surfaced deterministically rather than silently discarded (2.974192ms)
+✔ deterministic replay property: topology, possible entrants, and outcomes are byte-stable (33.318662ms)
+ℹ tests 37
+ℹ suites 0
+ℹ pass 37
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5901.92243
