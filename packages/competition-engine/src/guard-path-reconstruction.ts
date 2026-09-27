@@ -88,7 +88,12 @@ export function independentlyValidateAdvancementPaths(
           pairCounts.set(key, (pairCounts.get(key) ?? 0) + 1);
         }
         const expectedPairs = entrantIds.length * (entrantIds.length - 1) / 2;
-        if (pairCounts.size !== expectedPairs || [...pairCounts.values()].some((count) => count !== stage.pool!.rounds))
+        const expectedPairKeys = entrantIds.flatMap((left, index) => entrantIds.slice(index + 1)
+          .map((right) => [left, right].sort().join("|")));
+        // Counting distinct pairs alone admits a self-match that replaces a required pair.
+        // Re-derive the complete unordered pair set and its multiplicity independently.
+        if (pairCounts.size !== expectedPairs || expectedPairKeys.some((key) => pairCounts.get(key) !== stage.pool!.rounds)
+          || [...pairCounts.values()].some((count) => count !== stage.pool!.rounds))
           fail("POOL_PAIR_COVERAGE_MISMATCH", poolNodes.map(({ id }) => id));
       }
       if (pools.size !== stage.pool.poolCount || !sameMultiset(poolSizes.map(String), stage.pool.sizes.map(String)))

@@ -1,3 +1,5 @@
+> Current prototype implementation: **Ticket 2 / A2–A3**, with acceptance evidence in [docs/A3_EXIT_GATE.md](docs/A3_EXIT_GATE.md). The A1 current-delivery wording below is the preserved prior ticket record. A3 is implemented; B is the next allowed functional slice.
+
 # Finite migration and implementation plan
 
 Status: ACTIVE. Supersedes competing implementation sequences. Source: the user's supplied finite plan, [authority record](docs/AUTHORITY_SOURCES.md).

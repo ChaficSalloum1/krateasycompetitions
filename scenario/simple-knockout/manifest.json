@@ -1,0 +1,11 @@
+{
+  "id": "simple-knockout",
+  "title": "Simple knockout",
+  "source": "scenario/simple-knockout/source.json",
+  "basis": "Explicit synthetic acceptance fixture; all policies stated in source.",
+  "sourceHash": "3036d38e94cdb6cd517c4e38bb91ae66f28da0040656bfa736c93704e019c93b",
+  "definitionHash": "5bad61949f9c7a168100d5c44c93e77ba6c20a0a82cf9578c3de2fe8ff30190e",
+  "results": "SYNTHETIC_AUDIT_RESULTS",
+  "reproduce": "npm run audit:scenarios",
+  "gate": "A3 observability only; not Phase B or production certification"
+}

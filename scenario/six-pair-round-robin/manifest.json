@@ -1,0 +1,11 @@
+{
+  "id": "six-pair-round-robin",
+  "title": "Six-pair round robin",
+  "source": "scenario/six-pair-round-robin/source.json",
+  "basis": "Explicit synthetic acceptance fixture; all policies stated in source.",
+  "sourceHash": "370ab187a24866bf687810b3c99888a3333c94d103156ec362d845914377b067",
+  "definitionHash": "bc61c454cf5ff2b60f6298cd0410400b652d43774e05f7a963b0ac85b7174b4b",
+  "results": "SYNTHETIC_AUDIT_RESULTS",
+  "reproduce": "npm run audit:scenarios",
+  "gate": "A3 observability only; not Phase B or production certification"
+}

@@ -295,7 +295,8 @@ export function verifiedScheduleFromProductionLock(workbench: CompetitionWorkben
       - Date.parse(spec.scheduling.start)) / 60_000), lowerBoundMinutes: 0 };
   const provisional: ScheduleSolution = { contests, audit: { ...baseAudit, scheduleHash: canonicalHash({ scheduled: contests, audit: baseAudit }) }, findings: [] };
   const validation = validateSchedule(spec, graph, provisional);
-  const status = validation.some(({ severity }) => severity === "ERROR") ? "INFEASIBLE" as const : "FEASIBLE" as const;
+  // Rejection of one imported candidate does not prove the scheduling problem infeasible.
+  const status = validation.some(({ severity }) => severity === "ERROR") ? "UNKNOWN" as const : "FEASIBLE" as const;
   const schedule: ScheduleSolution = { ...provisional, audit: { ...provisional.audit, status }, findings: [] };
   return attachValidationAudit(schedule, validation);
 }
