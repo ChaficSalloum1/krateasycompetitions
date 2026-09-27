@@ -25,6 +25,9 @@ import {
   simulateGraph,
   simulateOperationalRisk,
   validateSchedule,
+  classifyCompetitionGuardFinding,
+  COMPETITION_GUARD_SEVERITY_POLICY,
+  standingsFindingsForPublication,
 } from "../src/index.js";
 
 const context = {
@@ -266,4 +269,24 @@ test("a configured bracket is not mistaken for an executable double-elimination 
 test("random source produces a stable replay sequence", () => {
   const left = deterministicRandom("seed"); const right = deterministicRandom("seed");
   assert.deepEqual(Array.from({ length: 10 }, () => left.next()), Array.from({ length: 10 }, () => right.next()));
+});
+
+test("a manual-decision tie blocks publication only when that ranking decides qualification or progression", () => {
+  const tie = { code: "TSC712", severity: "ERROR" as const, path: "/standingsPolicies/final", message: "tied", evidence: { poolId: "P1", entrants: ["A", "B"] } };
+  const other = { code: "TSC711", severity: "ERROR" as const, path: "/standingsPolicies/final/tieFallback", message: "seed" };
+  const none = { qualificationPolicies: [], progressionPolicies: [] };
+
+  const [finalTie, untouched] = standingsFindingsForPublication(none, { stageIds: ["pools"] }, [tie, other]);
+  assert.equal(finalTie!.severity, "WARNING", "a tie in final standings is left to the organiser");
+  assert.equal(classifyCompetitionGuardFinding(finalTie!), "OPERATIONAL");
+  assert.equal(COMPETITION_GUARD_SEVERITY_POLICY.OPERATIONAL, "ACKNOWLEDGE", "…and must be acknowledged at approval");
+  assert.deepEqual(untouched, other, "other standings findings are unchanged");
+
+  const qualifying = { ...none, qualificationPolicies: [{ sourceStageId: "pools" }] } as never;
+  assert.equal(standingsFindingsForPublication(qualifying, { stageIds: ["pools"] }, [tie])[0]!.severity, "ERROR",
+    "a tie that decides who qualifies still blocks publication");
+  const progressing = { ...none, progressionPolicies: [{ fromStageId: "pools", outcome: "pool_position" }] } as never;
+  assert.equal(standingsFindingsForPublication(progressing, { stageIds: ["pools"] }, [tie])[0]!.severity, "ERROR",
+    "a tie that decides progression still blocks publication");
+  assert.equal(classifyCompetitionGuardFinding(tie), "INTEGRITY");
 });

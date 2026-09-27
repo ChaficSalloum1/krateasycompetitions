@@ -9,6 +9,23 @@ import { calculateStandings } from "./standings.js";
 import { validateEligibility } from "./eligibility.js";
 import type { Entrant, ScenarioResult, Standing } from "./types.js";
 
+/**
+ * A tie the registered policy leaves to a manual decision blocks publication only when that ranking
+ * decides who qualifies or progresses. In final standings it is the organiser's decision at close, so it
+ * is raised for acknowledgement at approval instead of blocking a legal plan.
+ */
+export function standingsFindingsForPublication(
+  spec: Pick<TournamentSpec, "qualificationPolicies" | "progressionPolicies">,
+  policy: Pick<TournamentSpec["standingsPolicies"][number], "stageIds">,
+  findings: readonly ValidationFinding[],
+): ValidationFinding[] {
+  const decidesProgression = policy.stageIds.some((stageId) => spec.qualificationPolicies.some(({ sourceStageId }) => sourceStageId === stageId)
+    || spec.progressionPolicies.some(({ fromStageId, outcome }) => fromStageId === stageId && (outcome === "rank" || outcome === "pool_position")));
+  return findings.map((finding) => finding.code === "TSC712" && !decidesProgression
+    ? { ...finding, severity: "WARNING" as const, message: "Final standings may remain tied after every registered tiebreak; the organiser decides the order manually at close." }
+    : finding);
+}
+
 export function runScenario(spec: TournamentSpec, entrantsByDivision: Record<string, Entrant[]>, seed: string): ScenarioResult {
   const eligibility = validateEligibility(spec, entrantsByDivision);
   const structural = buildCompetitionGraph(spec, entrantsByDivision);
@@ -18,7 +35,7 @@ export function runScenario(spec: TournamentSpec, entrantsByDivision: Record<str
   const standingsFindings: ValidationFinding[] = [];
   for (const policy of spec.standingsPolicies) {
     const calculated = calculateStandings(structural.nodes, structuralSimulation.results, policy, { ...(spec.randomisation.seed ? { randomSeed: spec.randomisation.seed } : {}) });
-    standingsFindings.push(...calculated.findings);
+    standingsFindings.push(...standingsFindingsForPublication(spec, policy, calculated.findings));
     for (const stageId of policy.stageIds) standingsByStage[stageId] = calculated.standings.filter((standing) => structural.nodes.some((node) => node.stageId === stageId && node.poolId === standing.poolId));
   }
   const qualification = qualify(spec, standingsByStage, entrantsByDivision);
