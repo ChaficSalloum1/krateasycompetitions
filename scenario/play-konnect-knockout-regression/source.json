@@ -1,0 +1,11 @@
+{
+  "kind": "historical-code-defect-regression",
+  "repository": "ChaficSalloum1/play-konnect-tournament-os.",
+  "commit": "fc3a589175d4edc1d63d1021114fe9f8000d5803",
+  "path": "artifacts/api-server/src/lib/resolution.ts",
+  "defect": "Tower play-in exclusion relied on a duplicated hardcoded list of already bracketed pool-position references. The fix derives those identities from the bracket itself.",
+  "testScope": "Reconstructed anonymous qualifier/slot counterexample. Not a replay of real match results, nor a claim to identify the user's unspecified incident uniquely.",
+  "qualifiers": ["A2", "A3", "A4", "B2", "B3", "C2", "C3", "D2", "D3"],
+  "stalePlacement": ["A2", "A4", "A3", "B2", "B3", "C2", "C3", "D2", "A4"],
+  "expectedCounterexamples": ["A4 appears twice", "D3 is missing"]
+}

@@ -45,7 +45,7 @@ const compareScores = (left: number[], right: number[]) => {
   return 0;
 };
 
-export function qualify(
+export function qualifyEntries(
   spec: TournamentSpec,
   standingsByStage: Record<string, Standing[]>,
   entrantsByDivision: Record<string, Entrant[]>,
@@ -67,7 +67,7 @@ export function qualify(
   const appendDestination = (destinationStructureId: string, entrants: readonly Entrant[]): void => {
     if (failedDestinations.has(destinationStructureId)) return;
     const combined = [...(byStructure[destinationStructureId] ?? []), ...entrants];
-    byStructure[destinationStructureId] = combined.map((entrant, index) => ({ ...entrant, seed: index + 1 }));
+    byStructure[destinationStructureId] = combined.map(({ seed: _seed, ...entrant }) => entrant);
   };
   for (const policy of spec.qualificationPolicies) {
     if (failedDestinations.has(policy.destinationStructureId)) continue;
@@ -171,4 +171,11 @@ export function qualify(
     }
   }
   return { byStructure, evidence, findings, policyProofs };
+}
+
+/** Legacy compatibility facade. New pipelines call qualifyEntries then an explicit seed policy. */
+export function qualify(spec: TournamentSpec, standingsByStage: Record<string, Standing[]>, entrantsByDivision: Record<string, Entrant[]>): QualificationResult {
+  const result = qualifyEntries(spec, standingsByStage, entrantsByDivision);
+  return { ...result, byStructure: Object.fromEntries(Object.entries(result.byStructure).map(([id, entries]) =>
+    [id, entries.map((entry, index) => ({ ...entry, seed: index + 1 }))])) };
 }

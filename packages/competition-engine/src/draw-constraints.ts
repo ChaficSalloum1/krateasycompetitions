@@ -39,7 +39,7 @@ export interface ConstraintDrawAlternative {
 }
 
 export interface ConstraintDrawResult {
-  status: "PLACED" | "INFEASIBLE";
+  status: "PLACED" | "INFEASIBLE" | "UNKNOWN";
   structureId: string;
   orderedSlotIds: Array<string | null>;
   violations: DrawConstraintViolation[];
@@ -146,25 +146,6 @@ function exhaustiveCandidates(values: readonly (string | null)[]): Array<Array<s
   return candidates;
 }
 
-function boundedCandidates(baseline: readonly (string | null)[], limit: number): Array<Array<string | null>> {
-  const result: Array<Array<string | null>> = [[...baseline]];
-  const seen = new Set([baseline.map((value) => value ?? "-").join("|")]);
-  for (let cursor = 0; cursor < result.length && result.length < limit; cursor += 1) {
-    const current = result[cursor]!;
-    for (let left = 0; left < current.length && result.length < limit; left += 1) {
-      for (let right = left + 1; right < current.length && result.length < limit; right += 1) {
-        if (current[left] === current[right]) continue;
-        const next = [...current];
-        [next[left], next[right]] = [next[right]!, next[left]!];
-        const key = next.map((value) => value ?? "-").join("|");
-        if (seen.has(key)) continue;
-        seen.add(key);
-        result.push(next);
-      }
-    }
-  }
-  return result;
-}
 
 function evaluate(
   slots: Array<string | null>,
@@ -199,6 +180,17 @@ function evaluate(
     }
   }
 
+  // Protection is hierarchical: distinct quarters alone does not keep seeds 1/2 in opposite halves.
+  for (let tier = 2; tier < protectedSeedCount; tier *= 2) {
+    const sections = new Map<number, string[]>();
+    for (const entrant of seeded.slice(0, tier)) {
+      const section = Math.floor(slots.indexOf(entrant.id) / (slots.length / tier));
+      sections.set(section, [...(sections.get(section) ?? []), entrant.id]);
+    }
+    for (const ids of sections.values()) if (ids.length > 1) {
+      add("protected_seed_separation", ids, ids.map((id) => slots.indexOf(id)), `Top ${tier} seeds share a protected section.`);
+    }
+  }
   const protectedSeeds = seeded.slice(0, protectedSeedCount);
   const sectionSize = slots.length / Math.max(1, protectedSeeds.length);
   const occupantsBySection = new Map<number, string[]>();
@@ -295,14 +287,39 @@ export function placeConstraintDraw(input: ConstraintDrawInput): ConstraintDrawR
   const baseline = canonicalSlots(input.entrants, bracketSize);
   const searchComplete = bracketSize <= 8;
   const candidateLimit = Math.max(1, input.candidateLimit ?? 4096);
-  const candidates = searchComplete ? exhaustiveCandidates(baseline) : boundedCandidates(baseline, candidateLimit);
+  const candidates = searchComplete ? exhaustiveCandidates(baseline) : [];
   const protectedSeedCount = Math.min(
     input.protectedSeedCount ?? highestPowerOfTwoAtMost(Math.min(4, input.entrants.length)),
     input.entrants.length,
   );
   const priorMeetings = new Set(input.priorMeetings.map(([left, right]) => pairKey(left, right)));
-  const evaluations = candidates.map((slots) => evaluate(slots, input.entrants, constraints, protectedSeedCount, priorMeetings))
-    .sort((left, right) => compareEvaluations(left, right, constraints));
+  const evaluations = searchComplete
+    ? candidates.map((slots) => evaluate(slots, input.entrants, constraints, protectedSeedCount, priorMeetings))
+    : [evaluate(baseline, input.entrants, constraints, protectedSeedCount, priorMeetings)];
+  if (!searchComplete) {
+    // Follow improving neighbourhoods instead of spending the entire bounded budget near the original draw.
+    const seen = new Set(evaluations.map(({ key }) => key));
+    let current = evaluations[0]!;
+    while (evaluations.length < candidateLimit) {
+      let bestNeighbour = current;
+      for (let left = 0; left < baseline.length && evaluations.length < candidateLimit; left++) {
+        for (let right = left + 1; right < baseline.length && evaluations.length < candidateLimit; right++) {
+          const slots = [...current.slots];
+          if (slots[left] === slots[right]) continue;
+          [slots[left], slots[right]] = [slots[right]!, slots[left]!];
+          const key = slots.map((value) => value ?? "-").join("|");
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const candidate = evaluate(slots, input.entrants, constraints, protectedSeedCount, priorMeetings);
+          evaluations.push(candidate);
+          if (compareEvaluations(candidate, bestNeighbour, constraints) < 0) bestNeighbour = candidate;
+        }
+      }
+      if (bestNeighbour === current) break;
+      current = bestNeighbour;
+    }
+  }
+  evaluations.sort((left, right) => compareEvaluations(left, right, constraints));
   const best = evaluations[0]!;
   const feasible = evaluations.filter(({ hardViolationCount }) => hardViolationCount === 0);
   const selected = feasible[0];
@@ -337,7 +354,7 @@ export function placeConstraintDraw(input: ConstraintDrawInput): ConstraintDrawR
     },
   )];
   return finishResult({
-    status: selected ? "PLACED" : "INFEASIBLE",
+    status: selected ? "PLACED" : searchComplete ? "INFEASIBLE" : "UNKNOWN",
     structureId: input.structureId,
     orderedSlotIds: selected ? [...selected.slots] : [],
     violations: representative.violations,
