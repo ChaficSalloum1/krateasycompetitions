@@ -296,4 +296,3 @@ test("a manual-decision tie is raised from the policy, never from one sampled re
   assert.deepEqual(standingsFindingsForPublication(none, { ...manual, tieFallback: "deterministic_draw" }, [other]), [other],
     "a policy that never leaves a tie to the organiser raises nothing");
 });
-
