@@ -1,5 +1,5 @@
 import { canonicalHash, deepFreeze, type TournamentSpec, type ValidationFinding } from "@tournament-os/tournament-schema";
-import { cpSatProblemContentHash, createCpSatSolver, type CpSatResult, type CpSatSolver } from "./cp-sat-solver.js";
+import { cpSatProblemContentHash, createCpSatSolver, type CpSatHint, type CpSatResult, type CpSatSolver } from "./cp-sat-solver.js";
 import { calculateSchedulingLowerBounds } from "./lower-bounds.js";
 import { possibleEntrants, validateSchedule } from "./scheduler.js";
 import type { SchedulingProblem } from "./schedule-solver.js";
@@ -271,6 +271,58 @@ export interface GraphCpSatOptions {
   readonly pythonExecutable?: string;
   /** Overrides the solver, e.g. one that replays a result computed off the request path. */
   readonly solver?: CpSatSolver;
+  /** A known schedule (e.g. the list scheduler's) to start the search from. */
+  readonly hint?: ScheduleSolution;
+}
+
+/**
+ * A time-stepped greedy plan used only to start CP-SAT. At each moment every free resource takes the
+ * ready contest (dependencies ended, players rested) whose players have the most contests left, which
+ * keeps every player's chain moving instead of playing rounds strictly one after another. It never
+ * decides the published plan: CP-SAT still owns every constraint, and Guard still checks the result.
+ */
+export function greedyCpSatHint(problem: SchedulingProblem): CpSatHint[] | undefined {
+  const allowed = (resource: SchedulingProblem["resources"][number], start: number, end: number) =>
+    resource.calendars.some((w) => start >= w.startMinute && end <= w.endMinute)
+    && !resource.closures.some((c) => start < c.endMinute && c.startMinute < end);
+  const horizon = Math.max(0, ...problem.resources.flatMap(({ calendars }) => calendars.map(({ endMinute }) => endMinute)));
+  const remaining = new Map<string, number>();
+  for (const task of problem.tasks) for (const id of task.participantIds) remaining.set(id, (remaining.get(id) ?? 0) + 1);
+  const ends = new Map<string, number>(); const ready = new Map<string, number>(); const busyUntil = new Map<string, number>();
+  const pending = [...problem.tasks].sort((a, b) => a.id.localeCompare(b.id));
+  const hint: CpSatHint[] = [];
+  for (let minute = 0; pending.length && minute <= horizon; minute += 5) {
+    const takenPlayers = new Set<string>();
+    for (const resource of [...problem.resources].sort((a, b) => a.id.localeCompare(b.id))) {
+      if ((busyUntil.get(resource.id) ?? 0) > minute) continue;
+      const candidates = pending.filter((task) => task.eligibleResourceIds.includes(resource.id)
+        && task.dependencyIds.every((id) => (ends.get(id) ?? Infinity) <= minute)
+        && task.participantIds.every((id) => (ready.get(id) ?? 0) <= minute && !takenPlayers.has(id))
+        && allowed(resource, minute, minute + task.durationMinutes));
+      if (!candidates.length) continue;
+      const load = (task: typeof candidates[number]) => task.participantIds.reduce((sum, id) => sum + (remaining.get(id) ?? 0), 0);
+      const task = candidates.sort((a, b) => load(b) - load(a) || a.id.localeCompare(b.id))[0]!;
+      const end = minute + task.durationMinutes;
+      hint.push({ taskId: task.id, resourceId: resource.id, startMinute: minute });
+      ends.set(task.id, end); busyUntil.set(resource.id, end);
+      for (const id of task.participantIds) { ready.set(id, end + problem.minimumRestMinutes); takenPlayers.add(id); remaining.set(id, (remaining.get(id) ?? 1) - 1); }
+      pending.splice(pending.indexOf(task), 1);
+    }
+  }
+  return pending.length ? undefined : hint.sort((a, b) => a.taskId.localeCompare(b.taskId));
+}
+
+/** A schedule as CP-SAT start hints on the compiled problem's minute axis. */
+function cpSatHint(problem: SchedulingProblem, horizonStart: string, schedule: ScheduleSolution | undefined): CpSatHint[] | undefined {
+  const greedy = greedyCpSatHint(problem);
+  if (greedy) return greedy;
+  if (!schedule) return undefined;
+  const origin = Date.parse(horizonStart); const tasks = new Set(problem.tasks.map(({ id }) => id));
+  const hint = schedule.contests.filter(({ contestId }) => tasks.has(contestId)).map(({ contestId, resourceId, start }) =>
+    ({ taskId: contestId, resourceId, startMinute: Math.round((Date.parse(start) - origin) / 60_000) }))
+    .filter(({ startMinute }) => Number.isSafeInteger(startMinute) && startMinute >= 0)
+    .sort((left, right) => left.taskId.localeCompare(right.taskId));
+  return hint.length ? hint : undefined;
 }
 
 /**
@@ -283,7 +335,8 @@ export async function presolveGraphWithCpSat(spec: TournamentSpec, graph: Compet
   const compilation = compileGraphSchedulingProblem(spec, graph);
   if (compilation.status === "REJECTED" || !compilation.problem) return null;
   const solver = options.solver ?? createCpSatSolver(options.pythonExecutable ? { pythonExecutable: options.pythonExecutable } : {});
-  const result = await solver.solveAsync(compilation.problem, { maxTimeSeconds: options.maxTimeSeconds });
+  const hint = cpSatHint(compilation.problem, compilation.horizonStart, options.hint);
+  const result = await solver.solveAsync(compilation.problem, { maxTimeSeconds: options.maxTimeSeconds, ...(hint ? { hint } : {}) });
   return { contentHash: cpSatProblemContentHash(compilation.problem), result };
 }
 
@@ -295,8 +348,9 @@ export function solveGraphWithCpSat(spec: TournamentSpec, graph: CompetitionGrap
     return deepFreeze({ ...body, proofHash: canonicalHash(body) });
   }
   const solver = options.solver ?? createCpSatSolver(options.pythonExecutable ? { pythonExecutable: options.pythonExecutable } : {});
+  const hint = cpSatHint(compilation.problem, compilation.horizonStart, options.hint);
   const cpSat = solver.solve(compilation.problem,
-    { maxTimeSeconds: options.maxTimeSeconds });
+    { maxTimeSeconds: options.maxTimeSeconds, ...(hint ? { hint } : {}) });
   if (cpSat.status !== "CERTIFIED") {
     const body = { status: cpSat.status, problem: compilation.problem, solution: null, cpSat, validationFindings: [] as readonly ValidationFinding[] };
     return deepFreeze({ ...body, proofHash: canonicalHash(body) });

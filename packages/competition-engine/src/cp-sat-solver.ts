@@ -50,7 +50,13 @@ export interface CpSatResult {
   readonly proof: CpSatProof;
 }
 
-export interface CpSatSolveOptions { readonly maxTimeSeconds: number; }
+/** A starting placement for one task. A hint only guides the search: it never relaxes a constraint. */
+export interface CpSatHint { readonly taskId: string; readonly resourceId: string; readonly startMinute: number; }
+export interface CpSatSolveOptions {
+  readonly maxTimeSeconds: number;
+  /** A known plan to start from, so the search begins with a legal plan and only improves on it. */
+  readonly hint?: readonly CpSatHint[];
+}
 export interface CpSatSolver {
   solve(problem: SchedulingProblem, options: CpSatSolveOptions): CpSatResult;
   /** The same result as `solve`, from a child process that does not block the event loop. */
@@ -345,8 +351,8 @@ function trustedResult(
 interface WorkerRun { readonly errorCode?: string; readonly exitStatus: number | null; readonly stdout: string; }
 
 const workerTimeoutMs = (options: CpSatSolveOptions) =>
-  // Outlasts the worker's wall-time safety cap (2 × budget + 5 s) so the worker reports its own limit.
-  Math.ceil((options.maxTimeSeconds * 2 + 5) * 1_000) + 30_000;
+  // Outlasts the worker's wall-time safety cap (6 × budget + 10 s) so the worker reports its own limit.
+  Math.ceil((options.maxTimeSeconds * 6 + 10) * 1_000) + 30_000;
 const workerMaxBuffer = 16 * 1024 * 1024;
 
 export function createCpSatSolver(config: CpSatSolverConfig = {}): CpSatSolver {

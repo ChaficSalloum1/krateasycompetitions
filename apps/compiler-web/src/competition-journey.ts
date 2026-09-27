@@ -19,6 +19,7 @@ import {
   runScenario,
   solveGraphWithCpSat,
   presolveGraphWithCpSat,
+  compileGraphSchedulingProblem,
   createPresolvedCpSatSolver,
   createCpSatSolver,
   submitLiveOperationsCommand,
@@ -851,7 +852,7 @@ export interface PreparedCompilation {
   readonly presolved: Awaited<ReturnType<typeof presolveGraphWithCpSat>>;
 }
 
-const JOURNEY_SOLVE_SECONDS = 30;
+const JOURNEY_SOLVE_SECONDS = 0.5;
 
 /** Everything a compilation derives before scheduling: identical for the prepare and compile steps. */
 function referenceCompilationInputs(record: StoredJourneyRecord, compiledAt: string) {
@@ -885,12 +886,40 @@ function referenceCompilationInputs(record: StoredJourneyRecord, compiledAt: str
   return { spec, scenario, revision, productionLockDefinition, connectedBlueprintDefinition };
 }
 
+/** A refused command with a plain-language reason the organiser can act on. */
+export class JourneyExplainedError extends Error {
+  constructor(code: string, readonly explanation: string) { super(code); }
+}
+
+/**
+ * Why no plan could be produced, in the organiser's terms. A plain capacity shortfall is named with its
+ * numbers; otherwise the rules that clash are named, with what the organiser can change.
+ */
+function explainedSolverFailure(status: string, spec: TournamentSpec, graph: CompetitionGraph): JourneyExplainedError {
+  const code = `journey_solver_${status.toLowerCase()}`;
+  const compiled = compileGraphSchedulingProblem(spec, graph).problem;
+  if (compiled) {
+    const needed = compiled.tasks.reduce((sum, task) => sum + task.durationMinutes, 0);
+    const available = compiled.resources.reduce((sum, resource) => sum
+      + resource.calendars.reduce((open, window) => open + window.endMinute - window.startMinute, 0)
+      - resource.closures.reduce((closed, closure) => closed + closure.endMinute - closure.startMinute, 0), 0);
+    if (needed > available) return new JourneyExplainedError("journey_capacity_insufficient",
+      `These matches need ${needed.toLocaleString("en-GB")} court-minutes (${compiled.tasks.length} matches), but the courts and hours give ${available.toLocaleString("en-GB")}. Add courts, shorten matches or extend the day.`);
+  }
+  if (status === "INFEASIBLE") return new JourneyExplainedError(code,
+    "No schedule fits every rule together: courts, hours, match order and minimum rest. Add courts, extend the day, shorten matches or reduce the minimum rest.");
+  if (status === "UNKNOWN") return new JourneyExplainedError(code,
+    "No schedule was found in the time allowed. Try again, or give the event more courts or a longer day.");
+  return new JourneyExplainedError(code, "The planner's answer failed its own validation, so it was not used. Nothing changed.");
+}
+
 /** Solves a draft's CP-SAT problem without blocking the event loop; null when the draft needs no solver. */
 async function prepareReferenceCompilation(record: StoredJourneyRecord, compiledAt: string,
   solverPythonExecutable?: string): Promise<PreparedCompilation> {
   const { spec, scenario, connectedBlueprintDefinition } = referenceCompilationInputs(record, compiledAt);
+  // The list scheduler's plan starts the search, so CP-SAT begins from a legal plan and improves on it.
   const presolved = connectedBlueprintDefinition ? await presolveGraphWithCpSat(spec, scenario.graph,
-    { maxTimeSeconds: JOURNEY_SOLVE_SECONDS, ...(solverPythonExecutable ? { pythonExecutable: solverPythonExecutable } : {}) }) : null;
+    { maxTimeSeconds: JOURNEY_SOLVE_SECONDS, hint: scenario.schedule, ...(solverPythonExecutable ? { pythonExecutable: solverPythonExecutable } : {}) }) : null;
   return { competitionId: record.id, draftVersion: record.draftVersion, presolved };
 }
 
@@ -902,11 +931,11 @@ function compileReferenceRevision(record: StoredJourneyRecord, compiledAt: strin
   const presolved = prepared && prepared.competitionId === record.id && prepared.draftVersion === record.draftVersion
     ? prepared.presolved : null;
   const genericSolve = connectedBlueprintDefinition ? solveGraphWithCpSat(spec, scenario.graph, { maxTimeSeconds: JOURNEY_SOLVE_SECONDS,
-    ...pythonOption, ...(presolved ? { solver: createPresolvedCpSatSolver(presolved, createCpSatSolver(pythonOption)) } : {}) }) : null;
+    hint: scenario.schedule, ...pythonOption, ...(presolved ? { solver: createPresolvedCpSatSolver(presolved, createCpSatSolver(pythonOption)) } : {}) }) : null;
   // A solver answer that failed its own independent validation is not a candidate plan, even though
   // the Guard would block it later: stop here instead of storing it labelled with the solver's status.
   if (genericSolve && (!genericSolve.solution || genericSolve.status === "REJECTED"))
-    throw new Error(`journey_solver_${genericSolve.status.toLowerCase()}`);
+    throw explainedSolverFailure(genericSolve.status, spec, scenario.graph);
   const schedule = productionLockDefinition
     ? (verifiedScheduleFromProductionLock(record.workbench!, spec, scenario.graph) ?? scenario.schedule)
     : genericSolve?.solution ?? scenario.schedule;

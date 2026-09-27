@@ -45,7 +45,8 @@ test("after an approved court outage the timeline shows the repaired operational
   const { journey, live } = journeyWithLiveCompetition();
   const revision = live.publication!.revision;
   const before = journey.readCourtTimeline({ organizationId: org, competitionId: live.id, expectedOperationalRevision: revision });
-  const closed = "venue.courts.4";
+  // Close a court that has a fixture before 08:40, whichever court the compiled plan uses for it.
+  const closed = before.courts.find(({ contests }) => contests.some(({ startsAt }) => Date.parse(startsAt) < Date.parse("2026-10-18T08:40:00.000Z")))!.courtId;
   const proposed = journey.proposeCourtOutage(live.id, revision, journey.read(live.id)!.live!.state.version, {
     proposalId: "timeline.outage", courtId: closed, reason: "Net broken", expectedReopenAt: "2026-10-18T08:40:00.000Z",
     proposedBy: "operator.lead", proposedAt: "2026-10-18T08:00:00.000Z" });

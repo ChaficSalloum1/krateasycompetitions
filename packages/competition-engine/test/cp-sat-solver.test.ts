@@ -205,7 +205,7 @@ test("the worker never publishes a feasible answer that the wall-time safety cap
   ].join("\n");
   const run = spawnSync(process.env.TOURNAMENT_OS_CP_SAT_PYTHON ?? "python3", ["-c", script, workerDirectory], { encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
-  assert.deepEqual(JSON.parse(run.stdout), { budget: 30, cap: 65, capped: "UNKNOWN", deterministic: "FEASIBLE",
+  assert.deepEqual(JSON.parse(run.stdout), { budget: 30, cap: 190, capped: "UNKNOWN", deterministic: "FEASIBLE",
     optimal: "OPTIMAL", infeasible: "INFEASIBLE" });
 });
 
