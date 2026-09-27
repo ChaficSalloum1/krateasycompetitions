@@ -23,7 +23,7 @@ await new Promise(resolve=>setTimeout(resolve,320));
 assert.match(text(),/16 pool places for 18 entries/);assert.match(text(),/How should different pools be compared/);
 const example=w.document.querySelector('#example');example.value='St Albans structure';example.dispatchEvent(new w.Event('change',{bubbles:true}));
 assert.equal(w.document.querySelectorAll('.division').length,3);assert.match(w.document.querySelector('#overview').textContent,/READY TO REVIEW/);
-click('#review');assert.match(text(),/Reviewed this revision/);
+click('#review');assert.match(text(),/Reviewed this revision/);assert.match(w.document.querySelector('#overview').textContent,/REVIEWED/);assert.match(text(),/Revision transitions/);assert.match(text(),/READY_FOR_REVIEW → REVIEWED/);
 // Malicious user text must stay text, never become executable markup.
 source.value='Title: <img src=x onerror="window.injected=true">\nSwiss league with bonus points.';source.dispatchEvent(new w.Event('input',{bubbles:true}));
 await new Promise(resolve=>setTimeout(resolve,320));assert.equal(w.injected,undefined);assert.equal(w.document.querySelector('#overview img'),null);assert.match(text(),/Does this contain a rule/);

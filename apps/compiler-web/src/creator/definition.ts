@@ -101,5 +101,6 @@ export function compileInterpretation(proposal:Interpretation){
   // Unapproved source is expected for a proposed draft, never authority to publish.
   const entries=proposal.roster.length?Object.fromEntries(spec.divisions.map(d=>[d.id,proposal.roster.filter(e=>e.divisionId===d.id).map(e=>({...e,memberIds:[...e.memberIds]}))])):createEntrants(spec);
   const graph=blocking.length?null:buildCompetitionGraph(spec,entries);
-  return {status:blocking.length?"BLOCKED" as const:"PROPOSED" as const,findings,spec,graph,validation:validation.findings,hash:canonicalHash({spec,graph})};
+  const allValidation=[...validation.findings,...(graph?.findings??[])];
+  return {status:blocking.length||graph?.findings.some(f=>f.severity==="ERROR")?"BLOCKED" as const:"PROPOSED" as const,findings,spec,graph,validation:allValidation,hash:canonicalHash({spec,graph})};
 }

@@ -1,0 +1,27 @@
+✔ D commands: stale, blocked and malformed commands leave the complete draft unchanged (59.502072ms)
+✔ D commands: duplicate delivery is idempotent and conflicting reuse is rejected (66.217448ms)
+✔ D commands: exact revision review, blocked edits, monotonic undo and deterministic replay (92.452114ms)
+✔ D commands: returned snapshots cannot mutate draft truth or committed evidence (21.545053ms)
+✔ D readiness includes graph failures instead of only definition findings (2.860682ms)
+✔ C: Pools to cups becomes the same canonical definition type (73.344273ms)
+✔ C: Knockout becomes the same canonical definition type (2.716345ms)
+✔ C: Round robin becomes the same canonical definition type (2.460474ms)
+✔ C: St Albans structure becomes the same canonical definition type (16.306209ms)
+✔ undefined best-runners-up comparison is an open decision, never inferred (0.902353ms)
+✔ conflicts and unrecognised restrictions stay visible; source changes invalidate answers (2.192025ms)
+✔ JSON/YAML share the draft contract and preserve unsupported properties as questions (14.286741ms)
+✔ CSV entrants are facts, not invented format or rules (1.585427ms)
+✔ ten qualifiers into eight slots gives the exact missing-destination counterexample (2.225613ms)
+✔ top N in each pool translates to per-position selectors, not a global top-N (6.982699ms)
+✔ D: text → question → live structure → invalid rule → undo → review invalidation (109.555145ms)
+✔ browser hash implementation is byte-identical to server for unicode and canonical-sized inputs (3.69469ms)
+✔ browser XLSX decompression matches bytes and enforces expansion boundary (1.63594ms)
+✔ an imported roster retains exact identities and cannot be silently resized (2.881609ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1001.52366

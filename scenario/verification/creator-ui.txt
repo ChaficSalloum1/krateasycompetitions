@@ -1,1 +1,5 @@
+
+> creator:check-ui
+> node scripts/check-creator-ui.mjs
+
 PASS: actual bundled UI — initial question, answer, visual rule edits, exact cardinality rejection, undo, live text change, stale-answer invalidation, three-division example, review and HTML escaping. DOM emulation only; not browser layout/accessibility QA.
