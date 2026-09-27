@@ -395,6 +395,14 @@ interface ParticipantAccessControlEvent {
 const exactAcknowledgements = (left: readonly string[], right: readonly string[]): boolean =>
   canonicalHash([...new Set(left)].sort()) === canonicalHash([...new Set(right)].sort());
 
+/** The organiser's own description or quick facts, as opposed to an imported roster or a structured decision. */
+function isOrganiserFacts(source: CreationSource): boolean {
+  if (source.mode === "language") return true;
+  if (source.mode !== "quick") return false;
+  const value = source.value as { kind?: unknown } | null;
+  return !(value && typeof value === "object" && value.kind === "structured-organiser-edit");
+}
+
 function supportedMilestoneFindings(blueprint: CompetitionBlueprint): string[] {
   const findings: string[] = [];
   if (blueprint.sport !== "padel") findings.push("This milestone compiles the validated Play & Konnect padel envelope only.");
@@ -995,13 +1003,20 @@ export class CompetitionJourney {
     return snapshotOf(record);
   }
 
+  /**
+   * Revises the organiser's own facts before approval (courts, timings, entrant count, format and so on).
+   * The revised facts supersede the earlier organiser facts instead of sitting beside them as a
+   * disagreeing source; imported rosters and structured decisions are kept. Nothing compiled survives.
+   */
   public revise(id: string, expectedDraftVersion: number, source: CreationSource): CompetitionJourneySnapshot {
     const current = this.require(id);
     if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
     if (current.approval) throw new Error("approved_revision_is_immutable");
+    if (!isOrganiserFacts(source)) throw new Error("journey_revision_requires_organiser_facts");
     const proposal = createCompetitionProposal(source);
     const updatedAt = this.canonicalNow();
-    const sources = [...(current.sources ?? [current.source]), source];
+    const kept = (current.sources ?? [current.source]).filter((earlier) => !isOrganiserFacts(earlier));
+    const sources = [source, ...kept];
     const workbench = analyseCompetitionSources(sources, updatedAt);
     const revised = sealRecord({
       id: current.id,
