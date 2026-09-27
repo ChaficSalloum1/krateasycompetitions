@@ -1,0 +1,11 @@
+✔ D4a: individual windows and stage/round durations reach canonical spec with exact replay (52.020166ms)
+✔ D4a: bad windows, duplicate courts, nonexistent rounds and invalid durations reject atomically (37.963504ms)
+✔ D4a: changed court count preserves overrides and blocks rather than silently discarding (18.740552ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 687.57015
