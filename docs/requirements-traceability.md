@@ -435,4 +435,14 @@ No authority conflict required product-owner direction. The smallest connected s
       - An 8-pair published event loses pair 8, gains pair 9 and a third court. It is published as revision 2, activated, played to the end and closed. Its closure evidence verifies across the amendment.
       - In a browser, the organiser changes the courts of a published event and publishes revision 2 from the Studio alone.
 
+55. **The golden path in one browser session (`browser/golden-path.test.ts`):** an organiser uses only the product's pages, with no API calls and no seeded state:
+    1. **Create:** quick setup in the creator, "Build blueprint", then "Save as draft".
+    2. **Roster:** add the entrant CSV in the Studio.
+    3. **Plan and approval:** create the certified plan (Guard passed), acknowledge the Guard findings, then approve and publish.
+    4. **Live:** start Run Control and open it.
+    5. **Play:** check in all four pairs. For each of the six fixtures, start it, record its score, finish it and confirm the result.
+    6. **Close:** confirm the four closure acknowledgements on the receipt page and create the closure, with 6 completed results and none unresolved.
+    - Live commands carry the server's real clock, so the event is scheduled for today.
+    - Each command waits for Run Control's reload of the authoritative state before the next one. Run Control does not poll, so no other request can satisfy that wait.
+
 Broader format/sport connection, non-pilot loser-path/hard-rematch reconstruction and a verified on-device advisory model remain governed follow-ons rather than St Albans deployment blockers. The remaining pilot gates require external authority or deployment inputs: provider/fallback selection and credentials, authorised emergency details, named-assistive-technology/outdoor accessibility acceptance, full staff/manual recovery rehearsal, production persistence/restore evidence, support assignment and final role approvals. The emergency pack cannot be declared ready until the venue/pilot safety owner supplies and approves the named responders, contacts, venue/access and evacuation facts; until then the explicit fallback is the venue's separately controlled printed safety plan. External delivery remains fail closed until the pilot owner selects credentials, a provider and its declared fallback. The executable release manifest lists every remaining gate, accountable role and fixed fallback against the exact closed rehearsal scope; no missing external fact is represented as passed.
