@@ -293,6 +293,7 @@ export interface CompetitionStructure {
 }
 
 export interface DrawPolicy {
+  protectedSeedCount?: 2 | 4;
   id: string;
   structureId: string;
   placement: "seeded" | "random" | "manual" | "optimised";
