@@ -10,6 +10,7 @@ const text=()=>w.document.body.textContent;
 const click=(selector)=>{const element=w.document.querySelector(selector);assert.ok(element,selector);element.click();};
 assert.match(text(),/NEEDS DECISIONS/);assert.match(text(),/How should different pools be compared/);
 click('[data-answer="divisions.0.comparison"][data-option="0"]');assert.match(text(),/READY TO REVIEW/);
+const lockForm=w.document.querySelector('#start-lock-form');assert.ok(lockForm);lockForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));assert.match(text(),/1 locked/);assert.ok(w.document.querySelector('[data-unlock]'));click('[data-unlock]');assert.match(text(),/0 locked/);
 const courtForm=w.document.querySelector('[data-court="0"]');assert.ok(courtForm);
 const opening=courtForm.querySelector('[name="start"]');opening.value='2026-10-04T12:00:00+01:00';courtForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));assert.match(text(),/Resource rules updated/);assert.match(text(),/individual court windows/);
 const durationForm=w.document.querySelector('#duration-form');durationForm.querySelector('[name="minutes"]').value='45';durationForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));assert.match(text(),/45 min/);
@@ -37,4 +38,4 @@ click('#review');assert.match(text(),/Reviewed this revision/);assert.match(w.do
 source.value='Title: <img src=x onerror="window.injected=true">\nSwiss league with bonus points.';source.dispatchEvent(new w.Event('input',{bubbles:true}));
 await new Promise(resolve=>setTimeout(resolve,320));assert.equal(w.injected,undefined);assert.equal(w.document.querySelector('#overview img'),null);assert.match(text(),/Does this contain a rule/);
 assert.deepEqual(errors,[]);dom.window.close();
-process.stdout.write('PASS: actual bundled UI — initial question, answer, visual rule edits, exact cardinality rejection, undo, live text change, stale-answer invalidation, three-division example, review and HTML escaping. DOM emulation only; not browser layout/accessibility QA.\n');
+process.stdout.write('PASS: actual bundled UI — initial question, answer, visual rule edits, exact cardinality rejection, undo, live text change, stale-answer invalidation, three-division example, review, membership swaps, protected rules, court windows, duration overrides, start locks and HTML escaping. DOM emulation only; not browser layout/accessibility QA.\n');

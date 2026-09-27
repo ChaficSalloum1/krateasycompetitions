@@ -19,14 +19,15 @@ The requested review milestone is implemented. **The full Phase D programme exit
 
 TypeScript build and bundle build pass. Broader regression result and isolated solver recheck are retained verbatim in `creator-regression.txt` and `creator-solver-recheck.txt`; see current handoff for totals. No test outcome is inferred from the UI.
 
-## Still required for the full D gate
+## Current D controls and remaining gate
 
-1. Named pool membership constraints and visual member moves tied to canonical roster/plan contracts.
-2. Individual court windows and hard plan locks with stable contest identities, plus stage/round-specific durations.
-3. A non-developer acceptance session reproducing the complete P&K format, including these operational rules.
-4. Real browser/mobile/accessibility review.
+Implemented in sequential bounded slices:
 
-These remain current D gate work, not deleted requirements or a claimed pass. E must subsequently establish independent definition-assurance counterexamples across invalid destinations, cycles, orphan entries, unsupported semantics and cardinality, including stale/forged evidence at protected server boundaries. F/G and production runtime/Guard approval follow their documented gates.
+1. **D1 membership:** exact roster-bound pool swaps; together/separate definition constraints; core allocation validates coverage, sizes and constraints. Named CSV roster labels/member identities remain intact. Stale assignments remain visible and block review.
+2. **D4a operations:** individual court windows including later openings and breaks; stage/round contest duration and turnaround overrides in the canonical spec. Invalid or stale inputs cannot silently clear saved rules.
+3. **D4b draft plan starts:** exact contest/ancestry/roster-bound start locks; explicit unlock; availability, dependency lower bound, concurrent court capacity and possible-entrant rest checks. These are necessary checks on locks, not a full schedule feasibility certificate. Fixed court pinning is not implemented.
+
+Still required: the organiser acceptance journey reproducing complete P&K format; real-browser/mobile/accessibility review; fixed-court pinning adapter if required by that acceptance. No full D gate is claimed. E/F remain gated. The existing runtime or scheduler implementations are not evidence that their programme gates have passed.
 
 ## Scope of source understanding
 
@@ -40,4 +41,11 @@ Implemented under [D_COMMAND_SLICE](D_COMMAND_SLICE.md). The draft aggregate now
 
 Evidence: `scenario/verification/phase-d-commands.txt` — 19 focused tests pass, including stale/duplicate/malformed commands, unchanged state on rejection, full command replay, detached snapshots and a duplicate-roster graph counterexample. TypeScript and browser bundle builds pass. Updated DOM-emulated UI check passes, including the REVIEWED state and visible transition history. No new full-suite or real-browser claim is made.
 
-This bounded integrity slice passes. Full D remains open for the four requirements above. The next implementation slice is named membership constraints/moves, followed by the remaining operational controls; E is still gated.
+This bounded integrity slice passes. Full D remains open for the four requirements above. That was the prior handoff. The three subsequent D slices above now cover membership, individual windows/durations and protected start locks; E is still gated.
+
+## Latest integrated verification — D1 / D4a / D4b
+
+- 652/652 core/web regression tests passed with the existing CP-SAT environment and test concurrency 2 (`phase-d-full-regression.txt`). This replaces the earlier 633/634 run as the latest broader regression evidence; the prior failed run remains recorded above for provenance.
+- 33/33 focused creator tests passed on the final implementation (`phase-d-integrated.txt`). This includes an additional malformed-membership regression added after the broader run began; that final defensive check was verified by the focused run, not represented as a 653-test full-suite rerun.
+- TypeScript build, browser bundle and actual bundled DOM interaction flow passed. The UI flow covers questions, pool swaps/constraints, court windows, duration overrides, start lock/unlock, invalid edits, undo, live source changes, review state and escaping. It remains DOM emulation, not browser visual/accessibility evidence.
+- Start locks are necessary constraints only. No schedule was generated or certified, no competition was published, no production P&K data was changed, and no E/F gate was entered.
