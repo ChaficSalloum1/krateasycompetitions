@@ -380,6 +380,13 @@ function finalResult(
   return deepFreeze({ status, assignments, objective, diff, affectedParticipantIds, whyNot, reason, proof });
 }
 
+/**
+ * The first objective components (moved contests, affected participants, start displacement, resource
+ * changes, makespan) can only grow as more tasks are placed, so a partial repair already worse than the
+ * incumbent on them can never become better: pruning it keeps the proof of minimality exact.
+ */
+const MONOTONE_PREFIX_LENGTH = 5;
+
 export function planMinimalChangeScheduleRepair(
   request: ScheduleRepairRequest,
   options: ScheduleRepairOptions,
@@ -403,6 +410,15 @@ export function planMinimalChangeScheduleRepair(
   let incumbent: SolverAssignment[] | null = null;
   let incumbentObjective: ScheduleRepairObjective | null = null;
   const assigned: SolverAssignment[] = [];
+  const taskById = new Map(request.problem.tasks.map((task) => [task.id, task]));
+  const monotonePrefix = (partial: readonly SolverAssignment[]): number[] => {
+    const changed = partial.filter((entry) => moved(baselineById.get(entry.taskId)!, entry));
+    const participants = new Set(changed.flatMap(({ taskId }) => taskById.get(taskId)?.participantIds ?? []));
+    return [changed.length, participants.size,
+      changed.reduce((sum, entry) => sum + Math.abs(entry.startMinute - baselineById.get(entry.taskId)!.startMinute), 0),
+      changed.filter((entry) => baselineById.get(entry.taskId)!.resourceId !== entry.resourceId).length,
+      Math.max(0, ...partial.map(({ endMinute }) => endMinute))];
+  };
 
   const search = (depth: number): void => {
     if (cutoff) return;
@@ -424,8 +440,13 @@ export function planMinimalChangeScheduleRepair(
       if (!resourceAllows(request.problem, candidate)) continue;
       if (!compatible(request.problem, task, candidate, assigned)) continue;
       if (incumbentObjective) {
-        const partialMoved = [...assigned, candidate].filter((entry) => moved(baselineById.get(entry.taskId)!, entry)).length;
-        if (partialMoved > incumbentObjective.movedContests) continue;
+        const prefix = monotonePrefix([...assigned, candidate]);
+        if (compareVectors(prefix, incumbentObjective.vector.slice(0, MONOTONE_PREFIX_LENGTH)) > 0) {
+          // Candidates come ordered by (moved, displacement): once a moved candidate is already worse on
+          // moved count, participants and displacement, every later candidate for this task is too.
+          if (moved(baseline, candidate) && compareVectors(prefix.slice(0, 3), incumbentObjective.vector.slice(0, 3)) > 0) break;
+          continue;
+        }
       }
       assigned.push(candidate);
       search(depth + 1);
