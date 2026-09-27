@@ -367,7 +367,7 @@ No authority conflict required product-owner direction. The smallest connected s
     - **Open, recorded here and not yet fixed:**
       1. ~~Solver speed on few courts~~: resolved by item 51.
       2. ~~A simulated tie blocks publication~~: resolved by item 52, which supersedes item 51's rule.
-      3. **No page for changing facts.** The web Studio offers no form to change a draft's facts (courts, timings, rest, entrants). Only the API `/draft` does, and the Studio can only add or remove the last roster.
+      3. ~~No page for changing facts~~: resolved by item 53.
       4. **No change after approval except repairs.** An approved revision is immutable. The only changes afterwards are the guarded live repairs: no-show, court outage and overrun. A late entry, a withdrawal before play, or an extra court has no path.
       5. ~~Formats a new tournament can use~~: resolved by item 52. Pools into a knockout is built generically for any size.
 
@@ -411,5 +411,15 @@ No authority conflict required product-owner direction. The smallest connected s
       - Run Control lists open ties under "Ties to decide", with keyboard-operable reordering and a reason. A browser test decides a three-way tie on a phone-width screen (`browser/standings-tie.test.ts`).
     - **Plan time.** Whether a manual tie can arise is a property of the policy, so it is raised deterministically: one TSC712 acknowledgement per manual-decision policy (`standingsFindingsForPublication`). A sampled tie never decides publication. The Guard classifies TSC712 as operational by code, not by message wording.
       As a result, the reference events now require this acknowledgement at approval. Before, their "ready" depended on the sample not tying.
+
+53. **Changing a draft's facts in the Studio (`renderDraftFactsForm`, `organiser-studio-view.ts`):** every unapproved draft has a "Change the event's facts" form, filled from the current facts.
+    - **Fields.** Entrants, courts, format (with pool size and qualifiers for pools), guaranteed matches, match length, rest, start, finish, timezone, priority, and the registered scoring, ranking-tie, withdrawal and draw rules. An unchosen rule shows "Choose…".
+    - **Times.** Start and finish show as wall-clock time in the event's own timezone, which is how the server reads them back, so saving without edits never moves the event. Tests cover British Summer Time, GMT, a date that differs from UTC (Sydney), and an unknown timezone, which shows no time rather than a wrong one.
+    - **Saving.** Saving posts organiser facts to `/draft`. That replaces the earlier facts and keeps the roster, and a plan already created is set aside until it is created again.
+    - **Browser tests** (`browser/studio-facts.test.ts`):
+      - A compiled 8-pair draft is changed from 2 to 3 courts and from 25- to 20-minute matches on a phone-width screen. It is recompiled from the Studio, and the new plan passes the Guard and uses all three courts. Nothing else changes.
+      - A draft missing its four rules is completed from the page alone.
+    - **Accessibility.** Each label is a sibling of its control, tied by `for`, so a select's accessible name is its label, not the label plus the selected option.
+    - **Injected functions.** The Studio injects functions as text. The page defines an identity `__name`, so a function compiled with esbuild's name-keeping helper runs there too.
 
 Broader format/sport connection, non-pilot loser-path/hard-rematch reconstruction and a verified on-device advisory model remain governed follow-ons rather than St Albans deployment blockers. The remaining pilot gates require external authority or deployment inputs: provider/fallback selection and credentials, authorised emergency details, named-assistive-technology/outdoor accessibility acceptance, full staff/manual recovery rehearsal, production persistence/restore evidence, support assignment and final role approvals. The emergency pack cannot be declared ready until the venue/pilot safety owner supplies and approves the named responders, contacts, venue/access and evacuation facts; until then the explicit fallback is the venue's separately controlled printed safety plan. External delivery remains fail closed until the pilot owner selects credentials, a provider and its declared fallback. The executable release manifest lists every remaining gate, accountable role and fixed fallback against the exact closed rehearsal scope; no missing external fact is represented as passed.
