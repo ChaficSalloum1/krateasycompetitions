@@ -1,3 +1,4 @@
+import {applyMembership,membershipViews,type MembershipEdit} from "./membership.js";
 import { canonicalHash, compileDefinition, validateTournamentSpec, type TournamentDefinition, type TournamentSpec, type QualificationSelector, type ValidationFinding } from "@tournament-os/tournament-schema";
 import { buildCompetitionGraph, createEntrants } from "../../../../packages/competition-engine/src/graph.js";
 import type { Draft, DivisionDraft, Interpretation } from "./interpretation.js";
@@ -88,19 +89,21 @@ export function definitionFromDraft(draft:Draft,sourceHash:string):TournamentDef
   definition.assumptions=[...definition.qualificationPolicies.map(p=>`/qualificationPolicies/${p.id}`),...definition.standingsPolicies.map(p=>`/standingsPolicies/${p.id}`),...definition.drawPolicies.map(p=>`/drawPolicies/${p.id}`)].map((rulePath,i)=>({id:`source.${i}`,rulePath,origin:"conversation_clarification",knowledge:"KNOWN",sourceReference:sourceHash,approved:false,critical:true}));
   return definition;
 }
-export function compileInterpretation(proposal:Interpretation){
+export function compileInterpretation(proposal:Interpretation,membership:MembershipEdit[] = []){
   const findings=inspectDraft(proposal.draft);
   for(const entry of proposal.roster)if(entry.memberIds.length!==2)findings.push({code:"ROSTER_SHAPE",path:`roster.${entry.id}`,message:`${entry.displayName} must contain exactly two member identities for a padel pair.`});
   for(const division of proposal.draft.divisions)if(proposal.roster.length&&proposal.roster.filter(e=>e.divisionId===division.id).length!==division.entrants)findings.push({code:"ROSTER_ACCOUNTING",path:`divisions.${proposal.draft.divisions.indexOf(division)}.entrants`,message:"Entry count differs from the imported roster; revise the source roster rather than silently adding or dropping identities."});
   if(proposal.failures.length||findings.length||proposal.decisions.length)return {status:proposal.failures.length||findings.length?"BLOCKED" as const:"NEEDS_DECISION" as const,findings,spec:null,graph:null,validation:[] as ValidationFinding[]};
   const definition=definitionFromDraft(proposal.draft,proposal.sourceHash);
   // Proposal compilation is not LOCK_DEFINITION; the source assumption deliberately remains unapproved.
-  const spec=compileDefinition(definition,{specId:"creator.draft",revision:proposal.revision,schemaVersion:"1.0.0",compilerVersion:"1.0.0-creator",rulesetVersions:{padel:"1.0.0",competition:"1.0.0"},sourcePrompt:proposal.sourceHash,createdAt:"2026-09-27T00:00:00Z"}) as TournamentSpec;
+  let spec=compileDefinition(definition,{specId:"creator.draft",revision:proposal.revision,schemaVersion:"1.0.0",compilerVersion:"1.0.0-creator",rulesetVersions:{padel:"1.0.0",competition:"1.0.0"},sourcePrompt:proposal.sourceHash,createdAt:"2026-09-27T00:00:00Z"}) as TournamentSpec;
+  const entries=proposal.roster.length?Object.fromEntries(spec.divisions.map(d=>[d.id,proposal.roster.filter(e=>e.divisionId===d.id).map(e=>({...e,memberIds:[...e.memberIds]}))])):createEntrants(spec);
+  try { applyMembership(definition,entries,membership); }
+  catch(error){return {status:"BLOCKED" as const,findings:[...findings,{code:"MEMBERSHIP_INVALID",path:"membership",message:String(error instanceof Error?error.message:error)}],spec:null,graph:null,validation:[] as ValidationFinding[]};}
+  if(membership.length)spec=compileDefinition(definition,{...spec.metadata, specId:"creator.draft",revision:proposal.revision,schemaVersion:"1.0.0",compilerVersion:"1.0.0-creator",rulesetVersions:{padel:"1.0.0",competition:"1.0.0"},sourcePrompt:proposal.sourceHash,createdAt:"2026-09-27T00:00:00Z"}) as TournamentSpec;
   const validation=validateTournamentSpec(spec);
   const blocking=validation.findings.filter(f=>f.severity==="ERROR" && f.code!=="TSC602");
-  // Unapproved source is expected for a proposed draft, never authority to publish.
-  const entries=proposal.roster.length?Object.fromEntries(spec.divisions.map(d=>[d.id,proposal.roster.filter(e=>e.divisionId===d.id).map(e=>({...e,memberIds:[...e.memberIds]}))])):createEntrants(spec);
   const graph=blocking.length?null:buildCompetitionGraph(spec,entries);
   const allValidation=[...validation.findings,...(graph?.findings??[])];
-  return {status:blocking.length||graph?.findings.some(f=>f.severity==="ERROR")?"BLOCKED" as const:"PROPOSED" as const,findings,spec,graph,validation:allValidation,hash:canonicalHash({spec,graph})};
+  return {status:blocking.length||graph?.findings.some(f=>f.severity==="ERROR")?"BLOCKED" as const:"PROPOSED" as const,findings,spec,graph,validation:allValidation,hash:canonicalHash({spec,graph}),memberships:membershipViews(spec,entries)};
 }

@@ -9,6 +9,7 @@ export interface PoolAllocationRequest {
   readonly sizes: readonly number[];
   readonly entrants: readonly Entrant[];
   readonly randomisation: RandomisationPolicy;
+  readonly membershipConstraints?: PoolConfiguration["membershipConstraints"];
 }
 
 export interface PoolAllocationFinding { readonly code: string; readonly message: string; readonly evidence?: unknown; }
@@ -54,6 +55,14 @@ function finalize(request: PoolAllocationRequest, status: PoolAllocationResult["
   const entrantCoverage = entrantIds.length === expectedIds.length && new Set(entrantIds).size === entrantIds.length &&
     entrantIds.slice().sort().every((id, index) => id === expectedIds[index]);
   const sizeClosure = pools.length === request.sizes.length && pools.every((pool, index) => pool.length === request.sizes[index]);
+  const violations: PoolAllocationFinding[] = [];
+  for (const rule of request.membershipConstraints ?? []) {
+    const indexes = rule.entrantIds.map(id => pools.findIndex(pool => pool.some(entry => entry.id === id)));
+    if (!["TOGETHER", "SEPARATE"].includes(rule.kind) || indexes.length < 2 || new Set(rule.entrantIds).size !== indexes.length || indexes.some(i => i < 0) ||
+      (rule.kind === "TOGETHER" ? new Set(indexes).size !== 1 : new Set(indexes).size !== indexes.length))
+      violations.push({ code:"POOL_MEMBERSHIP_CONSTRAINT", message:`${rule.kind} membership rule is not satisfied.`, evidence:rule });
+  }
+  if (violations.length) { status = "REJECTED"; findings = [...findings, ...violations]; }
   const proofBase = { allocation: request.allocation, entrantCoverage, sizeClosure, sourceProofHash };
   return deepFreeze({ status, pools: structuredClone(pools), findings: [...findings], proof: { ...proofBase, proofHash: canonicalHash(hashable({ request, pools, proof: proofBase })) } });
 }
@@ -100,7 +109,7 @@ export function allocateStagePools(request: PoolAllocationRequest): Readonly<Poo
     const construction = constructPools({
       id: request.stageId, entrants: request.entrants.map(({ id, seed }) => ({ id, ...(seed === undefined ? {} : { seed }) })),
       poolCount: request.sizes.length, size: { minimum: Math.min(...request.sizes), maximum: Math.max(...request.sizes) },
-      targetSizes: request.sizes, hardConstraints: [],
+      targetSizes: request.sizes, hardConstraints: request.membershipConstraints ?? [],
       objectives: [
         { kind: "BALANCE_SIZE", priority: 1, weight: 1 },
         { kind: "BALANCE_SEED_STRENGTH", priority: 2, weight: 1 },

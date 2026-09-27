@@ -101,6 +101,7 @@ export interface PoolConfiguration {
   sizes: number[];
   rounds: 1 | 2;
   allocation: "snake" | "random" | "manual" | "optimised";
+  membershipConstraints?: { kind: "TOGETHER" | "SEPARATE"; entrantIds: string[] }[];
 }
 
 export interface BracketConfiguration {

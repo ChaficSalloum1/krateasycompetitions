@@ -1,0 +1,32 @@
+✔ D commands: stale, blocked and malformed commands leave the complete draft unchanged (72.00376ms)
+✔ D commands: duplicate delivery is idempotent and conflicting reuse is rejected (96.084874ms)
+✔ D commands: exact revision review, blocked edits, monotonic undo and deterministic replay (105.971547ms)
+✔ D commands: returned snapshots cannot mutate draft truth or committed evidence (29.248029ms)
+✔ D readiness includes graph failures instead of only definition findings (3.645705ms)
+✔ C: Pools to cups becomes the same canonical definition type (66.111419ms)
+✔ C: Knockout becomes the same canonical definition type (1.881764ms)
+✔ C: Round robin becomes the same canonical definition type (7.260016ms)
+✔ C: St Albans structure becomes the same canonical definition type (18.929722ms)
+✔ undefined best-runners-up comparison is an open decision, never inferred (0.739178ms)
+✔ conflicts and unrecognised restrictions stay visible; source changes invalidate answers (1.292474ms)
+✔ JSON/YAML share the draft contract and preserve unsupported properties as questions (11.110471ms)
+✔ CSV entrants are facts, not invented format or rules (1.674992ms)
+✔ ten qualifiers into eight slots gives the exact missing-destination counterexample (2.360675ms)
+✔ top N in each pool translates to per-position selectors, not a global top-N (7.494504ms)
+✔ D1: pool swap preserves identities and exact sizes, then replay reproduces graph (127.144019ms)
+✔ D1: protected together/separate constraints reject violating swap atomically (34.735061ms)
+✔ D1: stale membership stays visible and blocks review until explicit clear or undo (45.299272ms)
+✔ D1: duplicate/foreign entries, malformed rule and forged basis cannot commit (75.265473ms)
+✔ D1: named imported roster survives pool editing without synthetic identities (43.736088ms)
+✔ D: text → question → live structure → invalid rule → undo → review invalidation (156.070874ms)
+✔ browser hash implementation is byte-identical to server for unicode and canonical-sized inputs (6.134479ms)
+✔ browser XLSX decompression matches bytes and enforces expansion boundary (2.892112ms)
+✔ an imported roster retains exact identities and cannot be silently resized (4.718989ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 24
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1083.359039
