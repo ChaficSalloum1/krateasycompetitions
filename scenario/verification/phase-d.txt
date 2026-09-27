@@ -1,0 +1,22 @@
+✔ C: Pools to cups becomes the same canonical definition type (47.062507ms)
+✔ C: Knockout becomes the same canonical definition type (1.617104ms)
+✔ C: Round robin becomes the same canonical definition type (1.931331ms)
+✔ C: St Albans structure becomes the same canonical definition type (12.027978ms)
+✔ undefined best-runners-up comparison is an open decision, never inferred (0.79528ms)
+✔ conflicts and unrecognised restrictions stay visible; source changes invalidate answers (1.475711ms)
+✔ JSON/YAML share the draft contract and preserve unsupported properties as questions (8.782442ms)
+✔ CSV entrants are facts, not invented format or rules (1.216128ms)
+✔ ten qualifiers into eight slots gives the exact missing-destination counterexample (1.027381ms)
+✔ top N in each pool translates to per-position selectors, not a global top-N (4.441077ms)
+✔ D: text → question → live structure → invalid rule → undo → review invalidation (69.997112ms)
+✔ browser hash implementation is byte-identical to server for unicode and canonical-sized inputs (4.220674ms)
+✔ browser XLSX decompression matches bytes and enforces expansion boundary (1.642067ms)
+✔ an imported roster retains exact identities and cannot be silently resized (2.057202ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 895.781911

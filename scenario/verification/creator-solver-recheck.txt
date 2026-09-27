@@ -1,0 +1,19 @@
+✔ an unavailable CP-SAT runtime fails closed as UNKNOWN rather than infeasible (14.438209ms)
+✔ CP-SAT matches the exact solver objective and returns independently certified no-overlap evidence (962.248262ms)
+✔ CP-SAT and the exact solver agree with precedence, calendars, closures, locks, and participant rest (793.209504ms)
+✔ only an exhausted CP-SAT proof becomes INFEASIBLE; bounded or version-drift runs stay UNKNOWN (2897.012235ms)
+✔ the published tested scale envelope is backed by an executed 128-task deterministic fixture (884.029783ms)
+✔ an invalid cyclic model is UNKNOWN and can never masquerade as proven infeasible (0.67355ms)
+✔ a worker claim is never certified until the TypeScript boundary independently validates it (75.935642ms)
+✔ the CP-SAT readiness probe is healthy only when the pinned backend solves its known model (1168.903159ms)
+✔ the worker never publishes a feasible answer that the wall-time safety cap cut short (45.07447ms)
+✔ solveAsync returns the same schedule as solve without blocking the event loop (13740.564629ms)
+✔ a presolved result is replayed only for a problem with the same content (10531.610207ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 31298.134373

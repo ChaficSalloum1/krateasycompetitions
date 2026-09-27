@@ -17,7 +17,7 @@ export interface Draft {
 export interface SourceFact { id:string; path:string; value:Value; sourceHash:string; locator:string; quote:string; origin:"source"|"answer"; }
 export interface Decision { id:string; path:string; question:string; why:string; kind:"number"|"text"|"choice"|"sizes"; options?:{value:Value;label:string}[]; }
 export interface Interpretation {
-  sourceHash:string; draft:Draft; facts:SourceFact[]; decisions:Decision[]; conflicts:{path:string;values:Value[];quotes:string[]}[];
+  sourceHash:string; draft:Draft; roster: {id:string;displayName:string;divisionId:string;memberIds:string[];seed?:number}[]; facts:SourceFact[]; decisions:Decision[]; conflicts:{path:string;values:Value[];quotes:string[]}[];
   unparsed:{id:string;text:string}[]; failures:string[]; revision:number; hash:string;
 }
 export interface Answers { sourceHash:string; values:Record<string,Value>; }
@@ -32,7 +32,7 @@ export function setField(draft:Draft,path:string,value:Value):void {
 const globalFields=new Set(["title","sport","duration","rest","courts","start","end","timezone","scoring","tiebreak"]);
 const divisionFields=new Set(Object.keys(division("","")));
 export function interpret(source:CreationSource,answers?:Answers,revision=1):Interpretation {
-  const sourceHash=canonicalHash(source),draft=emptyDraft(),facts:SourceFact[]=[],failures:string[]=[],unparsed:{id:string;text:string}[]=[];
+  const sourceHash=canonicalHash(source),draft=emptyDraft(),roster:Interpretation["roster"]=[],facts:SourceFact[]=[],failures:string[]=[],unparsed:{id:string;text:string}[]=[];
   const claims=new Map<string,SourceFact[]>();
   const claim=(path:string,value:Value,quote:string,locator:string)=>{
     const fact:SourceFact={id:`fact-${facts.length+1}`,path,value,quote,locator,sourceHash,origin:"source"};facts.push(fact);
@@ -96,6 +96,10 @@ export function interpret(source:CreationSource,answers?:Answers,revision=1):Int
       for(const id of new Set(imported.entrants.map(e=>e.divisionId))){
         const index=draft.divisions.length;draft.divisions.push(division(id,`division-${index+1}`));
         claim(`divisions.${index}.entrants`,imported.entrants.filter(e=>e.divisionId===id).length,`Entrant rows for ${id}`,`table:division_id=${id}`);
+        for(const entry of imported.entrants.filter(e=>e.divisionId===id)){
+          roster.push({...entry,divisionId:`division-${index+1}`,memberIds:[...entry.memberIds]});
+          facts.push({id:`fact-${facts.length+1}`,path:`roster.${entry.id}`,value:JSON.stringify(entry),sourceHash,locator:`table:entrant_id=${entry.id}`,quote:entry.displayName,origin:"source"});
+        }
       }
     } else {
       const data=imported.normalized;
@@ -158,6 +162,6 @@ export function interpret(source:CreationSource,answers?:Answers,revision=1):Int
   });
   for(const conflict of conflicts)if(!Object.hasOwn(applied,conflict.path))decisions.push({id:`conflict:${conflict.path}`,path:conflict.path,question:`Which value is correct for ${conflict.path}?`,why:conflict.quotes.join(" / "),kind:"choice",options:conflict.values.map(value=>({value,label:JSON.stringify(value)}))});
   for(const item of unparsed)if(applied[item.id]!=="context_only")decisions.push({id:item.id,path:item.id,question:"Does this contain a rule we still need to model?",why:item.text,kind:"choice",options:[{value:"context_only",label:"Context only — no competition rule"}]});
-  const partial={sourceHash,draft,facts,decisions,conflicts,unparsed,failures,revision};
+  const partial={sourceHash,draft,roster,facts,decisions,conflicts,unparsed,failures,revision};
   return {...partial,hash:canonicalHash(partial)};
 }
