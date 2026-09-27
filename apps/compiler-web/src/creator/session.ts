@@ -1,3 +1,4 @@
+import type {MembershipEdit} from "./membership.js";
 import { canonicalHash } from "@tournament-os/tournament-schema";
 import { interpret, getField, type Answers, type Value } from "./interpretation.js";
 import { compileInterpretation } from "./definition.js";
@@ -7,12 +8,14 @@ export type DraftState = "NEEDS_DECISIONS" | "BLOCKED" | "READY_FOR_REVIEW" | "R
 export type DraftCommand =
   | { type:"CHANGE_SOURCE"; source:CreationSource }
   | { type:"ANSWER"; values:Record<string,Value> }
+  | { type:"SET_MEMBERSHIP"; edit:MembershipEdit }
+  | { type:"CLEAR_MEMBERSHIP"; stageId:string }
   | { type:"UNDO" }
   | { type:"REVIEW" };
 export interface CommandEnvelope { id:string; expectedRevision:number; command:DraftCommand }
 export type CommandReceipt = { status:"COMMITTED"; revision:number; state:DraftState; hash:string }
   | { status:"REJECTED"; code:"STALE"|"FORGED_INPUT"|"INVALID"|"NOTHING_TO_UNDO"|"VALIDATION_BLOCKED"; revision:number; message:string };
-interface Inputs { source:CreationSource; answers:Answers }
+interface Inputs { source:CreationSource; answers:Answers; membership:MembershipEdit[] }
 export interface DraftTransition {
   envelope:CommandEnvelope; before:{revision:number;state:DraftState;hash:string};
   after:{revision:number;state:DraftState;hash:string};
@@ -26,7 +29,7 @@ function sourceValid(source:CreationSource):boolean {
 }
 function evaluate(inputs:Inputs,revision:number){
   const interpretation=interpret(inputs.source,inputs.answers,revision);
-  return {interpretation,compilation:compileInterpretation(interpretation)};
+  return {interpretation,compilation:compileInterpretation(interpretation,inputs.membership)};
 }
 function stateOf(current:ReturnType<typeof evaluate>,reviewedHash:string|null):DraftState {
   if(current.compilation.status==="BLOCKED")return "BLOCKED";
@@ -43,7 +46,7 @@ export class CreatorSession {
   constructor(source:CreationSource){
     if(!sourceValid(source))throw new Error("Invalid creation source");
     this.#initial=structuredClone(source);
-    this.#inputs={source:structuredClone(source),answers:{sourceHash:canonicalHash(source),values:{}}};
+    this.#inputs={source:structuredClone(source),answers:{sourceHash:canonicalHash(source),values:{}},membership:[]};
   }
   get source(){return structuredClone(this.#inputs.source);}
   get answers(){return structuredClone(this.#inputs.answers);}
@@ -65,7 +68,7 @@ export class CreatorSession {
     if(envelope.expectedRevision!==this.#revision)return remember(reject("STALE","Reload the current draft before applying this command."));
     try {
       const command=structuredClone(envelope.command),inputs=structuredClone(this.#inputs),history=structuredClone(this.#history);
-      if(!command || !["CHANGE_SOURCE","ANSWER","UNDO","REVIEW"].includes(command.type))return remember(reject("INVALID","Unsupported draft command."));
+      if(!command || !["CHANGE_SOURCE","ANSWER","SET_MEMBERSHIP","CLEAR_MEMBERSHIP","UNDO","REVIEW"].includes(command.type))return remember(reject("INVALID","Unsupported draft command."));
       const before={revision:this.#revision,state:this.state,hash:this.hash};
       if(command.type==="CHANGE_SOURCE"){
         if(!sourceValid(command.source))return remember(reject("INVALID","Invalid source envelope."));
@@ -83,13 +86,19 @@ export class CreatorSession {
           if(!allowed)return remember(reject("INVALID",`Unsupported answer field or value: ${path}`));
         }
         history.push(structuredClone(inputs));Object.assign(inputs.answers.values,command.values);
+      } else if(command.type==="SET_MEMBERSHIP" || command.type==="CLEAR_MEMBERSHIP"){
+        history.push(structuredClone(inputs));
+        const stageId=command.type==="SET_MEMBERSHIP"?command.edit.stageId:command.stageId;
+        inputs.membership=inputs.membership.filter(e=>e.stageId!==stageId);
+        if(command.type==="SET_MEMBERSHIP")inputs.membership.push(command.edit);
       } else if(command.type==="UNDO"){
         const restored=history.pop();if(!restored)return remember(reject("NOTHING_TO_UNDO","No earlier draft inputs are available."));
-        inputs.source=restored.source;inputs.answers=restored.answers;
+        inputs.source=restored.source;inputs.answers=restored.answers;inputs.membership=restored.membership;
       } else if(before.state!=="READY_FOR_REVIEW" && before.state!=="REVIEWED")return remember(reject("VALIDATION_BLOCKED","Resolve questions and findings before reviewing this draft."));
       const revision=this.#revision+1;
       // Derive the whole candidate before publishing any mutation to the aggregate.
       const candidate=evaluate(inputs,revision);
+      if(command.type==="SET_MEMBERSHIP" && candidate.compilation.status!=="PROPOSED")return remember(reject("VALIDATION_BLOCKED",candidate.compilation.findings.map(f=>f.message).join(" ")||"Resolve definition decisions first."));
       const reviewedHash=command.type==="REVIEW"?candidate.interpretation.hash:null;
       const after={revision,state:stateOf(candidate,reviewedHash),hash:canonicalHash({inputs,revision,reviewedHash})};
       const transition=structuredClone({envelope,before,after});
@@ -105,7 +114,9 @@ export class CreatorSession {
   }
   changeSource(source:CreationSource){return this.dispatch({type:"CHANGE_SOURCE",source});}
   answer(values:Record<string,Value>){return this.dispatch({type:"ANSWER",values});}
+  setMembership(edit:MembershipEdit){return this.dispatch({type:"SET_MEMBERSHIP",edit});}
+  clearMembership(stageId:string){return this.dispatch({type:"CLEAR_MEMBERSHIP",stageId});}
   undo(){return this.dispatch({type:"UNDO"});}
   review(){return this.dispatch({type:"REVIEW"}).status==="COMMITTED";}
-  export(){return structuredClone({artifact:"krateasy.creation-review/1.1.0",authority:"NON_AUTHORITATIVE_DRAFT",initialSource:this.#initial,source:this.#inputs.source,answers:this.#inputs.answers,revision:this.#revision,state:this.state,hash:this.hash,reviewedHash:this.#reviewedHash,...this.evaluate(),transitions:this.#transitions,events:this.events});}
+  export(){return structuredClone({artifact:"krateasy.creation-review/1.1.0",authority:"NON_AUTHORITATIVE_DRAFT",initialSource:this.#initial,membership:this.#inputs.membership,source:this.#inputs.source,answers:this.#inputs.answers,revision:this.#revision,state:this.state,hash:this.hash,reviewedHash:this.#reviewedHash,...this.evaluate(),transitions:this.#transitions,events:this.events});}
 }

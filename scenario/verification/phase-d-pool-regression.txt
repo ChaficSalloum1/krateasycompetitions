@@ -1,0 +1,18 @@
+✔ snake allocation balances seed bands across the declared pool sizes (3.53978ms)
+✔ random allocation requires and replays a pinned deterministic random policy (13.375719ms)
+✔ manual allocation is accepted only when every entrant names one declared pool with exact sizes (1.072569ms)
+✔ optimised allocation delegates to the proof-bounded pool construction engine (73.144392ms)
+✔ the primary competition graph executes the declared pool-allocation adapter (219.630766ms)
+✔ constructs balanced pools with deterministic entrant coverage and an independent proof (316.230539ms)
+✔ honours fixed placement, separation, together, and attribute-limit hard constraints (2.514683ms)
+✔ distinguishes an exhausted infeasibility proof from a bounded unknown search (0.558415ms)
+✔ independent verification rejects entrant duplication and a forged optimal claim (0.748674ms)
+✔ returns a balanced independently valid incumbent when exact optimisation hits its node bound (0.787027ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 840.908575
