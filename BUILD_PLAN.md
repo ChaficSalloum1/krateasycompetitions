@@ -1,3 +1,5 @@
+> Required Phase G outcome: organiser participant/pair/pool/division edits must produce guarded automatic structural and schedule repair. See [acceptance contract](docs/G_RECONFIGURATION_ACCEPTANCE.md). This clarification preserves D → E → F → G order; G remains unimplemented as an integrated creator journey.
+
 > Current continuation: D1 membership and D4a resource/duration gates passed; D4b protected start locks implemented with focused/integrated verification. Full D still requires organiser and real-browser acceptance, with court pinning explicitly unsupported. See docs/D_REVIEW_GATE.md. E/F remain gated. Earlier milestone and ticket text below is retained history, not permission to restart or skip gates.
 
 > Continuation: **D revision-safe command slice passed**; see [contract](docs/D_COMMAND_SLICE.md) and [evidence](docs/D_REVIEW_GATE.md#d-command-integrity-continuation). Next: remaining D membership and operational controls. Full D/E/F gates unchanged.
