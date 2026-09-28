@@ -7,7 +7,7 @@ import { qualifyEntries } from "../../../packages/competition-engine/src/qualifi
 import { createEntrants } from "../../../packages/competition-engine/src/graph.js";
 for(const [name,text] of Object.entries(examples))test(`C: ${name} becomes the same canonical definition type`,()=>{
   const initial=interpret({mode:"language",text});
-  const proposed=name==="Pools to cups"?interpret({mode:"language",text},{sourceHash:initial.sourceHash,values:{"divisions.0.comparison":"percentage"}}):initial;
+  const proposed=name==="Pools to cups"?interpret({mode:"language",text},{sourceHash:initial.sourceHash,ruleCatalogVersion:initial.ruleCatalogVersion,values:{"divisions.0.comparison":"percentage"}}):initial;
   assert.deepEqual(proposed.decisions,[]);assert.deepEqual(proposed.failures,[]);
   assert.ok(proposed.facts.every(f=>f.sourceHash===proposed.sourceHash&&f.locator));
   const compiled=compileInterpretation(proposed);
@@ -22,8 +22,8 @@ test("undefined best-runners-up comparison is an open decision, never inferred",
 test("conflicts and unrecognised restrictions stay visible; source changes invalidate answers",()=>{
   const source={mode:"language" as const,text:examples.Knockout+"\n40-minute matches. Never schedule Alex after lunch."};
   const p=interpret(source);assert.equal(p.conflicts[0]?.path,"duration");assert.ok(p.unparsed.some(x=>x.text.includes("Alex")));
-  const resolved=interpret(source,{sourceHash:p.sourceHash,values:{duration:35}});assert.equal(resolved.draft.duration,35);
-  const changed=interpret({...source,text:source.text+"\n50-minute matches."},{sourceHash:p.sourceHash,values:{duration:35}});
+  const resolved=interpret(source,{sourceHash:p.sourceHash,ruleCatalogVersion:p.ruleCatalogVersion,values:{duration:35}});assert.equal(resolved.draft.duration,35);
+  const changed=interpret({...source,text:source.text+"\n50-minute matches."},{sourceHash:p.sourceHash,ruleCatalogVersion:p.ruleCatalogVersion,values:{duration:35}});
   assert.notEqual(changed.draft.duration,35);assert.ok(changed.decisions.some(d=>d.path==="duration"));
 });
 test("JSON/YAML share the draft contract and preserve unsupported properties as questions",()=>{

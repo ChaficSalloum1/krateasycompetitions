@@ -17,6 +17,7 @@ Status: ACTIVE holding record, **not implementation authority**. Items enter the
 | Independent external Guard and structural probes | M–N | Preserve existing capability evidence but do not leap to expansion |
 | Production environment, browser, persistence and restore evidence | Relevant protected workflow and release gate | Unit tests alone are insufficient; no deployment in A1; consult existing operating references when the specific slice requires them |
 | PDF/ZIP/images and later external CSV/XLSX/API Guard adapters | Future bounded adapters | Source C and external M explicitly limit initial adapters |
+| Broader language interpretation and new competition concepts | C/D correction or N structural probe, then governed slice | D8 catalog covers only registered draft fields; an unrecognised clause stays open, and a new primitive needs evidence rather than a silent guess |
 | Ticket Tailor, Wallet, identity/league UX/sponsors/organisation tooling | After N, independent product bets | Do not reopen architecture or import historic backlog authority |
 
 A1 discovered competing authority hierarchies in MASTER-PRODUCT-SPECIFICATION, AI_AGENT_IMPLEMENTATION_BRIEF, pilot/phase/execution plans. Their scope authority is retired by this reset; the original material and technical safeguards remain available with explicit classification.

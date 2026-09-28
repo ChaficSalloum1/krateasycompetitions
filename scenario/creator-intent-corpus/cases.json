@@ -1,0 +1,44 @@
+[
+  {
+    "id": "wildcards-need-comparison",
+    "source": "Padel pairs.\n16 pairs; 4 pools of 4; top 1 per pool; best 2 runners-up; qualifiers to Konnect Cup; remaining to Tower Cup; protect 2 seeds; byes to highest seeds; avoid rematches.\n30-minute matches; rest 10 minutes; 7 courts.\nStart 2026-10-04T11:00:00+01:00; end 2026-10-04T20:00:00+01:00; timezone Europe/London.\nScoring: total games, no draws; tiebreak: wins, game difference, games won, manual.",
+    "missing": ["divisions.0.comparison"],
+    "conflicts": [],
+    "unknown": 0
+  },
+  {
+    "id": "comparison-supplied-in-source",
+    "source": "Padel pairs.\n16 pairs; 4 pools of 4; top 1 per pool; best 2 runners-up; compare by win percentage; qualifiers to Konnect Cup; remaining to Tower Cup; protect 2 seeds; byes to highest seeds; avoid rematches.\n30-minute matches; rest 10 minutes; 7 courts.\nStart 2026-10-04T11:00:00+01:00; end 2026-10-04T20:00:00+01:00; timezone Europe/London.\nScoring: total games, no draws; tiebreak: wins, game difference, games won, manual.",
+    "missing": [],
+    "conflicts": [],
+    "unknown": 0
+  },
+  {
+    "id": "top-per-pool-no-cross-comparison",
+    "source": "Padel pairs.\n16 pairs; 4 pools of 4; top 2 per pool; no runners-up; qualifiers to Konnect Cup; remaining to Tower Cup; protect 2 seeds; avoid rematches.\n30-minute matches; rest 10 minutes; 7 courts.\nStart 2026-10-04T11:00:00+01:00; end 2026-10-04T20:00:00+01:00; timezone Europe/London.\nScoring: total games, no draws; tiebreak: wins, game difference, games won, manual.",
+    "missing": [],
+    "conflicts": [],
+    "unknown": 0
+  },
+  {
+    "id": "pure-knockout-no-pool-rules",
+    "source": "Padel pairs.\n8 pairs; single elimination; protect 2 seeds; allow rematches.\n30-minute matches; rest 10 minutes; 7 courts.\nStart 2026-10-04T11:00:00+01:00; end 2026-10-04T20:00:00+01:00; timezone Europe/London.\nScoring: total games, no draws.",
+    "missing": [],
+    "conflicts": [],
+    "unknown": 0
+  },
+  {
+    "id": "unknown-bonus-policy",
+    "source": "Padel pairs.\n8 pairs; single elimination; protect 2 seeds; allow rematches.\n30-minute matches; rest 10 minutes; 7 courts.\nStart 2026-10-04T11:00:00+01:00; end 2026-10-04T20:00:00+01:00; timezone Europe/London.\nScoring: total games, no draws.\nBonus point for fair play.",
+    "missing": [],
+    "conflicts": [],
+    "unknown": 1
+  },
+  {
+    "id": "conflicting-durations",
+    "source": "Padel pairs.\n8 pairs; single elimination; protect 2 seeds; allow rematches.\n30-minute matches; 40-minute matches; rest 10 minutes; 7 courts.\nStart 2026-10-04T11:00:00+01:00; end 2026-10-04T20:00:00+01:00; timezone Europe/London.\nScoring: total games, no draws.",
+    "missing": [],
+    "conflicts": ["duration"],
+    "unknown": 0
+  }
+]

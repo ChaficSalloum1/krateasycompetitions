@@ -111,3 +111,4 @@ Inventory: 59 pre-existing documentation files; all classified. The PDF is retai
 - `docs/D_ROSTER_COMPOSITION_SLICE.md`: ACTIVE D5 bounded source composition and evidence contract.
 - `docs/D_SECOND_CUP_SLICE.md`: ACTIVE D6 bounded second-cup editor and evidence contract.
 - `docs/D_CLARITY_PASS.md`: ACTIVE D7 organiser-facing interpretation clarity and evidence contract.
+- `docs/D_RULE_CATALOG_SLICE.md`: ACTIVE D8 bounded rule catalog and question coverage contract.

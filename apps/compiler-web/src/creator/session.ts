@@ -4,6 +4,7 @@ import type {MembershipEdit} from "./membership.js";
 import {readRosterSource,type RosterSource} from "./roster-source.js";
 import { canonicalHash } from "@tournament-os/tournament-schema";
 import { interpret, getField, type Answers, type Value } from "./interpretation.js";
+import { RULE_CATALOG_VERSION } from "./rule-catalog.js";
 import { compileInterpretation } from "./definition.js";
 import type { CreationSource } from "../creation-proposal.js";
 
@@ -57,7 +58,7 @@ export class CreatorSession {
   constructor(source:CreationSource){
     if(!sourceValid(source))throw new Error("Invalid creation source");
     this.#initial=structuredClone(source);
-    this.#inputs={source:structuredClone(source),rosterSource:null,answers:{sourceHash:canonicalHash(source),values:{}},membership:[],operations:null,planLocks:[]};
+    this.#inputs={source:structuredClone(source),rosterSource:null,answers:{sourceHash:canonicalHash(source),ruleCatalogVersion:RULE_CATALOG_VERSION,values:{}},membership:[],operations:null,planLocks:[]};
   }
   get source(){return structuredClone(this.#inputs.source);}
   get rosterSource(){return structuredClone(this.#inputs.rosterSource);}
@@ -84,7 +85,7 @@ export class CreatorSession {
       const before={revision:this.#revision,state:this.state,hash:this.hash};
       if(command.type==="CHANGE_SOURCE"){
         if(!sourceValid(command.source))return remember(reject("INVALID","Invalid source envelope."));
-        history.push(structuredClone(inputs));inputs.source=command.source;inputs.answers={sourceHash:canonicalHash(command.source),values:{}};
+        history.push(structuredClone(inputs));inputs.source=command.source;inputs.answers={sourceHash:canonicalHash(command.source),ruleCatalogVersion:RULE_CATALOG_VERSION,values:{}};
       } else if(command.type==="ATTACH_ROSTER"){
         if(!command.source || !["csv","xlsx"].includes(command.source.mode) || !sourceValid(command.source))return remember(reject("INVALID","Only a valid CSV/XLSX entrant source can be attached."));
         try { readRosterSource(command.source); } catch(error) {return remember(reject("INVALID",error instanceof Error?error.message:"Roster import failed."));}
@@ -154,5 +155,5 @@ export class CreatorSession {
   removeStartLock(contestId:string){return this.dispatch({type:"REMOVE_START_LOCK",contestId});}
   undo(){return this.dispatch({type:"UNDO"});}
   review(){return this.dispatch({type:"REVIEW"}).status==="COMMITTED";}
-  export(){return structuredClone({artifact:"krateasy.creation-review/1.2.0",authority:"NON_AUTHORITATIVE_DRAFT",initialSource:this.#initial,rosterSource:this.#inputs.rosterSource,membership:this.#inputs.membership,operations:this.#inputs.operations,planLocks:this.#inputs.planLocks,source:this.#inputs.source,answers:this.#inputs.answers,revision:this.#revision,state:this.state,hash:this.hash,reviewedHash:this.#reviewedHash,...this.evaluate(),transitions:this.#transitions,events:this.events});}
+  export(){return structuredClone({artifact:"krateasy.creation-review/1.3.0",authority:"NON_AUTHORITATIVE_DRAFT",initialSource:this.#initial,rosterSource:this.#inputs.rosterSource,membership:this.#inputs.membership,operations:this.#inputs.operations,planLocks:this.#inputs.planLocks,source:this.#inputs.source,answers:this.#inputs.answers,revision:this.#revision,state:this.state,hash:this.hash,reviewedHash:this.#reviewedHash,...this.evaluate(),transitions:this.#transitions,events:this.events});}
 }

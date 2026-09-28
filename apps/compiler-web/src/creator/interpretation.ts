@@ -2,6 +2,7 @@ import { canonicalHash } from "@tournament-os/tournament-schema";
 import { ingestCreationSource } from "../creation-source-ingestion.js";
 import type { CreationSource } from "../creation-proposal.js";
 import { projectRosterSource, type RosterSource } from "./roster-source.js";
+import { evaluateRuleCoverage, RULE_CATALOG_VERSION, type RuleCoverage } from "./rule-catalog.js";
 
 export type Value = string | number | boolean | number[];
 export interface DivisionDraft {
@@ -18,12 +19,12 @@ export interface Draft {
   divisions:DivisionDraft[];
 }
 export interface SourceFact { id:string; path:string; value:Value; sourceHash:string; locator:string; quote:string; origin:"source"|"answer"; }
-export interface Decision { id:string; path:string; question:string; why:string; kind:"number"|"text"|"choice"|"sizes"; options?:{value:Value;label:string}[]; }
+export interface Decision { id:string; path:string; question:string; why:string; kind:"number"|"text"|"choice"|"sizes"; ruleId?:string; options?:{value:Value;label:string}[]; }
 export interface Interpretation {
-  sourceHash:string; draft:Draft; roster: {id:string;displayName:string;divisionId:string;memberIds:string[];seed?:number}[]; facts:SourceFact[]; decisions:Decision[]; conflicts:{path:string;values:Value[];quotes:string[]}[];
+  sourceHash:string; ruleCatalogVersion:string; coverage:RuleCoverage[]; draft:Draft; roster: {id:string;displayName:string;divisionId:string;memberIds:string[];seed?:number}[]; facts:SourceFact[]; decisions:Decision[]; conflicts:{path:string;values:Value[];quotes:string[]}[];
   unparsed:{id:string;text:string}[]; failures:string[]; revision:number; hash:string;
 }
-export interface Answers { sourceHash:string; values:Record<string,Value>; }
+export interface Answers { sourceHash:string; ruleCatalogVersion:string; values:Record<string,Value>; }
 const division=(label:string,id:string):DivisionDraft=>({id,label,entrants:null,format:null,poolSizes:null,qualification:null,places:null,runnersUp:null,comparison:null,remainder:null,cup:null,secondaryCup:null,bracketSlots:null,protectedSeeds:null,byePolicy:null,rematches:null,secondaryBracketSlots:null,secondaryProtectedSeeds:null,secondaryByePolicy:null,secondaryRematches:null});
 export const emptyDraft=():Draft=>({title:"Untitled competition",sport:null,duration:null,rest:null,courts:null,start:null,end:null,timezone:null,scoring:null,tiebreak:null,divisions:[division("Open","division-1")]});
 export function getField(draft:Draft,path:string):unknown { return path.split(".").reduce<any>((v,k)=>v?.[k],draft); }
@@ -49,7 +50,7 @@ export function interpret(source:CreationSource,answers?:Answers,revision=1,rost
       for(const [lineIndex,line] of source.text.split(/\n/).entries()) {
         let text=line.trim();if(!text)continue;
         const namedDivision=text.match(/^(?:division\s+)?([A-Za-z][A-Za-z &-]{0,45}):\s*(?=\d+\s+(?:pairs|teams|entries))/i);
-        if(namedDivision){if(!named){draft.divisions=[];named=true;}current=draft.divisions.length;draft.divisions.push(division(namedDivision[1]!.trim(),`division-${current+1}`));text=text.slice(namedDivision[0].length);}
+        if(namedDivision){if(!named){draft.divisions=[];named=true;}current=draft.divisions.length;draft.divisions.push(division(namedDivision[1]!.trim(),`division-${current+1}`));claim(`divisions.${current}.label`,namedDivision[1]!.trim(),line,`line:${lineIndex+1}`);text=text.slice(namedDivision[0].length);}
         const prefix=`divisions.${current}.`;
         for(const rawClause of text.split(/[;.](?=\s|$)/)) {
           let clause=rawClause.trim();if(!clause)continue;
@@ -98,6 +99,7 @@ export function interpret(source:CreationSource,answers?:Answers,revision=1,rost
       draft.divisions=[];
       for(const id of new Set(imported.entrants.map(e=>e.divisionId))){
         const index=draft.divisions.length;draft.divisions.push(division(id,`division-${index+1}`));
+        claim(`divisions.${index}.label`,id,`Entrant rows for ${id}`,`table:division_id=${id}`);
         claim(`divisions.${index}.entrants`,imported.entrants.filter(e=>e.divisionId===id).length,`Entrant rows for ${id}`,`table:division_id=${id}`);
         for(const entry of imported.entrants.filter(e=>e.divisionId===id)){
           roster.push({...entry,divisionId:`division-${index+1}`,memberIds:[...entry.memberIds]});
@@ -131,47 +133,15 @@ export function interpret(source:CreationSource,answers?:Answers,revision=1,rost
     }
   }
   const conflicts=[...claims].filter(([,items])=>new Set(items.map(x=>JSON.stringify(x.value))).size>1).map(([path,items])=>({path,values:items.map(x=>x.value),quotes:items.map(x=>x.quote)}));
-  const decisions:Decision[]=[];
-  const need=(path:string,question:string,why:string,kind:Decision["kind"],options?:Decision["options"])=>{
-    if(getField(draft,path)===null)decisions.push({id:path,path,question,why,kind,...(options?{options}:{})});
-  };
-  const applied=answers?.sourceHash===sourceHash?answers.values:{};
+  const applied=answers?.sourceHash===sourceHash&&answers.ruleCatalogVersion===RULE_CATALOG_VERSION?answers.values:{};
   for(const [path,value] of Object.entries(applied)){
     if(path.startsWith("unparsed-"))continue;
     try{setField(draft,path,value);facts.push({id:`fact-${facts.length+1}`,path,value,sourceHash,locator:`answer:${path}`,quote:"Explicit organiser decision",origin:"answer"});}catch{failures.push(`Unknown answer field ${path}`);}
   }
-  const choices=(values:[string,string][])=>values.map(([value,label])=>({value,label}));
-  need("sport","Which sport is this?","The result adapter must be explicit.","choice",choices([["padel","Padel (pairs)"]]));
-  need("duration","How many minutes per contest?","Used by the later schedule compiler.","number");
-  need("rest","What is the minimum rest in minutes?","Hard rest cannot be guessed.","number");
-  need("courts","How many courts are committed?","A plan may use only committed resources.","number");
-  need("start","When does court availability start?","Include a date and UTC offset, e.g. 2026-10-04T09:00:00+01:00.","text");
-  need("end","When does court availability end?","Include a date and UTC offset.","text");
-  need("timezone","Which event timezone?","For local presentation and scheduling semantics.","text");
-  need("scoring","How is a result decided?","Only registered semantics can become a definition.","choice",choices([["total_games_no_draw","Total games, no draws"]]));
-  need("tiebreak","How are tied pool records separated?","A final unresolved tie requires organiser adjudication.","choice",choices([["wins_difference_for_manual","Wins → game difference → games won → manual decision"]]));
-  draft.divisions.forEach((d,i)=>{
-    const p=`divisions.${i}.`,why=`${d.label} division`;
-    need(p+"entrants",`How many entries in ${d.label}?`,why,"number");
-    need(p+"format",`What format does ${d.label} use?`,why,"choice",choices([["pools_knockout","Pools → knockout"],["knockout","Single knockout"],["round_robin","Round robin"]]));
-    if(d.format==="pools_knockout"){
-      need(p+"poolSizes",`How large are the ${d.label} pools?`,"Use comma-separated sizes, such as 4,4,3.","sizes");
-      need(p+"qualification",`Who advances from ${d.label}?`,"Qualification and seed assignment are separate decisions.","choice",choices([["top_per_pool","Top N in every pool"],["winner_priority","Pool winners first, then best runners-up"],["best_overall","Best N across all pools"]]));
-      need(p+"places",d.qualification==="top_per_pool"?"How many from each pool?":"How many total qualifiers?",why,"number");
-      if(d.qualification==="top_per_pool")need(p+"runnersUp","How many additional best runners-up?","Enter 0 if none.","number");
-      need(p+"comparison","How should different pools be compared?","Best runners-up and unequal pools need an explicit comparison policy.","choice",choices([["percentage","Win %, then game difference and games won per match"],["raw","Raw wins, game difference, games won"]]));
-      need(p+"remainder","What happens to everyone else?","Every entry needs an explicit destination or elimination.","choice",choices([["secondary","A second cup"],["eliminated","Eliminated after pools"]]));
-      need(p+"cup","What is the main cup called?",why,"text");
-      if(d.remainder==="secondary")need(p+"secondaryCup","What is the second cup called?",why,"text");
-    }
-    if(d.format!=="round_robin"){
-      need(p+"protectedSeeds","How many top seeds are protected?","Choose 2 or 4; protection is hierarchical.","choice",[{value:2,label:"Top 2 in opposite halves"},{value:4,label:"Top 4 in separate quarters"}]);
-      need(p+"byePolicy","Who receives any byes?","Byes must follow a declared rule.","choice",choices([["highest_seeds","Highest seeds first"]]));
-      need(p+"rematches","How should opening rematches be handled?","Impossible avoidance remains a finding; no qualifier is replaced.","choice",choices([["avoid","Avoid same-pool and previous opponents where possible"],["allow","Allow rematches"]]));
-    }
-  });
+  const unresolvedConflicts=new Set(conflicts.filter(conflict=>!Object.hasOwn(applied,conflict.path)).map(conflict=>conflict.path));
+  const {coverage,missing:decisions}=evaluateRuleCoverage(draft,facts,unresolvedConflicts);
   for(const conflict of conflicts)if(!Object.hasOwn(applied,conflict.path))decisions.push({id:`conflict:${conflict.path}`,path:conflict.path,question:`Which value is correct for ${conflict.path}?`,why:conflict.quotes.join(" / "),kind:"choice",options:conflict.values.map(value=>({value,label:JSON.stringify(value)}))});
   for(const item of unparsed)if(applied[item.id]!=="context_only")decisions.push({id:item.id,path:item.id,question:"Does this contain a rule we still need to model?",why:item.text,kind:"choice",options:[{value:"context_only",label:"Context only — no competition rule"}]});
-  const partial={sourceHash,rosterSourceHash:rosterSource?canonicalHash(rosterSource):null,draft,roster,facts,decisions,conflicts,unparsed,failures,revision};
+  const partial={sourceHash,ruleCatalogVersion:RULE_CATALOG_VERSION,coverage,rosterSourceHash:rosterSource?canonicalHash(rosterSource):null,draft,roster,facts,decisions,conflicts,unparsed,failures,revision};
   return {...partial,hash:canonicalHash(partial)};
 }

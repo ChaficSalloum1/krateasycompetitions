@@ -11,6 +11,8 @@ const click=(selector)=>{const element=w.document.querySelector(selector);assert
 assert.match(text(),/NEEDS DECISIONS/);assert.match(text(),/How should different pools be compared/);
 assert.match(w.document.querySelector('#overview').textContent,/1 decision needed/);
 assert.match(w.document.querySelector('[data-node="0:qualification"]').textContent,/1 to resolve/);
+assert.match(w.document.querySelector('#evidence').textContent,/Why these questions\? · rule coverage/);
+assert.match(w.document.querySelector('#evidence').textContent,/creator-rule-catalog\/1\.0\.0/);
 click('#go-to-decisions');assert.ok(w.document.querySelector('#questions .question'));
 click('[data-answer="divisions.0.comparison"][data-option="0"]');assert.match(text(),/READY TO REVIEW/);
 assert.doesNotMatch(w.document.querySelector('[data-node="0:qualification"]').textContent,/to resolve/);
