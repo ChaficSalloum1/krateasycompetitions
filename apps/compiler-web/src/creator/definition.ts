@@ -45,9 +45,18 @@ export function inspectDraft(draft:Draft):DraftFinding[]{
     }
     const count=qualifierCount(d);
     if(d.bracketSlots!==null){integer(p+"bracketSlots",d.bracketSlots,2,64);if(count>d.bracketSlots)add("CARDINALITY_MISMATCH",p+"bracketSlots",`${count} qualifiers, ${d.bracketSlots} destination slots: ${count-d.bracketSlots} entries have no valid destination.`);else if((d.bracketSlots&(d.bracketSlots-1))!==0)add("INVALID_BRACKET",p+"bracketSlots","Bracket slot capacity must be a power of two.");else if(count>=2&&d.bracketSlots!==2**Math.ceil(Math.log2(count)))add("UNSUPPORTED",p+"bracketSlots","Extra empty opening contests are not supported; choose the smallest fitting bracket.");}
+    const secondaryCount=d.entrants!==null?d.entrants-count:null;
+    if(d.remainder!=="secondary"&&[d.secondaryBracketSlots,d.secondaryProtectedSeeds,d.secondaryByePolicy,d.secondaryRematches].some(value=>value!==null))add("ORPHAN_POLICY",p+"remainder","Second-cup policy is saved but no second cup is active. Restore the destination or clear its bracket overrides.");
+    if(d.secondaryBracketSlots!==null){integer(p+"secondaryBracketSlots",d.secondaryBracketSlots,2,64);if(secondaryCount!==null&&secondaryCount>d.secondaryBracketSlots)add("CARDINALITY_MISMATCH",p+"secondaryBracketSlots",`${secondaryCount} second-cup entries, ${d.secondaryBracketSlots} destination slots: ${secondaryCount-d.secondaryBracketSlots} entries have no valid destination.`);else if((d.secondaryBracketSlots&(d.secondaryBracketSlots-1))!==0)add("INVALID_BRACKET",p+"secondaryBracketSlots","Second-cup slots must be a power of two.");else if(secondaryCount!==null&&secondaryCount>=2&&d.secondaryBracketSlots!==2**Math.ceil(Math.log2(secondaryCount)))add("UNSUPPORTED",p+"secondaryBracketSlots","Extra empty second-cup contests are not supported; choose the smallest fitting bracket.");}
     if(d.protectedSeeds!==null&&![2,4].includes(d.protectedSeeds))add("UNSUPPORTED",p+"protectedSeeds","Choose top 2 or top 4 protected seeds.");
+    if(d.protectedSeeds!==null&&count>=2&&d.protectedSeeds>count)add("SEED_PROTECTION",p+"protectedSeeds",`Cannot protect ${d.protectedSeeds} seeds among ${count} main-cup entries.`);
+    if(d.secondaryProtectedSeeds!==null&&![2,4].includes(d.secondaryProtectedSeeds))add("UNSUPPORTED",p+"secondaryProtectedSeeds","Choose top 2 or top 4 protected seeds in the second cup.");
+    const secondarySeeds=d.secondaryProtectedSeeds??d.protectedSeeds;
+    if(d.remainder==="secondary"&&secondaryCount!==null&&secondaryCount>=2&&secondarySeeds!==null&&secondarySeeds>secondaryCount)add("SEED_PROTECTION",p+"secondaryProtectedSeeds",`Cannot protect ${secondarySeeds} seeds among ${secondaryCount} second-cup entries.`);
     if(d.byePolicy!==null&&d.byePolicy!=="highest_seeds")add("UNSUPPORTED",p+"byePolicy","This envelope supports highest-seed byes.");
+    if(d.secondaryByePolicy!==null&&d.secondaryByePolicy!=="highest_seeds")add("UNSUPPORTED",p+"secondaryByePolicy","This envelope supports highest-seed byes in the second cup.");
     if(d.rematches!==null&&!["avoid","allow"].includes(d.rematches))add("UNSUPPORTED",p+"rematches","Choose an explicit rematch policy.");
+    if(d.secondaryRematches!==null&&!["avoid","allow"].includes(d.secondaryRematches))add("UNSUPPORTED",p+"secondaryRematches","Choose an explicit second-cup rematch policy.");
     for(const field of ["label","cup","secondaryCup"] as const)if(d[field]!==null&&(typeof d[field]!=="string"||!d[field]!.trim()||d[field]!.length>120))add("INVALID_LABEL",p+field,"Use a nonempty name up to 120 characters.");
   });
   return findings;
@@ -63,7 +72,9 @@ export function definitionFromDraft(draft:Draft,sourceHash:string):TournamentDef
       const id=`${d.id}.${suffix}`,structure=`${id}.structure`;stageIds.push(id);
       definition.stages.push({id,label,divisionId:d.id,primitive:secondary?"consolation":"single_elimination",inputShape:"pair",outputShape:"pair",expectedEntrants:count,bracket:{entrantCount:count,topology:(count&(count-1))===0?"power_of_two":"byes",thirdPlaceMatch:false}});
       if(d.format==="pools_knockout")definition.competitionStructures.push({id:structure,label,divisionId:d.id,targetEntrants:count,stageIds:[id]});
-      if(d.format==="pools_knockout")definition.drawPolicies.push({id:`${id}.draw`,structureId:structure,placement:"optimised",protectedSeedCount:d.protectedSeeds as 2|4,priorities:[{rule:"protected_byes",strength:"HARD",priority:1},{rule:"protected_seed_separation",strength:"HARD",priority:2},...(d.rematches==="avoid"?[{rule:"avoid_opening_round_pool_rematch",strength:"SOFT" as const,priority:3},{rule:"avoid_opening_round_rematch",strength:"SOFT" as const,priority:4}]:[])]});
+      const seedCount=secondary?(d.secondaryProtectedSeeds??d.protectedSeeds):d.protectedSeeds;
+      const rematches=secondary?(d.secondaryRematches??d.rematches):d.rematches;
+      if(d.format==="pools_knockout")definition.drawPolicies.push({id:`${id}.draw`,structureId:structure,placement:"optimised",protectedSeedCount:seedCount as 2|4,priorities:[{rule:"protected_byes",strength:"HARD",priority:1},{rule:"protected_seed_separation",strength:"HARD",priority:2},...(rematches==="avoid"?[{rule:"avoid_opening_round_pool_rematch",strength:"SOFT" as const,priority:3},{rule:"avoid_opening_round_rematch",strength:"SOFT" as const,priority:4}]:[])]});
       return structure;
     };
     if(d.format==="knockout")addKnockout("main",d.entrants!,d.cup??"Main bracket");

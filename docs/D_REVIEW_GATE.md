@@ -69,3 +69,17 @@ Next allowed work: [D organiser review](D_ORGANISER_REVIEW.md) and browser evide
 - Earlier environment-failure run retained in `phase-d-court-runtime-missing.txt`: 631/656 passed, 25 failed because the restored virtual environment lacked its `bin/python3` executable. Recreated the interpreter using `python3 -m venv --upgrade`; verified the pinned OR-Tools import; reran the complete suite. Two additional focused regression cases were added before that final broad run. No solver expectations were weakened.
 
 D4c bounded gate passes. This is draft/editor/adapter evidence, not full D organiser acceptance, schedule feasibility for every input, production authority, or E/F/G completion.
+
+## D5 — separate format and roster sources
+
+The organiser walkthrough exposed a gate blocker: a CSV/XLSX roster previously replaced the entire format source. D5 attaches an entrant source to the existing format through a revision-checked command. Separate source hashes and row locators remain in the exported draft. Invalid imports reject atomically; a valid but incompatible division/count blocks review and remains inspectable. Source changes retain the attachment for reconciliation; existing pool assignments and locks block if their identities become stale. The planning candidate's 48 named pairs can now be reviewed with the three-division example. The example's person IDs are illustrative; no historical played-event or approved-roster claim follows.
+
+Remaining D gate: the organiser must confirm the real P&K semantics and roster against the proposed model; desktop/mobile/keyboard/accessibility acceptance needs real-browser evidence. The candidate's historical pool membership and qualification policies are not silently inferred from its schedule. E/F/G are still gated.
+
+D5 evidence: 43/43 focused creator checks, 664/664 full core/web regressions, TypeScript build, browser bundle and DOM-emulated source/roster attachment/removal flow passed. Source-backed pair labels and division counts came from `scenario/play-konnect-reference/source.json`; generated row/person IDs are illustrative. The included CSV is a review fixture, not an approved roster. The two-cup control defect found in the next D inspection was handled as D6, without advancing E.
+
+## D6 — each cup has its own bracket controls
+
+Both cup cards previously opened the same main-bracket inspector. The second card now has independent bracket capacity, protected seeds, bye and rematch controls. Unset controls explicitly inherit main-cup policy; changed controls project only to the second draw policy. An impossible capacity, excessive protected seed count, or saved policy after removing the second-cup destination blocks review. Reset is an explicit revisioned command. The editor does not infer new qualifiers or certify draw placement.
+
+D6 evidence: 46/46 focused checks and 667/667 full core/web regressions passed; TypeScript build, bundle and bundled DOM interaction passed. The browser bundle verifies interaction in DOM emulation only. Current full Phase D status remains **OPEN**: no organiser-approved exact P&K format/roster confirmation and no real-browser/mobile/accessibility inspection. The Site skill's managed preview requires an unavailable `control-browser` skill, and the static Site has no compatible supervised development server. A green unit suite or deployment cannot substitute for these observations. Next allowed work remains D acceptance, not E/F/G.

@@ -4,7 +4,7 @@ Status: ACTIVE. Supersedes competing implementation sequences. Source: the user'
 
 ## Current slice and gate state
 
-Current delivery: **D4c — protected draft court locks**; see [contract](docs/D_COURT_LOCK_SLICE.md) and [D gate](docs/D_REVIEW_GATE.md). Prior bounded D slices cover revision-safe commands, membership, resource windows/durations and start locks. Full D requires complete P&K organiser acceptance and real-browser/mobile/accessibility evidence. E/F/G remain gated.
+Current delivery: **D6 — independent second-cup bracket controls**; see [contract](docs/D_SECOND_CUP_SLICE.md) and [D gate](docs/D_REVIEW_GATE.md). Prior bounded D slices cover revision-safe commands, membership, resource windows/durations, start/court locks and format/roster composition. Full D requires complete P&K organiser acceptance and real-browser/mobile/accessibility evidence. E/F/G remain gated.
 
 The required later G outcome is automatic guarded structural/schedule repair for participant, pair, pool and division changes; [G acceptance](docs/G_RECONFIGURATION_ACCEPTANCE.md) records the exact requirements. It is not an implemented creator journey.
 

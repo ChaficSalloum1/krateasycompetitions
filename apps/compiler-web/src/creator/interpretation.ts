@@ -1,6 +1,7 @@
 import { canonicalHash } from "@tournament-os/tournament-schema";
 import { ingestCreationSource } from "../creation-source-ingestion.js";
 import type { CreationSource } from "../creation-proposal.js";
+import { projectRosterSource, type RosterSource } from "./roster-source.js";
 
 export type Value = string | number | boolean | number[];
 export interface DivisionDraft {
@@ -8,6 +9,8 @@ export interface DivisionDraft {
   qualification:string|null; places:number|null; runnersUp:number|null; comparison:string|null;
   remainder:string|null; cup:string|null; secondaryCup:string|null; bracketSlots:number|null;
   protectedSeeds:number|null; byePolicy:string|null; rematches:string|null;
+  secondaryBracketSlots:number|null; secondaryProtectedSeeds:number|null;
+  secondaryByePolicy:string|null; secondaryRematches:string|null;
 }
 export interface Draft {
   title:string; sport:string|null; duration:number|null; rest:number|null; courts:number|null;
@@ -21,7 +24,7 @@ export interface Interpretation {
   unparsed:{id:string;text:string}[]; failures:string[]; revision:number; hash:string;
 }
 export interface Answers { sourceHash:string; values:Record<string,Value>; }
-const division=(label:string,id:string):DivisionDraft=>({id,label,entrants:null,format:null,poolSizes:null,qualification:null,places:null,runnersUp:null,comparison:null,remainder:null,cup:null,secondaryCup:null,bracketSlots:null,protectedSeeds:null,byePolicy:null,rematches:null});
+const division=(label:string,id:string):DivisionDraft=>({id,label,entrants:null,format:null,poolSizes:null,qualification:null,places:null,runnersUp:null,comparison:null,remainder:null,cup:null,secondaryCup:null,bracketSlots:null,protectedSeeds:null,byePolicy:null,rematches:null,secondaryBracketSlots:null,secondaryProtectedSeeds:null,secondaryByePolicy:null,secondaryRematches:null});
 export const emptyDraft=():Draft=>({title:"Untitled competition",sport:null,duration:null,rest:null,courts:null,start:null,end:null,timezone:null,scoring:null,tiebreak:null,divisions:[division("Open","division-1")]});
 export function getField(draft:Draft,path:string):unknown { return path.split(".").reduce<any>((v,k)=>v?.[k],draft); }
 export function setField(draft:Draft,path:string,value:Value):void {
@@ -31,7 +34,7 @@ export function setField(draft:Draft,path:string,value:Value):void {
 }
 const globalFields=new Set(["title","sport","duration","rest","courts","start","end","timezone","scoring","tiebreak"]);
 const divisionFields=new Set(Object.keys(division("","")));
-export function interpret(source:CreationSource,answers?:Answers,revision=1):Interpretation {
+export function interpret(source:CreationSource,answers?:Answers,revision=1,rosterSource:RosterSource|null=null):Interpretation {
   const sourceHash=canonicalHash(source),draft=emptyDraft(),roster:Interpretation["roster"]=[],facts:SourceFact[]=[],failures:string[]=[],unparsed:{id:string;text:string}[]=[];
   const claims=new Map<string,SourceFact[]>();
   const claim=(path:string,value:Value,quote:string,locator:string)=>{
@@ -120,6 +123,13 @@ export function interpret(source:CreationSource,answers?:Answers,revision=1):Int
       }
     }
   }
+  if(rosterSource){
+    if(source.mode==="csv"||source.mode==="xlsx")failures.push("ROSTER_SOURCE: Choose a format source before attaching a second roster.");
+    else {
+      const imported=projectRosterSource(rosterSource,draft.divisions,facts.length+1);
+      roster.push(...imported.roster);facts.push(...imported.facts);failures.push(...imported.failures);
+    }
+  }
   const conflicts=[...claims].filter(([,items])=>new Set(items.map(x=>JSON.stringify(x.value))).size>1).map(([path,items])=>({path,values:items.map(x=>x.value),quotes:items.map(x=>x.quote)}));
   const decisions:Decision[]=[];
   const need=(path:string,question:string,why:string,kind:Decision["kind"],options?:Decision["options"])=>{
@@ -162,6 +172,6 @@ export function interpret(source:CreationSource,answers?:Answers,revision=1):Int
   });
   for(const conflict of conflicts)if(!Object.hasOwn(applied,conflict.path))decisions.push({id:`conflict:${conflict.path}`,path:conflict.path,question:`Which value is correct for ${conflict.path}?`,why:conflict.quotes.join(" / "),kind:"choice",options:conflict.values.map(value=>({value,label:JSON.stringify(value)}))});
   for(const item of unparsed)if(applied[item.id]!=="context_only")decisions.push({id:item.id,path:item.id,question:"Does this contain a rule we still need to model?",why:item.text,kind:"choice",options:[{value:"context_only",label:"Context only — no competition rule"}]});
-  const partial={sourceHash,draft,roster,facts,decisions,conflicts,unparsed,failures,revision};
+  const partial={sourceHash,rosterSourceHash:rosterSource?canonicalHash(rosterSource):null,draft,roster,facts,decisions,conflicts,unparsed,failures,revision};
   return {...partial,hash:canonicalHash(partial)};
 }

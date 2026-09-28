@@ -30,4 +30,4 @@ Not authorised now: new platform authentication/organisation surfaces, social gr
 
 ## Current job
 
-Phase D: complete the visual creator controls and organiser acceptance. Current bounded work is [D4c court locks](docs/D_COURT_LOCK_SLICE.md); exact gate status is [D_REVIEW_GATE](docs/D_REVIEW_GATE.md). E/F/G are not admitted until preceding gates pass. A1 is completed historical work, recorded in [A1_EXIT_GATE](docs/A1_EXIT_GATE.md).
+Phase D: complete the visual creator controls and organiser acceptance. Current bounded work is [D6 independent second-cup controls](docs/D_SECOND_CUP_SLICE.md); exact gate status is [D_REVIEW_GATE](docs/D_REVIEW_GATE.md). E/F/G are not admitted until preceding gates pass. A1 is completed historical work, recorded in [A1_EXIT_GATE](docs/A1_EXIT_GATE.md).

@@ -38,5 +38,7 @@ No new core primitive is justified by presentation convenience. Phase N classifi
 | creator/membership | Projection of definition membership rules and draft plan assignments, bound to roster/pool shape | New allocation algorithm, roster admission, publication | docs/D_MEMBERSHIP_SLICE.md; creator-membership tests |
 | creator/operations | Draft resource commitment windows and duration-policy edits | Facility authority, reservations, generated schedule | docs/D_OPERATIONS_SLICE.md; creator-operations tests |
 | creator/plan-locks | Draft Plan start/court locks and necessary consistency checks | Definition semantics, solver feasibility, Reality | docs/D_LOCK_SLICE.md, docs/D_COURT_LOCK_SLICE.md; creator-locks tests |
+| creator/roster-source | Second source provenance and exact division/entrant projection into the proposed Definition | Competition rule authority, registration, approved roster | docs/D_ROSTER_COMPOSITION_SLICE.md; creator-roster-composition tests |
+| creator/second-cup controls | Local Definition decisions for secondary bracket capacity and placement policy, reusing the existing compiler | Qualification identity, approved draw, schedule, Runtime | docs/D_SECOND_CUP_SLICE.md; creator-second-cup tests |
 
 All three use CreatorSession's revision-checked commands and immutable snapshots. Successful commands clear review and append transition evidence; rejected commands commit no input/history changes. UI modules own presentation only. Their READY_FOR_REVIEW/REVIEWED states never mean LOCKED, published or Guard-certified.

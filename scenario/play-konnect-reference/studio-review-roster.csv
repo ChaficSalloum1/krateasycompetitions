@@ -1,0 +1,49 @@
+entrant_id,display_name,division_id,member_ids,seed
+advanced-1-1,Alireza Kakavand / Amir Ghoreishi,Advanced,advanced-1-1-person-1|advanced-1-1-person-2,1
+advanced-1-2,Salena Benfredj / Walid Rashid,Advanced,advanced-1-2-person-1|advanced-1-2-person-2,2
+advanced-1-3,Kieren Igbanoi / Ali Lahrichi,Advanced,advanced-1-3-person-1|advanced-1-3-person-2,3
+advanced-1-4,Rahul Chopra / Tommy,Advanced,advanced-1-4-person-1|advanced-1-4-person-2,4
+advanced-2-1,Chris Turner / Gregory Gardiner,Advanced,advanced-2-1-person-1|advanced-2-1-person-2,1
+advanced-2-2,Reuben Fernandez / Ed Rawi,Advanced,advanced-2-2-person-1|advanced-2-2-person-2,2
+advanced-2-3,Den Jerry / Jerry Arnull,Advanced,advanced-2-3-person-1|advanced-2-3-person-2,3
+advanced-2-4,Mohammed Khan / Milad Dentist,Advanced,advanced-2-4-person-1|advanced-2-4-person-2,4
+advanced-3-1,Hussain Al-Killidar / Yasin Al-Killidar,Advanced,advanced-3-1-person-1|advanced-3-1-person-2,1
+advanced-3-2,Nii Thompson / James Howell,Advanced,advanced-3-2-person-1|advanced-3-2-person-2,2
+advanced-3-3,Lee Coach / Nick,Advanced,advanced-3-3-person-1|advanced-3-3-person-2,3
+advanced-3-4,Paul Otete / Malachi,Advanced,advanced-3-4-person-1|advanced-3-4-person-2,4
+intermediate-1-1,Dan Greenway / Oliver Kramer,Intermediate,intermediate-1-1-person-1|intermediate-1-1-person-2,1
+intermediate-1-2,Billy Smith / Paul Burrows,Intermediate,intermediate-1-2-person-1|intermediate-1-2-person-2,2
+intermediate-1-3,Joe Hyslop / Jon Wood,Intermediate,intermediate-1-3-person-1|intermediate-1-3-person-2,3
+intermediate-1-4,Mark Seller / Fin Evans,Intermediate,intermediate-1-4-person-1|intermediate-1-4-person-2,4
+intermediate-2-1,Luthfi Rasheed / Hashim,Intermediate,intermediate-2-1-person-1|intermediate-2-1-person-2,1
+intermediate-2-2,Jordan Sidki / Ali G,Intermediate,intermediate-2-2-person-1|intermediate-2-2-person-2,2
+intermediate-2-3,Lee Newing / Jackson Smith,Intermediate,intermediate-2-3-person-1|intermediate-2-3-person-2,3
+intermediate-2-4,Dilan Chauhan / Max Baiden,Intermediate,intermediate-2-4-person-1|intermediate-2-4-person-2,4
+intermediate-3-1,Sina Darvish / Javad Taheri,Intermediate,intermediate-3-1-person-1|intermediate-3-1-person-2,1
+intermediate-3-2,Brian Evans / Kieran Clark,Intermediate,intermediate-3-2-person-1|intermediate-3-2-person-2,2
+intermediate-3-3,Kash Solanke / Bunmi Sangosanya,Intermediate,intermediate-3-3-person-1|intermediate-3-3-person-2,3
+intermediate-3-4,Tiam Darvish / Farzad Alsafi,Intermediate,intermediate-3-4-person-1|intermediate-3-4-person-2,4
+intermediate-4-1,Chris Worwood / Nadz,Intermediate,intermediate-4-1-person-1|intermediate-4-1-person-2,1
+intermediate-4-2,Gabe / Ben,Intermediate,intermediate-4-2-person-1|intermediate-4-2-person-2,2
+intermediate-4-3,Kassim Mirza / Khan Ahsen,Intermediate,intermediate-4-3-person-1|intermediate-4-3-person-2,3
+intermediate-4-4,Haroon Ehsan / Nick Doel,Intermediate,intermediate-4-4-person-1|intermediate-4-4-person-2,4
+intermediate-5-1,Adam Phillips / Simon Defoe,Intermediate,intermediate-5-1-person-1|intermediate-5-1-person-2,1
+intermediate-5-2,Karina Avdeyeva / Matyvey,Intermediate,intermediate-5-2-person-1|intermediate-5-2-person-2,2
+intermediate-5-3,Tengs Tengs / Ali,Intermediate,intermediate-5-3-person-1|intermediate-5-3-person-2,3
+intermediate-5-4,Nick Safi / Davin Alsafi,Intermediate,intermediate-5-4-person-1|intermediate-5-4-person-2,4
+intermediate-6-1,Ade Stripe / Gabriel Stripe,Intermediate,intermediate-6-1-person-1|intermediate-6-1-person-2,1
+intermediate-6-2,Quentin Stripe / Daniel Stripe,Intermediate,intermediate-6-2-person-1|intermediate-6-2-person-2,2
+intermediate-6-3,Jonathan Finglass / Mike Cooper,Intermediate,intermediate-6-3-person-1|intermediate-6-3-person-2,3
+beginners-1-1,Judy Chang / Fawaz Abbas,Beginners,beginners-1-1-person-1|beginners-1-1-person-2,1
+beginners-1-2,Daniel / Beverly,Beginners,beginners-1-2-person-1|beginners-1-2-person-2,2
+beginners-1-3,James Sacandoval / Jojo,Beginners,beginners-1-3-person-1|beginners-1-3-person-2,3
+beginners-1-4,Holly Mills / Sam Akinwale,Beginners,beginners-1-4-person-1|beginners-1-4-person-2,4
+beginners-2-1,Dwayne McNeil / Will Mclean,Beginners,beginners-2-1-person-1|beginners-2-1-person-2,1
+beginners-2-2,Udai / Dev Patel,Beginners,beginners-2-2-person-1|beginners-2-2-person-2,2
+beginners-2-3,Reem Al-Jasmawi / Joseph Ab,Beginners,beginners-2-3-person-1|beginners-2-3-person-2,3
+beginners-3-1,Barry Myers / Alex Malzer,Beginners,beginners-3-1-person-1|beginners-3-1-person-2,1
+beginners-3-2,Ani / Carolina,Beginners,beginners-3-2-person-1|beginners-3-2-person-2,2
+beginners-3-3,Amy Shaw / Alice Ferris,Beginners,beginners-3-3-person-1|beginners-3-3-person-2,3
+beginners-4-1,Axel / Lennon Kakavon,Beginners,beginners-4-1-person-1|beginners-4-1-person-2,1
+beginners-4-2,Valerie Reygan / Fin Watkin,Beginners,beginners-4-2-person-1|beginners-4-2-person-2,2
+beginners-4-3,Fatima Khan / Faizan Khan,Beginners,beginners-4-3-person-1|beginners-4-3-person-2,3

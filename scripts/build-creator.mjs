@@ -7,4 +7,5 @@ await build({entryPoints:["apps/compiler-web/src/creator/ui.ts"],outfile:resolve
   alias:{"node:crypto":resolve("apps/compiler-web/src/creator/browser/crypto.ts"),"node:zlib":resolve("apps/compiler-web/src/creator/browser/zlib.ts"),"@tournament-os/tournament-schema":resolve("packages/tournament-schema/src/index.ts")},
   inject:["apps/compiler-web/src/creator/browser/globals.ts"]});
 for(const file of ["index.html","creator.css"])await cp(`apps/compiler-web/src/creator/${file}`,resolve(out,file));
+await cp("scenario/play-konnect-reference/studio-review-roster.csv",resolve(out,"studio-review-roster.csv"));
 console.log(`Creator built at ${out}`);
