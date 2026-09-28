@@ -13,8 +13,18 @@ assert.match(w.document.querySelector('#overview').textContent,/1 decision neede
 assert.match(w.document.querySelector('[data-node="0:qualification"]').textContent,/1 to resolve/);
 assert.match(w.document.querySelector('#evidence').textContent,/Why these questions\? · rule coverage/);
 assert.match(w.document.querySelector('#evidence').textContent,/creator-rule-catalog\/1\.0\.0/);
+const basis=()=>w.document.querySelector('#interpretation-basis');
+assert.match(basis().textContent,/How this draft was interpreted/);
+assert.match(basis().textContent,/0 choices you made/);
+assert.match(basis().textContent,/1 open questions/);
+assert.match(basis().textContent,/working defaults/);
+assert.match(basis().textContent,/Stated in source/);
+assert.match(basis().textContent,/line:2/);
 click('#go-to-decisions');assert.ok(w.document.querySelector('#questions .question'));
 click('[data-answer="divisions.0.comparison"][data-option="0"]');assert.match(text(),/READY TO REVIEW/);
+assert.match(basis().textContent,/1 choices you made/);
+assert.match(basis().textContent,/0 open questions/);
+assert.match(basis().textContent,/Chosen by organiser/);
 assert.doesNotMatch(w.document.querySelector('[data-node="0:qualification"]').textContent,/to resolve/);
 assert.ok(w.document.querySelector('[data-node="0:bracket"]'));
 click('[data-node="0:secondary-bracket"]');
@@ -54,11 +64,13 @@ click('#remove-roster');assert.match(w.document.querySelector('#overview').textC
 const source=w.document.querySelector('#source');source.value=source.value.replace('16 pairs','18 pairs');source.dispatchEvent(new w.Event('input',{bubbles:true}));
 await new Promise(resolve=>setTimeout(resolve,320));
 assert.match(text(),/16 pool places for 18 entries/);assert.match(text(),/How should different pools be compared/);
+assert.match(basis().textContent,/0 choices you made/);assert.match(basis().textContent,/1 open questions/);
 const example=w.document.querySelector('#example');example.value='St Albans structure';example.dispatchEvent(new w.Event('change',{bubbles:true}));
 assert.equal(w.document.querySelectorAll('.division').length,3);assert.match(w.document.querySelector('#overview').textContent,/READY TO REVIEW/);
 click('#review');assert.match(text(),/Reviewed this revision/);assert.match(w.document.querySelector('#overview').textContent,/REVIEWED/);assert.match(text(),/Revision transitions/);assert.match(text(),/READY_FOR_REVIEW → REVIEWED/);
 // Malicious user text must stay text, never become executable markup.
 source.value='Title: <img src=x onerror="window.injected=true">\nSwiss league with bonus points.';source.dispatchEvent(new w.Event('input',{bubbles:true}));
 await new Promise(resolve=>setTimeout(resolve,320));assert.equal(w.injected,undefined);assert.equal(w.document.querySelector('#overview img'),null);assert.match(text(),/Does this contain a rule/);
+assert.match(basis().textContent,/unrecognised clauses/);assert.match(basis().textContent,/open questions/);
 assert.deepEqual(errors,[]);dom.window.close();
-process.stdout.write('PASS: actual bundled UI — distinct two-cup controls, source-backed roster attachment/removal, questions, cardinality rejection, undo, live text, three divisions, review, pool rules, court windows, duration overrides, start/court locks and HTML escaping. DOM emulation only; not browser layout/accessibility QA.\n');
+process.stdout.write('PASS: actual bundled UI — visible source/answer/open interpretation basis, two-cup controls, roster, questions, cardinality, undo, live text, review, pool rules, operations, locks and HTML escaping. DOM emulation only; not browser layout/accessibility QA.\n');
