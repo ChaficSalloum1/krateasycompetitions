@@ -55,4 +55,4 @@ These are navigation pointers, not verified acceptance evidence. Reconcile imple
 
 ## Scope control
 
-Current changes are documentation only. Existing runtime, UI, solver and persistence remain intact. No production configuration, deployment or prototype change belongs to A1. Technical operating instructions remain reference material to consult when needed; this reset never authorises removal of existing security or correctness protections.
+Current changes belong to Phase D, scoped by docs/D_COURT_LOCK_SLICE.md and docs/D_REVIEW_GATE.md. Draft controls reuse core producers and independent validators. They do not confer publication authority or close the E/F/G gates. A1 documentation-only restrictions describe that completed ticket. Technical operating instructions remain reference material to consult when needed; this reset never authorises removal of existing security or correctness protections.

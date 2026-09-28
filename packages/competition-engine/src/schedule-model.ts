@@ -171,7 +171,17 @@ export function compileScheduleModel(source: ScheduleModelSource): ScheduleModel
       }
     }
   }
-  const allLocks = [...source.locks, ...constraintLocks];
+  const allLocks = [...source.locks, ...constraintLocks].map(lock=>({...lock,resourceUnitIds:[...(lock.resourceUnitIds??[])]}));
+  const pinned=new Set<string>();
+  for(const constraint of source.constraints??[]){
+    if(constraint.rule!=="locked_match_resource")continue;
+    const contestId=constraint.id.startsWith("courtlock.")?constraint.id.slice(10):"";
+    const lock=allLocks.find(l=>l.contestId===contestId);
+    if(constraint.strength!=="HARD"||!contestId||!lock||pinned.has(contestId)||typeof constraint.value!=="string"||!constraint.value||(lock.resourceUnitIds.length&&!lock.resourceUnitIds.includes(constraint.value))){
+      findings.push(error("TSC412",`/scheduleModel/constraints/${constraint.id}`,"Court lock requires a unique hard resource choice and compatible explicit start lock.",{constraint:serialized(constraint) as Record<string,unknown>}));
+    }else if(!lock.resourceUnitIds.includes(constraint.value))lock.resourceUnitIds.push(constraint.value);
+    pinned.add(contestId);
+  }
   const allClosures = [...source.closures, ...constraintClosures];
 
   const duplicateContestIds = duplicates(source.contests.map(({ id }) => id));

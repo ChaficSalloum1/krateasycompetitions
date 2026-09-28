@@ -105,7 +105,22 @@ function requiredResourceRules(spec: TournamentSpec): RequiredResourceRule[] {
   });
 }
 
+function courtLockId(spec:TournamentSpec,contestId:string):string|undefined {
+  const constraint=spec.scheduling.constraints.find(c=>c.rule==="locked_match_resource"&&c.strength==="HARD"&&c.id===`courtlock.${contestId}`);
+  return typeof constraint?.value==="string"?constraint.value:undefined;
+}
+function courtLockFindings(spec:TournamentSpec,graph:CompetitionGraph):ValidationFinding[]{
+  const seen=new Set<string>(),resources=units(spec),findings:ValidationFinding[]=[];
+  for(const c of spec.scheduling.constraints.filter(c=>c.rule==="locked_match_resource")){
+    const id=c.id.startsWith("courtlock.")?c.id.slice(10):"",node=graph.nodes.find(n=>n.id===id&&n.kind==="contest");
+    const stageRule=node?requiredResourceRules(spec).find(r=>r.stageId===node.stageId&&r.round===node.round):undefined;
+    if(c.strength!=="HARD"||!node||seen.has(id)||typeof c.value!=="string"||!resources.some(r=>r.id===c.value&&r.type===node.requiredResourceType)||!Number.isFinite(lockedStarts(spec).get(id))||(stageRule&&stageRule.resourceId!==c.value))findings.push({code:"TSV412",severity:"ERROR",path:`/scheduling/constraints/${c.id}`,message:"Court lock must name one existing compatible unit and contest, have a hard start, and agree with other resource rules."});
+    seen.add(id);
+  }
+  return findings;
+}
 function requiredResourceId(spec: TournamentSpec, node: ContestNode): string | undefined {
+  const pin=courtLockId(spec,node.id);if(pin!==undefined)return pin;
   return requiredResourceRules(spec).find(({ stageId, round }) => stageId === node.stageId && round === node.round)?.resourceId;
 }
 
@@ -182,6 +197,7 @@ function alignHeadlineFinals(spec: TournamentSpec, graph: CompetitionGraph, sche
     return node?.kind === "contest" && node.round.toLowerCase() === "final" && headlineStages.has(node.stageId);
   }).sort((left, right) => left.contestId.localeCompare(right.contestId));
   for (const original of candidates) {
+    if(lockedStarts(spec).has(original.contestId))continue;
     const duration = Date.parse(original.end) - Date.parse(original.start); const targetStart = finish - duration;
     const dependencyEnd = Math.max(0, ...(dependencies.get(original.contestId) ?? []).map((id) => {
       const entry = scheduled.find(({ contestId }) => contestId === id); return entry ? Date.parse(entry.end) : Number.POSITIVE_INFINITY;
@@ -200,7 +216,7 @@ function alignHeadlineFinals(spec: TournamentSpec, graph: CompetitionGraph, sche
 }
 
 export function solveSchedule(spec: TournamentSpec, graph: CompetitionGraph): ScheduleSolution {
-  const findings: ValidationFinding[] = [];
+  const findings: ValidationFinding[] = [...courtLockFindings(spec,graph)];
   const resourceUnits = units(spec);
   const dependencies = dependencyMap(graph);
   const potentials = possibleEntrants(graph);
@@ -232,8 +248,8 @@ export function solveSchedule(spec: TournamentSpec, graph: CompetitionGraph): Sc
       continue;
     }
     while (cursor + duration <= hardLimit) {
-      chosen = resourceUnits.filter(({ type }) => type === node.requiredResourceType)
-        .find((resource) => fits(cursor, cursor + duration, resource, scheduled));
+      chosen = resourceUnits.filter(({ type,id }) => type === node.requiredResourceType && (courtLockId(spec,node.id)===undefined||id===courtLockId(spec,node.id)))
+        .find((resource) => fits(cursor, cursor + duration, resource, scheduled) && graph.nodes.filter(other=>other.id!==node.id&&other.kind==="contest"&&courtLockId(spec,other.id)===resource.id).every(other=>{const start=locks.get(other.id);return start===undefined||cursor+duration<=start||cursor>=start+minutes(durationFor(other,spec.scheduling));}));
       if (chosen || lockedStart !== undefined) break;
       cursor += minutes(5);
     }
@@ -268,7 +284,7 @@ function ancestorReady(id: string, scheduled: Map<string, ScheduledContest>, dep
 }
 
 export function validateSchedule(spec: TournamentSpec, graph: CompetitionGraph, solution: ScheduleSolution): ValidationFinding[] {
-  const findings: ValidationFinding[] = [...requiredResourceConstraintFindings(spec, graph)];
+  const findings: ValidationFinding[] = [...requiredResourceConstraintFindings(spec, graph),...courtLockFindings(spec,graph)];
   const actualNodes = graph.nodes.filter(({ kind }) => kind === "contest");
   const nodeMap = new Map(graph.nodes.map((node) => [node.id, node]));
   const scheduledMap = new Map(solution.contests.map((entry) => [entry.contestId, entry]));

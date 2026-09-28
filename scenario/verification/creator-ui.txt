@@ -1,5 +1,6 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
 
 > creator:check-ui
 > node scripts/check-creator-ui.mjs
 
-PASS: actual bundled UI — initial question, answer, visual rule edits, exact cardinality rejection, undo, live text change, stale-answer invalidation, three-division example, review, membership swaps, protected rules, court windows, duration overrides, start locks and HTML escaping. DOM emulation only; not browser layout/accessibility QA.
+PASS: actual bundled UI — initial question, answer, visual rule edits, exact cardinality rejection, undo, live text change, stale-answer invalidation, three-division example, review, membership swaps, protected rules, court windows, duration overrides, start/court locks and HTML escaping. DOM emulation only; not browser layout/accessibility QA.

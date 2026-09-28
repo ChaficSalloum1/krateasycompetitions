@@ -104,3 +104,7 @@ Inventory: 59 pre-existing documentation files; all classified. The PDF is retai
 - `docs/D_LOCK_SLICE.md`: ACTIVE bounded D4b start-lock contract and gate record.
 
 - `docs/G_RECONFIGURATION_ACCEPTANCE.md`: ACTIVE future Phase G acceptance clarification from this conversation; no permission to skip current gates.
+
+- `docs/D_COURT_LOCK_SLICE.md`: ACTIVE D4c bounded implementation and evidence contract.
+
+- `docs/D_ORGANISER_REVIEW.md`: ACTIVE pending D acceptance protocol; does not claim completion.

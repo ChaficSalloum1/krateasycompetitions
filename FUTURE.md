@@ -27,3 +27,6 @@ A3 follow-up: preserve the supported selector envelope in the new independent qu
 
 - Investigate the existing CP-SAT asynchronous test's concurrency/runtime-budget sensitivity: full suite 633/634, isolated solver 11/11. Preserve UNKNOWN semantics; never turn a timed-out search into a fabricated feasible result.
 - Full Phase D requirements remain in docs/D_REVIEW_GATE.md as current gate work, not deferred optional features. Do not advance E/F on the strength of a visual review milestone.
+
+- F adapter work: graph-to-CP-SAT currently rejects projected start/court locks (`TSQ102`). D4c proves the legacy scheduler/independent validator and normalized typed model handle supported pins, and proves the CP-SAT adapter rejects them instead of ignoring them. F must join explicit Plan locks to its production solver adapter.
+- F solver-status audit: legacy deterministic list scheduling labels search failure INFEASIBLE without exhaustive proof. Existing audit-import protection is not a fix to the producer. Reconcile this before F can certify solver evidence; no schedule-search status is exposed by the D creator.
