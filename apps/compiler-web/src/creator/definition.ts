@@ -110,6 +110,7 @@ export function compileInterpretation(proposal:Interpretation,membership:Members
   catch(error){return {status:"BLOCKED" as const,findings:[...findings,{code:"PLAN_LOCK_INVALID",path:"planLocks",message:String(error instanceof Error?error.message:error)}],spec:null,graph:null,validation:[] as ValidationFinding[]};}
   if(locks.length){
     definition.scheduling.constraints.push(...locks.map(lock=>({id:`lock.${lock.contestId}`,rule:"locked_match_start",strength:"HARD" as const,value:lock.start})));
+    definition.scheduling.constraints.push(...locks.filter(lock=>lock.resourceUnitId!==undefined).map(lock=>({id:`courtlock.${lock.contestId}`,rule:"locked_match_resource",strength:"HARD" as const,value:lock.resourceUnitId!})));
     spec=compileDefinition(definition,{...spec.metadata,specId:"creator.draft",revision:proposal.revision,schemaVersion:"1.0.0",compilerVersion:"1.0.0-creator",rulesetVersions:{padel:"1.0.0",competition:"1.0.0"},sourcePrompt:proposal.sourceHash,createdAt:"2026-09-27T00:00:00Z"}) as TournamentSpec;
   }
   const validation=validateTournamentSpec(spec);

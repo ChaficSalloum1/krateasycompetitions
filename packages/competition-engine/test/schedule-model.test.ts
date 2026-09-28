@@ -143,3 +143,12 @@ test("semantically equivalent source ordering produces the same proof", () => {
   assert.equal(second.valid, true);
   assert.equal(first.proofHash, second.proofHash);
 });
+
+test('court constraint adapter retains exact unit, rejects missing start, unknown unit, duplicate and conflicting pins',()=>{
+ const input=source();input.contests=input.contests.map(c=>({...c,requirements:c.requirements.filter(r=>r.resourceType==='court')}));
+ const start={id:'lock.SF',rule:'locked_match_start',strength:'HARD' as const,value:'2026-09-05T10:00:00Z'};
+ const pin={id:'courtlock.SF',rule:'locked_match_resource',strength:'HARD' as const,value:'court-1'};
+ input.constraints=[start,pin];const valid=compileScheduleModel(input);assert.equal(valid.valid,true);if(valid.valid)assert.deepEqual(valid.model.locks[0]!.resourceUnitIds,['court-1']);
+ for(const constraints of [[pin],[start,{...pin,value:'missing'}],[start,pin,pin],[start,{...pin,strength:'SOFT' as const}],[start,{...pin,id:'wrong.SF'}]])assert.equal(compileScheduleModel({...input,constraints}).valid,false);
+ assert.equal(compileScheduleModel({...input,constraints:[pin],locks:[{contestId:'SF',start:'2026-09-05T10:00:00Z',resourceUnitIds:['other']}]}).valid,false);
+});

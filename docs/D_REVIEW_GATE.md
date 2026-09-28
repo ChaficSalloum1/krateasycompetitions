@@ -25,9 +25,9 @@ Implemented in sequential bounded slices:
 
 1. **D1 membership:** exact roster-bound pool swaps; together/separate definition constraints; core allocation validates coverage, sizes and constraints. Named CSV roster labels/member identities remain intact. Stale assignments remain visible and block review.
 2. **D4a operations:** individual court windows including later openings and breaks; stage/round contest duration and turnaround overrides in the canonical spec. Invalid or stale inputs cannot silently clear saved rules.
-3. **D4b draft plan starts:** exact contest/ancestry/roster-bound start locks; explicit unlock; availability, dependency lower bound, concurrent court capacity and possible-entrant rest checks. These are necessary checks on locks, not a full schedule feasibility certificate. Fixed court pinning is not implemented.
+3. **D4b draft plan starts:** exact contest/ancestry/roster-bound start locks; explicit unlock; availability, dependency lower bound, concurrent court capacity and possible-entrant rest checks. These are necessary checks on locks, not a full schedule feasibility certificate. D4c now adds optional fixed-court pinning; see its contract and latest evidence below.
 
-Still required: the organiser acceptance journey reproducing complete P&K format; real-browser/mobile/accessibility review; fixed-court pinning adapter if required by that acceptance. No full D gate is claimed. E/F remain gated. The existing runtime or scheduler implementations are not evidence that their programme gates have passed.
+Still required: the organiser acceptance journey reproducing complete P&K format and real-browser/mobile/accessibility review. No full D gate is claimed. E/F remain gated. The existing runtime or scheduler implementations are not evidence that their programme gates have passed.
 
 ## Scope of source understanding
 
@@ -41,7 +41,7 @@ Implemented under [D_COMMAND_SLICE](D_COMMAND_SLICE.md). The draft aggregate now
 
 Evidence: `scenario/verification/phase-d-commands.txt` — 19 focused tests pass, including stale/duplicate/malformed commands, unchanged state on rejection, full command replay, detached snapshots and a duplicate-roster graph counterexample. TypeScript and browser bundle builds pass. Updated DOM-emulated UI check passes, including the REVIEWED state and visible transition history. No new full-suite or real-browser claim is made.
 
-This bounded integrity slice passes. Full D remains open for the four requirements above. That was the prior handoff. The three subsequent D slices above now cover membership, individual windows/durations and protected start locks; E is still gated.
+This bounded integrity slice passes. Historical handoff: full D remained open for the requirements above. The three subsequent D slices above now cover membership, individual windows/durations and protected start locks; E is still gated.
 
 ## Latest integrated verification — D1 / D4a / D4b
 
@@ -49,3 +49,23 @@ This bounded integrity slice passes. Full D remains open for the four requiremen
 - 33/33 focused creator tests passed on the final implementation (`phase-d-integrated.txt`). This includes an additional malformed-membership regression added after the broader run began; that final defensive check was verified by the focused run, not represented as a 653-test full-suite rerun.
 - TypeScript build, browser bundle and actual bundled DOM interaction flow passed. The UI flow covers questions, pool swaps/constraints, court windows, duration overrides, start lock/unlock, invalid edits, undo, live source changes, review state and escaping. It remains DOM emulation, not browser visual/accessibility evidence.
 - Start locks are necessary constraints only. No schedule was generated or certified, no competition was published, no production P&K data was changed, and no E/F gate was entered.
+
+
+## D4c — current court-lock acceptance
+
+Court pinning is implemented in [D_COURT_LOCK_SLICE](D_COURT_LOCK_SLICE.md). Draft Plan owns exact contest/time/unit locks; Definition retains resource windows. Removing a court or changing semantics cannot silently unpin a contest. Rejected commands commit nothing; undo and replay retain exact input lineage.
+
+The existing list scheduler respects and reserves pinned courts; independent schedule validation rejects altered assignments. The normalized typed schedule model retains explicit lock units. The separate graph-to-CP-SAT adapter **rejects** these projected locks with TSQ102: its integration remains Phase F work, not an inferred capability.
+
+The Sites managed-preview instructions require `control-browser`, which is absent from the installed skill catalog; static assets also have no compatible supervised development server. No alternative browser path was improvised. Bundled DOM checks cover interactions only. This does not block publishing the review prototype, but does leave real-browser/mobile/accessibility acceptance open.
+
+Next allowed work: [D organiser review](D_ORGANISER_REVIEW.md) and browser evidence. E/F/G remain gated; participant/pair/pool/division automatic schedule repair is still the future G acceptance outcome, not implemented by court locks.
+
+## D4c verification — 2026-09-28
+
+- `npm run build`, `npm run creator:build`, and `npm run creator:check-ui`: passed. The actual Site-bound bundle also passed `node scripts/check-creator-ui.mjs /workspace/sites/krateasy-core-evidence/dist`.
+- `node --import tsx --test apps/compiler-web/test/creator-*.test.ts packages/competition-engine/test/schedule-model.test.ts`: **47/47**, zero failures (`scenario/verification/phase-d-court-locks.txt`).
+- `TOURNAMENT_OS_CP_SAT_PYTHON=/workspace/scratch/b4b1b247a24a/core-solver-env/bin/python node --import tsx --test --test-concurrency=2 packages/*/test/*.test.ts apps/*/test/*.test.ts`: **658/658**, zero failures, 95.5 seconds (`phase-d-court-regression.txt`). Node 24.19.0; Python 3.12.14; OR-Tools 9.15.6755.
+- Earlier environment-failure run retained in `phase-d-court-runtime-missing.txt`: 631/656 passed, 25 failed because the restored virtual environment lacked its `bin/python3` executable. Recreated the interpreter using `python3 -m venv --upgrade`; verified the pinned OR-Tools import; reran the complete suite. Two additional focused regression cases were added before that final broad run. No solver expectations were weakened.
+
+D4c bounded gate passes. This is draft/editor/adapter evidence, not full D organiser acceptance, schedule feasibility for every input, production authority, or E/F/G completion.

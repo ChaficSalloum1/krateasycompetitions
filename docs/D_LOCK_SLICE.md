@@ -14,3 +14,5 @@ EXIT GATE: Focused adversarial and integrated UI checks pass; full D still await
 
 GATE EVIDENCE: 33 focused creator/model tests pass across all three slices, including five lock scenarios. TypeScript and bundle builds pass. The actual bundled DOM flow exercises lock/unlock alongside membership swaps/rules, court windows, duration overrides, undo and review. Full D remains unclaimed. A malformed membership payload discovered during integration was rejected as a required invariant fix; no feature scope was added.
 Broad regression: 652/652 pass; final focused run 33/33 including the late malformed-membership guard. See D_REVIEW_GATE for exact timing/scope. D4b bounded gate passes; next allowed work is remaining D fixed-court adapter/organiser/browser acceptance, not E.
+
+Successor: D4c now implements optional court pins; the fixed-court non-goal above describes D4b only. Current status is D_REVIEW_GATE.md.

@@ -1,0 +1,1118 @@
+✔ the default web portfolio lists only authoritative journey records and isolates the demo (12.322987ms)
+✔ production fails closed instead of serving reference UI or compiler demo truth (1.563916ms)
+✔ the connected St Albans journey closes, exports, restores and duplicates without another truth (28045.388921ms)
+✔ closure restore rejects forged artifacts, cross-organisation scope and stale identity (0.468186ms)
+✔ one durable journey creates, compiles, Guards, approves, and reopens the same authoritative revision (539.228353ms)
+✔ the journey fails closed outside its declared milestone envelope (1.354311ms)
+✔ the public source boundary rejects proposer-owned Guard artefacts (0.350078ms)
+✖ an HTTP compile solves off the event loop and yields the same plan as a direct compile (68.110109ms)
+✖ a prepared result is never trusted: a tampered one cannot become a plan, a stale one is ignored (15.663705ms)
+✔ plain language produces the same explicit blueprint used by structured entry (10.896597ms)
+✔ JSON and quick setup share one strict normalisation and validation boundary (0.802419ms)
+✔ YAML uses the same blueprint normalisation without executable semantics (5.971878ms)
+✔ missing and contradictory scheduling facts remain visible and block compilation (0.58408ms)
+✔ connected generic formats require explicit registered semantics and timezone (7.341411ms)
+✔ connected plain language captures explicit policies and civil-time authority (2.237611ms)
+✔ structured local civil times are resolved in the declared timezone (2.707249ms)
+✔ authority injection is rejected without a partial draft (0.242506ms)
+✔ long organiser descriptions remain reviewable within the bounded source intake budget (1.289032ms)
+✔ canonical web product separates the lifecycle from the advanced workbench (0.353904ms)
+✔ YAML normalises into the existing St Albans workbench while preserving exact source text and hash (122.602706ms)
+✔ CSV roster evidence converges field by field and a disagreement blocks compilation (25.66552ms)
+✔ unsafe CSV and XLSX files are quarantined without contributing facts (4.902065ms)
+✔ a real XLSX entrant sheet preserves the original bytes and corroborates the canonical roster (15.445221ms)
+✔ the API source boundary rejects extra fields, invalid XLSX bytes and oversized text (2.032923ms)
+✔ malicious YAML aliases, duplicate roster identities and active XLSX content fail closed (10.769301ms)
+✔ multi-source originals, hashes and provenance replay identically after restart (124.256322ms)
+✔ the connected creator previews and saves imports through the authoritative journey (105.352732ms)
+✔ a primary definition and corroborating roster enter one atomic, hash-preserving draft (15.591691ms)
+✖ the connected web draft appends a generic roster into the same authoritative workbench (51.044812ms)
+✔ D commands: stale, blocked and malformed commands leave the complete draft unchanged (25.727933ms)
+✔ D commands: duplicate delivery is idempotent and conflicting reuse is rejected (33.414684ms)
+✔ D commands: exact revision review, blocked edits, monotonic undo and deterministic replay (47.961412ms)
+✔ D commands: returned snapshots cannot mutate draft truth or committed evidence (8.019252ms)
+✔ D readiness includes graph failures instead of only definition findings (2.260776ms)
+✔ C: Pools to cups becomes the same canonical definition type (42.47433ms)
+✔ C: Knockout becomes the same canonical definition type (3.117147ms)
+✔ C: Round robin becomes the same canonical definition type (1.741124ms)
+✔ C: St Albans structure becomes the same canonical definition type (15.757681ms)
+✔ undefined best-runners-up comparison is an open decision, never inferred (0.630009ms)
+✔ conflicts and unrecognised restrictions stay visible; source changes invalidate answers (1.322543ms)
+✔ JSON/YAML share the draft contract and preserve unsupported properties as questions (7.30077ms)
+✔ CSV entrants are facts, not invented format or rules (0.996061ms)
+✔ ten qualifiers into eight slots gives the exact missing-destination counterexample (0.900387ms)
+✔ top N in each pool translates to per-position selectors, not a global top-N (6.860357ms)
+✔ D4b: start lock stays plan-owned, projects a hard scheduler input, invalidates review and replays (55.872982ms)
+✔ D4b: forged identity, malformed time, outside windows and premature final reject atomically (9.861158ms)
+✔ D4b: structural edits cannot silently retarget locks; incompatible duration blocks until undo (12.592181ms)
+✔ D4b: overlapping locks beyond court capacity reject without changing the first lock (6.077477ms)
+✔ D4b: same entrant locked before minimum rest is rejected (10.285046ms)
+✔ D4c: court pins are exported, independently checked, undoable and replayable (14.671646ms)
+✔ D4c: unknown, closed and double-booked courts reject atomically; different courts work (27.120381ms)
+✔ D1: pool swap preserves identities and exact sizes, then replay reproduces graph (83.456942ms)
+✔ D1: protected together/separate constraints reject violating swap atomically (24.947948ms)
+✔ D1: stale membership stays visible and blocks review until explicit clear or undo (32.020173ms)
+✔ D1: duplicate/foreign entries, malformed rule and forged basis cannot commit (33.376597ms)
+✔ D1: named imported roster survives pool editing without synthetic identities (23.850425ms)
+✔ D1: malformed membership payload cannot omit the policy boundary (12.72305ms)
+✔ D4a: individual windows and stage/round durations reach canonical spec with exact replay (45.397639ms)
+✔ D4a: bad windows, duplicate courts, nonexistent rounds and invalid durations reject atomically (13.797598ms)
+✔ D4a: changed court count preserves overrides and blocks rather than silently discarding (9.251059ms)
+✔ D: text → question → live structure → invalid rule → undo → review invalidation (78.787202ms)
+✔ browser hash implementation is byte-identical to server for unicode and canonical-sized inputs (3.678959ms)
+✔ browser XLSX decompression matches bytes and enforces expansion boundary (1.634136ms)
+✔ an imported roster retains exact identities and cannot be silently resized (2.383201ms)
+✖ every product page uses the one design system and none defines its own palette, font or accent (46.507121ms)
+✖ organiser pages share one navigation, marking the current place and linking one competition's routes (12.622209ms)
+✖ routes that do not apply yet are named but not linked, so the navigation never changes shape (9.093305ms)
+✖ public and participant pages never expose organiser routes (8.302127ms)
+✔ reference demo pages carry the visible demo label before anything else (4.482827ms)
+✖ every competition shows one truthful, worded state instead of an internal code (8.740546ms)
+✔ the portfolio has explicit empty, failure and permission states and never falls back to demo data (1.395667ms)
+✖ each competition offers one next step, derived from its state and routed to where that step happens (10.657857ms)
+✖ a question the workbench repeats as a missing decision is counted once (8.493924ms)
+✖ the portfolio links each competition's name to its Studio and its button to the next step (7.839612ms)
+✖ Harbour Six-Pair Round Robin uses the same authoritative lifecycle without fixture code (61.738647ms)
+✖ Northside Eight-Pair Knockout uses the same authoritative lifecycle without fixture code (12.427732ms)
+✔ advertised but unconnected semantics remain explicit and fail closed (2.8545ms)
+✔ generic rosters fail closed on cardinality, identity, shape, seed and cross-source conflicts (8.276878ms)
+✖ restart independently rejects a re-hashed generic workbench roster forged away from its source (10.957957ms)
+✔ generic compilation fails before candidate publication when the pinned solver is unavailable (7.188794ms)
+✔ a St Albans court outage is server-planned, independently Guarded, approved, published and replayed (1061.790516ms)
+✔ court-outage requests fail closed on forged repair or Guard artefacts (251.488691ms)
+✔ an in-progress St Albans overrun preserves actual truth and publishes a guarded downstream repair (1069.67318ms)
+✔ delay proposals reject non-live contests, stale heads and client-owned artefacts (211.139364ms)
+✔ a no-show preserves actual truth, Guards deterministic options, and publishes only affected updates (801.082106ms)
+✔ no-show proposals replay deterministically and stale live truth cannot be approved (382.487736ms)
+✔ live command replay is idempotent and the connected boundary rejects privileged or repair-bypassing input (209.395541ms)
+✔ Run Control projection exposes only runtime-owned fixture sides and attention queues (193.087777ms)
+✔ restart independently rejects a re-hashed envelope with a forged live event (303.216928ms)
+✔ the connected HTTP journey previews and separately approves a server-owned live repair (394.437815ms)
+✔ actual St Albans results resolve knockout identities and replay without trusting the planning simulation (11337.525528ms)
+✔ server signs one scoped offline pack from the exact published revision and operational head (381.745315ms)
+✔ offline packs fail closed for stale, cross-organisation, unpublished, expired, and forged inputs (249.093432ms)
+✔ the printable St Albans fallback is generated only from the signed exact-revision pack (359.293869ms)
+✔ offline pack replay is deterministic across restart and HTTP accepts revision identity plus expiry only (337.778344ms)
+✔ St Albans safety stop freezes starts/publication, updates every projection atomically, and restarts with two clearances (1173.2722ms)
+✔ the connected operational boundary owns actors/messages and rejects stale or client-owned authority (549.782329ms)
+✔ life-safety stop is immediate, role-bound, typed and deterministically replayable (38.275723ms)
+✔ forged authority, stale heads, free-form public messages and command reuse fail closed (0.755388ms)
+✔ restart requires distinct safety and competition clearances and incident-lead authority (2.118923ms)
+✔ command transfer is explicit, evidence-bound and immediately changes the active authority (0.408526ms)
+✔ participant access rotates and revokes with idempotent restart-safe evidence (608.10645ms)
+✔ generic event recovery is opaque, exact-head bound and rate limited (287.669727ms)
+✔ signed participant and public projections change only where an approved no-show repair has impact (2097.873865ms)
+✔ participant access fails closed before authoritative publication and live activation (5.638971ms)
+✔ targeted projection delivery is atomic, retryable, and retains provider evidence across restart (861.095448ms)
+✔ install-free HTTP projections use opaque access and never fall back to the mutable rehearsal singleton (262.255659ms)
+✔ participant token expiry is judged by the journey's injected clock, never the machine date (243.011264ms)
+✔ a server refuses a second clock beside an injected journey instead of trusting them to agree (0.329477ms)
+✔ connected control-room commands append call, score, finish, correction, and post-repair actual truth (827.982239ms)
+✔ restart rejects a re-hashed live publication that suppresses affected projection recipients (494.806749ms)
+✔ every connected live-information surface carries the pilot accessibility contract (3.165352ms)
+✔ dynamic status and dense information have explicit names and announcements (0.4974ms)
+✔ the closed-edition control is accessible and submits only authoritative closure identity plus new facts (1.766253ms)
+✔ the draft roster control is accessible, reversible and submits source data only (0.173131ms)
+✔ the organiser lifecycle control sends only authoritative revision commands (0.220983ms)
+✔ pilot surface colour pairs meet WCAG AA normal-text contrast (0.293332ms)
+✔ the pilot compares only valid schedules and recommends the lowest operational blast radius (4.289206ms)
+✔ the Studio presents the complete golden journey with explicit decisions and responsive guardrails (0.314043ms)
+✔ the demo boundary exposes the pilot journey and governed actions (737.250461ms)
+✔ the pilot moves from approved draft to certified publication and a two-person live repair (535.875992ms)
+✔ PostgreSQL coordination atomically consumes hashed tenant rate-limit buckets (2.539419ms)
+✔ PostgreSQL webhook replay claims are atomic and fenced by their hashed claim expiry (1.142793ms)
+✔ PostgreSQL coordination rejects weak key hashing and invalid tenants (0.482868ms)
+✔ production host configuration is fail-closed and contains no credential values (1.740553ms)
+✔ production host loads deployment adapters without applying migrations and closes every dependency once (2.872129ms)
+✔ production host rejects an adapter without explicit durable persistence (0.475207ms)
+✔ production host fails closed without the authoritative publication artifact resolver (0.189886ms)
+✔ operator commands require a trusted principal and inject server-owned authority (5.329954ms)
+✔ command requests enforce media type, byte limits, idempotency, and an exact discriminated schema (1.766192ms)
+✔ pilot publication forwards only identity, expected revision, and acknowledgements (1.610998ms)
+✔ JSON field budgets reject pathological nesting, arrays, keys, and strings (0.89583ms)
+✔ all authenticated operator traffic is rate limited per tenant and principal (1.285007ms)
+✔ webhooks require a fresh valid signature, reject replay, and inject the configured tenant (2.1161ms)
+✔ webhook claims are atomic while processing and released when the receiver fails (1.339219ms)
+✔ production composition refuses process-local coordination stores (0.697652ms)
+✔ production runtime binds PostgreSQL persistence and a verified principal to one organisation (5.126428ms)
+✔ production runtime refuses an in-memory store and an invalid tenant (0.801378ms)
+✔ production runtime refuses process-local rate-limit and webhook replay stores (0.34448ms)
+✔ production runtime applies bounded HTTP defaults and closes persistence exactly once (0.892235ms)
+✔ production runtime validates and applies explicit HTTP limits (0.551441ms)
+✔ derived dependency fixtures collapse under the first unresolved actionable cause (1.81121ms)
+✔ root causes rank by operational urgency, then affected scope, with contextual actions (0.424991ms)
+✔ unsupported dependency cycles fail visibly into non-mutating technical evidence (0.319591ms)
+✔ only supported exact incident causes enter Change Review (0.235515ms)
+✔ Run Control exposes contextual controls while keeping stable identities in technical evidence (0.890132ms)
+✔ routed parser exposes the existing result receipt command with an exact payload (0.661567ms)
+✔ published and closed Studio wording keeps canonical truth ahead of historical provenance (0.369377ms)
+✔ live audit HTTP boundary runs the core and rejects forged, stale and malformed requests (757.838201ms)
+✔ simple-knockout: real pipeline records all boundaries and independently passes (26.117631ms)
+✔ simple-knockout: corrupt qualification is independently localised and stops downstream (2.063821ms)
+✔ simple-knockout: corrupt draw is independently localised and stops downstream (4.827137ms)
+✔ simple-knockout: corrupt schedule is independently localised and stops downstream (3.74172ms)
+✔ six-pair-round-robin: real pipeline records all boundaries and independently passes (21.049642ms)
+✔ six-pair-round-robin: corrupt qualification is independently localised and stops downstream (1.913534ms)
+✔ six-pair-round-robin: corrupt draw is independently localised and stops downstream (2.964219ms)
+✔ six-pair-round-robin: corrupt schedule is independently localised and stops downstream (4.063355ms)
+✔ play-konnect-reference: real pipeline records all boundaries and independently passes (281.570354ms)
+✔ play-konnect-reference: corrupt qualification is independently localised and stops downstream (32.284568ms)
+✔ play-konnect-reference: corrupt draw is independently localised and stops downstream (41.646635ms)
+✔ play-konnect-reference: corrupt schedule is independently localised and stops downstream (104.805612ms)
+✔ historical source and test decisions are disclosed, not passed off as played outcomes (110.533646ms)
+✔ missing required source field stops at Definition rather than fabricating a graph (0.987639ms)
+✔ altered output, stale boundary revision and reordered evidence fail integrity checks (5.740363ms)
+✔ independent qualifier verifier rejects coherent forged selection and unsupported semantics (105.759553ms)
+✔ a rejected imported schedule is UNKNOWN, never a proof of global infeasibility (89.970918ms)
+✔ the untrusted St Albans source is preserved and explained without accepting its audit claims (10.06332ms)
+✔ structured decisions show impact before converging on one guarded 108-fixture definition (251.005526ms)
+✔ multiple original sources retain their hashes and provenance while disagreements block convergence (20.193972ms)
+✔ structured edits fail closed on unregistered policy values and a changed preview (3.41664ms)
+✔ Structure Map and its hash-bound proposal are server-derived, stale-safe, and replay-safe (271.900236ms)
+✔ structure review derives explicit zero deltas when both canonical definitions are available (7.945577ms)
+✔ golden compilation is deterministic and never trusts forged source audit claims (353.879657ms)
+✔ missing contests and a forged final-court assignment fail closed before compilation (5.3344ms)
+✔ the AI-free golden journey publishes one exact revision and replays it after restart (263.442871ms)
+✔ INVALID_EDGE stays attached to stable edge advanced.qual.main and renders in Organiser Studio (1.779012ms)
+✔ INCOMPLETE_EDGE stays attached to stable edge intermediate.qual.main and renders in Organiser Studio (0.532182ms)
+✔ CONSEQUENTIAL_EDGE stays attached to stable edge beginner.qual.consolation and renders in Organiser Studio (0.328265ms)
+✔ a complete structure with no qualification edges is not labelled incomplete (0.511611ms)
+✔ studio exposes the core organiser jobs with responsive accessibility affordances (1.861325ms)
+✔ install-free player view makes the next match the dominant job (0.268595ms)
+✔ participant and public surfaces consume authoritative revision-scoped projections (0.312962ms)
+✔ Run Control keeps guarded Change Review inside the existing live-operation surface (0.51056ms)
+✔ workspace publishes the evidence-derived capability truth ledger beside certification (417.767698ms)
+✔ studio server is constructible and its workspace data comes from the certified engine (356.78345ms)
+✔ production API fails closed without identity while readiness stays explicit (1.018175ms)
+✔ injected production authorization protects API routes and enables readiness (0.213202ms)
+✔ registered organiser language becomes a cited, non-executable plan proposal (4.288714ms)
+✔ unknown constraints require clarification and cannot produce a plan (0.559123ms)
+✔ unsupported clauses cannot hide beside a recognized fact in the same sentence (0.393172ms)
+✔ missing qualification values and contradictory facts fail closed for clarification (0.673555ms)
+✔ authority injection is rejected without leaking a partial plan (0.246341ms)
+✔ the public interpret API payload boundary returns the hardened proposal envelope (0.33174ms)
+✔ JSON request reading rejects declared and streamed oversized bodies before parsing (3.081895ms)
+✔ server routes raw production commands through the hardened pilot boundary (3.68213ms)
+✔ the versioned client API projects one certified server truth model without client-side competition logic (704.285962ms)
+✔ the HTTP route projection exposes the v1 read contract consumed by the Apple client (1388.735646ms)
+✔ connected v1 tournament reads never fall back to reference-demo truth (2.376251ms)
+✔ the Studio platform demo is a real multi-club portfolio and accepts idempotent tournament creation (509.397705ms)
+✔ a completed result becomes effective tournament truth without mutating the prior ledger (8.946403ms)
+✔ a walkover is scoreless and deterministically awards the opponent (0.341104ms)
+✔ a withdrawal fails closed when its outcome policy is unspecified (0.443649ms)
+✔ corrections preserve lineage and only supersede the current effective event (0.500704ms)
+✔ voids remain explicit truth and the independent proof detects tampering (0.826886ms)
+✔ the public publication command rejects every client-provided artifact field (711.607092ms)
+✔ server-owned artifacts with a coordinated missing contest are blocked by an independent Guard run before approval (596.32366ms)
+✔ stale revisions and mismatched artifact hashes fail before publication (536.833652ms)
+✔ a valid artifact set changed after approval is stale until the exact set is approved again (659.768008ms)
+✔ cross-organisation artifacts and self-approval fail closed (948.569499ms)
+✔ acknowledgements must match exactly and a duplicate command replays once across platform restarts (1441.956409ms)
+✔ publishes an explicit least-privilege role-to-capability policy (1.428252ms)
+✔ denies unknown capabilities and role escalation by default (0.284108ms)
+✔ fails closed across tenants even when the role grants the capability (0.136776ms)
+✔ permits a granted capability only within the principal tenant and audits the decision (0.277538ms)
+✔ requires distinct actors across compile, certify, publish, and override (0.259121ms)
+✔ denies privileged workflow actions when required provenance is absent (0.221163ms)
+✔ redacts nested credentials and credential-shaped strings without mutating input (0.598662ms)
+✔ surfaces summary status and every finding with accessible labels (8.733242ms)
+✔ presents rules, assumptions, and requirement coverage without dropping provenance (1.507062ms)
+✔ builds graph paths, schedule timeline/utilisation, dry-run metrics, and navigable proofs (1.168451ms)
+✔ bounded verification executes every Cartesian case in deterministic order and certifies only complete success (2.517294ms)
+✔ metamorphic checks prove harmless transformations preserve observable tournament truth (0.434044ms)
+✔ a bounded run reports UNKNOWN instead of certifying a partially explored space (0.177197ms)
+✔ violations reject the space with concrete deterministic counterexamples (0.562638ms)
+✔ canonical conformance fixtures close every declared ledger primitive exactly once (2.967442ms)
+✔ all 16 canonical fixtures execute through their real primary path with deterministic replay (319.202821ms)
+✔ the entire audit is byte-deterministic across fresh transactional stores (433.766327ms)
+✔ missing primary evidence rejects ledger closure instead of silently shrinking the audit (158.334381ms)
+✔ capability levels are derived from executable evidence rather than schema declarations (3.114864ms)
+✔ the Competition Guard binds a passing report to the exact proposed definition and artefacts (417.091501ms)
+✔ the Guard publishes a deterministic six-level severity and override policy (1.16802ms)
+✔ historical Guard reports stay readable but require current revalidation (302.871931ms)
+✔ the publication change set deterministically exposes semantic and operational revision impact (344.765526ms)
+✔ a publication certificate binds the passing Guard report and explicit operational acknowledgements (377.885461ms)
+✔ the Guard independently binds the complete schedule artefact instead of trusting a stored solver hash (390.515994ms)
+✔ the Guard blocks a graph that is not derived from the supplied compiled specification (340.676858ms)
+✔ the Guard blocks a source definition mismatch and will not issue a certificate (361.215341ms)
+✔ a schedule with a missing required contest is blocked before publication (287.634037ms)
+✔ the Guard blocks a coordinated graph and schedule omission even when proposer counts agree (309.161714ms)
+✔ the Guard independently rejects a count-preserving advancement-path mutation (322.977573ms)
+✔ the Guard independently rejects forged opening draws and qualification dependencies (300.423143ms)
+✔ certificate acknowledgements are exact and tampering is detectable (283.364434ms)
+✔ the read-only critic certifies fully mapped and proven requirements (2.7666ms)
+✔ a lost source requirement remains visible and blocks certification (0.322987ms)
+✔ overall compilation of a per-pool requirement is failed as quantifier drift (0.574807ms)
+✔ approved soft relaxation is visible but non-blocking while hard relaxation blocks (0.711112ms)
+✔ unsupported assumptions and missing proof facts remain unresolved (11.096927ms)
+✔ failed proof facts supply concrete counterexamples (0.349477ms)
+✔ mutually exclusive duplicate destinations block every affected requirement (0.475196ms)
+✔ input ordering cannot change critic findings or proof hash (0.43797ms)
+✔ the invariant firewall permits a reset only when the declared source slot won (1.229202ms)
+✔ malformed, self-referential, and nested conditional graphs fail closed before simulation (0.807808ms)
+✔ an unavailable CP-SAT runtime fails closed as UNKNOWN rather than infeasible (13.361501ms)
+✖ CP-SAT matches the exact solver objective and returns independently certified no-overlap evidence (8.440313ms)
+✖ CP-SAT and the exact solver agree with precedence, calendars, closures, locks, and participant rest (2.802044ms)
+✖ only an exhausted CP-SAT proof becomes INFEASIBLE; bounded or version-drift runs stay UNKNOWN (2.014687ms)
+✖ the published tested scale envelope is backed by an executed 128-task deterministic fixture (4.900637ms)
+✔ an invalid cyclic model is UNKNOWN and can never masquerade as proven infeasible (0.31182ms)
+✔ a worker claim is never certified until the TypeScript boundary independently validates it (61.166658ms)
+✖ the CP-SAT readiness probe is healthy only when the pinned backend solves its known model (3.594308ms)
+✖ the worker never publishes a feasible answer that the wall-time safety cap cut short (1.928357ms)
+✖ solveAsync returns the same schedule as solve without blocking the event loop (7.791224ms)
+✔ a presolved result is replayed only for a problem with the same content (5.901966ms)
+✔ canonical ranking-points policy executes through the primary qualification path (18.67496ms)
+✔ generic and score thresholds compile from canonical selector configuration (2.878798ms)
+✔ percentage and elapsed-time selectors retain explicit metric semantics (2.955503ms)
+✔ aggregate and best-N runner-up policies map metric expressions without sport branches (2.589092ms)
+✔ approved wildcard and host selectors bind authority while remainder stays sequential (2.826749ms)
+✔ multiple policies append into one destination with stable global seeds (1.154078ms)
+✔ global exclusions are intersected with each source-stage candidate universe (1.019556ms)
+✔ cutoff tie policies reject ambiguity, deterministically break it, or explicitly include every tied candidate (2.48217ms)
+✔ authority tampering, unavailable metrics, and incompatible selector families fail closed (2.033644ms)
+✔ a later policy failure rolls back the entire shared destination without partial evidence (2.432135ms)
+✔ schema/config mismatches are rejected before execution (0.701397ms)
+✔ ranking points select an exact field with an explicit deterministic cutoff policy (13.200411ms)
+✔ elapsed time ranks lower finite values first without sport-specific logic (0.583449ms)
+✔ a generic threshold selects every candidate satisfying its declared comparison (0.642247ms)
+✔ a score threshold is first-class while using the generic metric evaluator (0.617861ms)
+✔ percentage qualification derives a bounded ratio instead of comparing raw totals (0.674687ms)
+✔ aggregate qualification ranks a declared weighted metric expression (0.745183ms)
+✔ best-N can restrict comparison to runner-ups across groups (0.608326ms)
+✔ wildcard and host places require named authority whose approval binds the selected ids (0.858574ms)
+✔ selectors execute sequentially and remainder excludes prior local and global selections (0.605903ms)
+✔ cutoff ties reject, include all, or break by candidate id only when explicitly pinned (0.599303ms)
+✔ authority conflicts and output drift fail closed with no partial qualifiers (0.460914ms)
+✔ the independent verifier rejects result, provenance, and proof tampering (0.792013ms)
+✔ bounded exhaustive ranking corpus and candidate-order metamorphism close every binary small field (278.588657ms)
+✔ undefined ratios and requests beyond the published scale envelope reject without output (10.329856ms)
+✔ protected byes go to the highest seeds deterministically (153.252246ms)
+✔ the top four seeds occupy distinct quarters (319.937142ms)
+✔ lexicographic policy prefers avoiding same-pool rematches before other rematches (0.669519ms)
+✔ a residual hard conflict fails the draw and reports the unavoidable violation (0.387724ms)
+✔ structurally invalid entrant identity fails before candidate evaluation (0.228965ms)
+✔ proofs bind normalized prior meetings as well as the selected placement (0.842179ms)
+✔ runs a multi-round Swiss stage end to end with deterministic pairings, standings, and proof history (19.356888ms)
+✔ advanced registered Swiss criteria drive lifecycle final standings and bind their policy proof (7.020449ms)
+✔ preserves an explicit Swiss bye in advanced ranking inputs and tiebreak output (1.259978ms)
+✔ leaves lifecycle truth unchanged when an explicit advanced policy cannot resolve the final tie (1.053838ms)
+✔ compiles heat lanes, consumes externally observed times, and completes with ranked qualifiers (3.421115ms)
+✔ a heat cutoff tie remains running and unchanged when the pinned ranking policy cannot resolve it (0.917493ms)
+✔ ingests partial heat results and audits hash-bound corrections and voids without overwriting truth (8.590565ms)
+✔ corrects and voids only the latest completed Swiss round through explicit result lineage (6.020752ms)
+✔ delegates ladder challenges to the audited ladder engine and completes only on an explicit command (2.561019ms)
+✔ version, idempotency, lifecycle, and unsupported commands fail closed without mutation (1.532299ms)
+✔ canonical schema type-checks each explicit primary dynamic primitive and rejects mismatched config (17.061359ms)
+✔ Swiss runs from TournamentSpec through transactional operations, multi-round scheduling, replay, and certification (70.799117ms)
+✔ ladder challenge is scheduled by the production seam before its audited result is persisted and certified (26.783549ms)
+✔ qualifying heat and standalone time trial both execute recorded marks, qualification, schedule replay, and certification (36.993122ms)
+✔ generic ranking stage preserves score direction, fails closed on ambiguous cutoff ties, and certifies explicit results (18.758266ms)
+✔ primary orchestration refuses non-transactional persistence instead of weakening its production contract (0.758513ms)
+✔ repository atomically appends lifecycle commands with OCC and content-bound idempotency (26.781236ms)
+✔ authoritative event replay discards stale or divergent snapshots instead of trusting cache state (13.08678ms)
+✔ filesystem adapter durably reconstructs a lifecycle from another adapter instance (40.593487ms)
+✔ persisted stream verification rejects event or definition tampering (2.743504ms)
+✔ snapshot read failure degrades the disposable cache without blocking authoritative replay (3.148093ms)
+✔ SQLite initializes a WAL schema and atomically arbitrates expected-version appends across connections (13.109665ms)
+✔ SQLite snapshots stay disposable while event corruption fails authoritative replay closed (13.145027ms)
+✔ SQLite BEGIN IMMEDIATE arbitrates the same expected version across separate processes (159.063531ms)
+✔ a participant cannot occupy two entrants in the same division (11.245115ms)
+✔ a participant cannot occupy two roster slots in one entrant (3.265861ms)
+✔ fixed teams must have exactly the declared roster size (1.776061ms)
+✔ an entrant's declared division must match its input bucket (0.988149ms)
+✔ multi-category membership fails closed without an explicit compatibility rule (0.95589ms)
+✔ stage inputs must satisfy the tournament, sport, and division shape contracts (1.673762ms)
+✔ valid eligibility input is accepted without findings (0.903261ms)
+✔ bracket seed topology is deterministic and protects high seeds (2.048327ms)
+✔ arbitrary entrant counts 2 through 64 preserve n-1 elimination cardinality (0.380684ms)
+✔ graph generation and independent cardinality agree (171.079849ms)
+✔ the reference benchmark executes through one certified pipeline (371.989442ms)
+✔ certification requires a positive solver feasibility claim (286.575344ms)
+✔ participant-path and schedule proof objects cover the complete benchmark (330.685449ms)
+✔ soft minimum-participation shortfalls carry concrete entrant counterexamples (370.128507ms)
+✔ the shadow validator catches schedule tampering (293.159458ms)
+✔ Why-not explanations identify occupied resources (360.650736ms)
+✔ simulation replay is deterministic (187.074069ms)
+✔ three-way circular head-to-head ties fail closed with evidence (0.540234ms)
+✔ unregistered standings metrics fail closed instead of ranking every entrant as zero (0.161453ms)
+✔ unimplemented cross-pool normalizations reject the scenario instead of using raw totals (265.364453ms)
+✔ draw optimisation is replayable (4.611531ms)
+✔ English interpretation extracts facts and classifies optimiser delegation (1.185997ms)
+✔ unregistered English modifications fail closed (1.440051ms)
+✔ registered English modifications produce inspectable semantic plans (3.48316ms)
+✔ Americano dynamic rounds keep every player in exactly one contest (0.613174ms)
+✔ Monte Carlo operational risk is deterministic (425.290889ms)
+✔ uncertified truth cannot cross the external integration boundary (0.399352ms)
+✔ runtime invariant firewall rejects destructive result overwrite (197.940743ms)
+✔ a declared stage can never disappear from the graph and still certify (2.954964ms)
+✔ a configured bracket is not mistaken for an executable double-elimination engine (188.759524ms)
+✔ random source produces a stable replay sequence (0.356387ms)
+✔ appends immutable event envelopes with aggregate versions and a hash chain (10.887005ms)
+✔ duplicate command replay is idempotent and conflicting key reuse fails closed (1.422693ms)
+✔ rejects stale aggregate versions without partially appending (0.527856ms)
+✔ a failed multi-stream transaction commits no events or idempotency records (0.766014ms)
+✔ independent chain verification detects payload tampering (0.824563ms)
+✔ replay reconstructs deterministically from events and never trusts snapshot state (1.47955ms)
+✔ a certified scenario exports immutable human-readable Markdown and machine-readable JSON (423.915612ms)
+✔ an uncertified scenario cannot cross the export boundary (314.951317ms)
+✔ tampered specification, graph, schedule, simulation, or certification hashes reject export (2333.013921ms)
+✔ unsafe artifact names and invalid deterministic timestamps are rejected without filesystem access (452.956724ms)
+✔ self-consistent forged hashes cannot bypass independent certification (430.510547ms)
+✔ identical replay inputs produce an identical bundle and changing replay time changes its hash (537.531772ms)
+✔ the format truth ledger promotes only primary end-to-end certified schema primitives (2.113456ms)
+✔ the truth ledger can include out-of-schema requests as unsupported (1.073819ms)
+✔ one million seeded format trials cover the complete registered static case catalogue (4083.414264ms)
+✔ a campaign that cannot cover the catalogue is UNKNOWN rather than partially certified (201.97833ms)
+✔ a schedule that hides a contest's entrants cannot double-book a participant past the verifier (554.066366ms)
+✔ a graph that silently drops a contest cannot pass on its own self-reported counts (460.769348ms)
+✔ publishes certified truth in a signed, versioned envelope with mapped identities (9.622213ms)
+✔ publication idempotency is deterministic and excludes delivery time (0.481276ms)
+✔ publication identity is stable when unordered participant input is replayed in another order (0.630561ms)
+✔ publication fails closed for uncertified truth or incomplete identity mapping (0.467235ms)
+✔ identity mappings reject internal and external ambiguity (0.272641ms)
+✔ accepts a verified inbound result and maps it back to internal tournament truth (0.703039ms)
+✔ rejects bad signatures, provider drift, unknown identities, and closed-enum drift (0.562407ms)
+✔ rejects malformed or semantically contradictory inbound results (0.331109ms)
+✔ walkovers remain scoreless on both sides of the integration boundary (0.349086ms)
+✔ rejects exact replay and conflicting reuse of an idempotency key or message id (0.53123ms)
+✔ extracts registered facts with exact source-span citations (11.355836ms)
+✔ registered paraphrase corpus compiles to one semantic intent (1.06856ms)
+✔ classifies blocking, safe-default, and optimisable ambiguity with pinned provenance (0.520605ms)
+✔ rejects authority override and code-execution prompt injection without compiling partial rules (0.176987ms)
+✔ unregistered free-form competition rules remain explicit unresolved text and are never executable (0.213281ms)
+✔ a safe default is never silently invented when no versioned default is pinned (0.288054ms)
+✔ a canonical entrant CSV imports quoted names, rosters, seeds, and divisions without losing identity (2.451785ms)
+✔ entrant import fails closed for duplicate identities, spreadsheet formulas, and malformed rosters (0.368095ms)
+✔ a certified schedule exports as a deterministic UTC calendar without reinterpreting contests (1.15499ms)
+✔ seeded lifecycle fuzz preserves exactly-once effects and deterministic authoritative replay (1096.79449ms)
+✔ a court outage produces one approval-ready repair with affected people and notification drafts (14.49013ms)
+✔ an unproven repair blocks the entire live change without releasing proposed state (1.51936ms)
+✔ approval rejects self-approval and a tampered impact preview (1.458498ms)
+✔ checked-in entrants make an otherwise available scheduled contest ready next (10.492885ms)
+✔ commands enforce optimistic concurrency and content-bound idempotency without mutation (0.544661ms)
+✔ late and no-show facts drive the control room until a scoreless walkover settles the contest (2.4884ms)
+✔ actual start, finish, and result receipt move a contest through now and unreported (1.312429ms)
+✔ call, score, finish, and correction remain immutable replayable operational facts (1.838441ms)
+✔ court, official, and equipment outages block affected contests until explicitly restored (1.454422ms)
+✔ a withdrawal blocks future contests and is eligible for an explicit walkover decision (0.599063ms)
+✔ retirement settles only an in-progress contest and preserves actual timing (0.824593ms)
+✔ a protest and its appeal block dependent play until each audited decision is resolved (1.816357ms)
+✔ linked corrections preserve immutable history while replay rejects event tampering (1.037674ms)
+✔ lower-bound proof includes capacity for each restricted resource type (3.391782ms)
+✔ lower-bound derivation fails closed on a cyclic graph (1.277335ms)
+✔ nasty fixture: unequal pools preserve opportunity counts and require normalized comparison (148.236534ms)
+✔ nasty fixture: circular three-way head-to-head tie fails closed with all entrants as evidence (0.954899ms)
+✔ nasty fixture: a bye has no loser while a played match feeds exactly one loser path (1.520932ms)
+✔ nasty fixture: two divisions that share one court are scheduled as one resource problem (3.681629ms)
+✔ nasty fixture: a final pinned before its latest feeder completes is independently infeasible (1.606547ms)
+✔ deterministic property: actual bracket graphs for every entrant count 2-64 are complete and replayable (73.471207ms)
+✔ malformed graph: cycles are rejected by every topological public entry point (0.798022ms)
+✔ malformed graph: dangling outcome slots cannot manufacture a contest result (0.332ms)
+✔ an explicit single-round play-in reduction executes through primary certification (20.349602ms)
+✔ explicit classification sources and places execute after their source stage (5.759431ms)
+✔ a versioned custom graph is namespace-safe and certifies through the primary compiler (3.980589ms)
+✔ native primitive stages fail closed instead of inferring absent execution semantics (2.671928ms)
+✔ unresolved source ports, cyclic graphs, and multi-round play-ins never produce partial graphs (3.339073ms)
+✔ capability truth promotes only the three primary-certified primitive paths (0.716781ms)
+✔ native adapters reject malformed entrant seed identity without throwing or inventing mappings (0.536949ms)
+✔ custom-graph proof identity ignores declaration order after topological normalization (1.315793ms)
+✔ double elimination with an explicit reset policy executes through certified primary compilation (32.160693ms)
+✔ the registered quarterfinal repechage model executes through the same certified primary path (7.400098ms)
+✔ native static formats fail closed when their execution configuration is absent (2.726359ms)
+✔ capability truth marks both formats native only after scenario-path evidence is registered (0.536349ms)
+✔ publishes explicit illustrative profiles for pickleball, badminton, squash, and golf (1.94386ms)
+✔ certifies pickleball and squash win-by-two series and rejects a one-point game (3.80171ms)
+✔ models badminton deuce and the deciding point at 29-all without weakening ordinary margins (2.37502ms)
+✔ certifies golf stroke, Stableford, and match-play result shapes with explicit tie behavior (2.314869ms)
+✔ crash drill proves provider deduplication before acknowledging the recovered lease (11.046445ms)
+✔ crash drill rejects providers that create a second externally visible effect (0.728027ms)
+✔ readiness is deterministic and healthy only when every declared dependency is known (7.233012ms)
+✔ readiness fails closed for absent, duplicate, and unknown evidence (0.398661ms)
+✔ critical failures are unready while non-critical damage is degraded (0.143006ms)
+✔ telemetry validation preserves safe structure and redacts secret and personal fields recursively (0.873677ms)
+✔ telemetry rejects malformed, oversized, and structurally unsafe events (0.324569ms)
+✔ backup manifests are canonical, sorted, immutable, and content-addressed (0.635398ms)
+✔ restore verification proves completeness, size, checksum, and expected schema (0.620886ms)
+✔ SLO evaluation exposes a deterministic error budget and fails closed without observations (0.367834ms)
+✔ a delivery uses a stable tenant-scoped provider idempotency key and persists its receipt (4.247312ms)
+✔ a crash after provider acceptance replays one external effect with the same idempotency key (1.455083ms)
+✔ provider failures retry then dead-letter with bounded safe diagnostics and no secret telemetry (1.42689ms)
+✔ tenant-confused and oversized payloads are dead-lettered before any provider side effect (1.036472ms)
+✔ a committed event enqueues one stable publication even when transaction replay repeats it (2.026985ms)
+✔ workers atomically claim eligible messages in deterministic order under a bounded lease (6.433697ms)
+✔ only the lease owner can acknowledge delivery and delivered messages never reappear (0.65696ms)
+✔ failed delivery retries with bounded deterministic exponential backoff (0.405622ms)
+✔ the final failed attempt moves a message to dead letter and makes it unclaimable (0.290247ms)
+✔ expired leases are recovered deterministically and can be claimed by another worker (2.564815ms)
+✔ event-log replay after acknowledgement preserves one delivered publication without redelivery (0.5178ms)
+✔ B property 4: pools 2–5, equal/unequal, exact identity, protected tiers/byes and resolvable play-ins (16.262598ms)
+✔ B property 6: pools 2–5, equal/unequal, exact identity, protected tiers/byes and resolvable play-ins (1163.444748ms)
+✔ B property 8: pools 2–5, equal/unequal, exact identity, protected tiers/byes and resolvable play-ins (2278.5311ms)
+✔ B property 10: pools 2–5, equal/unequal, exact identity, protected tiers/byes and resolvable play-ins (80.911985ms)
+✔ B property 12: pools 2–5, equal/unequal, exact identity, protected tiers/byes and resolvable play-ins (80.303908ms)
+✔ B property 16: pools 2–5, equal/unequal, exact identity, protected tiers/byes and resolvable play-ins (125.658878ms)
+✔ seeding cannot add, omit or duplicate a qualifier (0.347955ms)
+✔ incomplete placement search returns UNKNOWN, never a false infeasibility proof (0.840457ms)
+✔ historical P&K stale Tower exclusions cannot duplicate a qualifier or lose another (8.857732ms)
+✔ top-four protection includes top-two opposite halves; previous opponents avoided (299.570366ms)
+✔ qualification is unseeded and two destinations partition entrants without reselection (23.187711ms)
+✔ the versioned operator API injects trusted identity and idempotency into dashboard and write workflows (20.183633ms)
+✔ the operator API atomically publishes only the exact server-bound approved revision (492.787676ms)
+✔ an owner creates an isolated club universe and a replayable scoped membership (25.758837ms)
+✔ club directories persist people, teams, places, officials, and equipment with referential integrity (6.557624ms)
+✔ tournaments retain immutable draft revisions, guarded lifecycle transitions, duplication, and archive history (633.236112ms)
+✔ the format library versions reusable formats and pins approved club defaults without overwriting history (4.998965ms)
+✔ guided creation enforces participants to review order and seals one reviewable tournament definition (8.125648ms)
+✔ the dashboard gives each organiser only their clubs, seasons, tournaments, directories, and actionable alerts (5.271476ms)
+✔ recovery, privacy export and erasure, notifications, and verified backup restore preserve governed truth (6.266435ms)
+✔ operators persist live actions and scores while independently approved repair proposals remain explicit (646.449082ms)
+✔ the canonical fixture compiles the exact settled pools and 98-contest inventory (190.462892ms)
+✔ the canonical ledger declares 3,080 court-minutes inside the seven-court target window with no mandatory rest (161.567683ms)
+✔ qualification preserves winner tiers and normalized cross-pool order for Konnect and Tower seeds (2.266426ms)
+✔ the complete benchmark schedule is certified, finishes early, and puts both headline finals at the climax (350.675934ms)
+✔ governed illustrative match policies certify timed and standard padel score shapes (9.925691ms)
+✔ derives raw in-pool standings and resolves a circular tie with the pinned deterministic tiebreak (3.3102ms)
+✔ a multi-team tie is recalculated as a mini-league before the deterministic final fallback (1.898572ms)
+✔ Konnect below four pools adds the best runner-up without weakening immutable seed order (2.696715ms)
+✔ Konnect above four pools takes only the best four winners and Tower preserves achievement tiers (1.305998ms)
+✔ cup seeding rejects stale rule proofs and incomplete pool standings without partial output (0.816751ms)
+✔ pool ranking fails closed on incomplete fixtures and unsafe numeric scores (1.192237ms)
+✔ snake allocation balances seed bands across the declared pool sizes (3.223428ms)
+✔ random allocation requires and replays a pinned deterministic random policy (11.359603ms)
+✔ manual allocation is accepted only when every entrant names one declared pool with exact sizes (0.721678ms)
+✔ optimised allocation delegates to the proof-bounded pool construction engine (46.633596ms)
+✔ the primary competition graph executes the declared pool-allocation adapter (155.754732ms)
+✔ constructs balanced pools with deterministic entrant coverage and an independent proof (229.232626ms)
+✔ honours fixed placement, separation, together, and attribute-limit hard constraints (1.502074ms)
+✔ distinguishes an exhausted infeasibility proof from a bounded unknown search (0.415746ms)
+✔ independent verification rejects entrant duplication and a forged optimal claim (0.715518ms)
+✔ returns a balanced independently valid incumbent when exact optimisation hits its node bound (0.4708ms)
+✔ PostgreSQL migration applies the immutable baseline then ordered additive production migrations (1.755186ms)
+✔ compiles the exact single-round play-ins required to reduce ten seeds to an eight-place main draw (7.742841ms)
+✔ compiles independent classification contests into explicit winner and loser places (0.605683ms)
+✔ validates and topologically normalizes a versioned custom competition graph (1.047569ms)
+✔ rejects loser-from-bye, dangling, and cyclic custom graphs with precise findings (0.623359ms)
+✔ production readiness routes traffic only with fresh evidence for every required dependency (7.787427ms)
+✔ stale evidence is unknown and explicit unhealthy evidence is unready (0.528006ms)
+✔ liveness proves only that the process is responding (0.777933ms)
+✔ structured telemetry emitter redacts sensitive attributes and rejects unsafe events (1.438118ms)
+✔ a deployment that omits the CP-SAT solver probe does not route traffic (0.213983ms)
+✔ production security configuration accepts references and never embeds secret material (1.720673ms)
+✔ production security configuration fails closed for missing or inline credentials (0.371891ms)
+✔ security readiness requires enabled, versioned, unexpired secrets and signing keys (7.372212ms)
+✔ managed proof signatures bind a canonical digest and key version (0.895796ms)
+✔ critical publication, idempotency and live-change protocols exhaust their bounded state spaces (9.457686ms)
+✔ bounded model checking returns the shortest concrete counterexample for an unsafe protocol (0.574236ms)
+✔ hard rest is checked for every team that could qualify, not only the simulated qualifiers (7.554998ms)
+✔ parallel knockout matches fed by one qualification stay legal: a team fills only one slot (12.057144ms)
+✔ qualifying through one stage into the next is not exclusive: rest holds across both stages (2.46138ms)
+✔ the list scheduler keeps hard rest for every possible qualifier (5.968867ms)
+✖ CP-SAT keeps hard rest for every possible qualifier and its plan passes the verifier (9.05571ms)
+✔ registered random algorithms are versioned, deterministic, and semantically distinct (1.730318ms)
+✔ pairs a chess-like Swiss round by score without rematches and proves deterministic coverage (9.104994ms)
+✔ Swiss pairing assigns an odd-field bye to the lowest ranked eligible active competitor (0.33883ms)
+✔ Swiss pairing fails closed for ambiguous byes and impossible no-rematch constraints (2.008387ms)
+✔ Swiss pairing distinguishes an exhausted proof search from infeasibility (0.307654ms)
+✔ applies a ladder upset as an immutable, hash-chained audited transition (1.149993ms)
+✔ rejects unaudited, invalid, and out-of-range ladder challenges without changing state (0.243587ms)
+✔ assigns athletics/swimming qualifying heats with serpentine seeds and explicit lane priority (0.700286ms)
+✔ rejects heat requests whose capacity or lane policy cannot be proven (0.301985ms)
+✔ does not silently break equal heat seed marks without an explicit policy (0.532483ms)
+✔ ranks a swimming time trial with non-finishers after valid times (0.589128ms)
+✔ time-trial ties remain unresolved unless an explicit tie policy supplies semantics (0.391831ms)
+✔ ranking-stage qualification rejects a cutoff tie until a policy is explicit (0.908108ms)
+✔ restore drill verifies artifacts, recovery objectives, and identical authoritative proof hashes (1.791941ms)
+✔ restore drill fails when replayed truth differs even if every artifact checksum matches (0.347093ms)
+✔ restore drill stays unknown when no replayed truth was supplied (0.214293ms)
+✔ registered directives become pending candidates with exact source and page citations (2.970748ms)
+✔ unknown, malformed, and injection-like text is retained as cited quarantine evidence (0.513645ms)
+✔ conflicting values for one registered primitive quarantine every conflicting citation (0.283958ms)
+✔ human review is explicit and immutable, while approval still cannot activate a rule (1.282403ms)
+✔ document and registry versions are hash-pinned and identical replay is byte-deterministic (0.706645ms)
+✔ overlapping registered aliases are quarantined as ambiguous instead of choosing by registry order (0.217468ms)
+✖ scale campaign records latency, memory, gap, validation, and an explicit repair-evidence boundary (12.5449ms)
+✔ comparison is deterministic, read-only, and separates formal changes from unaffected rules (695.463247ms)
+✔ feasibility, finish, lower-bound gap, cardinality, and guarantees are comparable (723.449352ms)
+✔ findings added by the candidate and resolved from the baseline are separated (692.452953ms)
+✔ participant guarantee regressions identify entrants and retain counterexample paths (659.004116ms)
+✔ lineage, feasibility, certification, cardinality, errors, and unresolved requirements block approval (618.395558ms)
+✔ compilation normalizes and deeply freezes a complete typed scheduling model (11.658844ms)
+✔ legacy hard start-lock constraints compile into explicit normalized locks (0.544892ms)
+✔ legacy hard closure constraints compile into effective resource calendars (0.420224ms)
+✔ unknown contest and resource references fail closed with evidence (0.744803ms)
+✔ closures outside availability make the calendar inconsistent (0.398891ms)
+✔ locks cannot violate duration, resource exclusivity, participant rest, or precedence (0.588127ms)
+✔ a supplied lock end must be valid and exactly match contest duration (0.381686ms)
+✔ objective priorities must be explicit and unique (0.265901ms)
+✔ semantically equivalent source ordering produces the same proof (0.532513ms)
+✔ court constraint adapter retains exact unit, rejects missing start, unknown unit, duplicate and conflicting pins (1.029281ms)
+✔ repairs a resource closure by moving the fewest contests and explains the change (43.959692ms)
+✔ freeze horizons and pins preserve exact announced assignments before optimizing the remainder (1.454372ms)
+✔ fails closed when a pinned contest conflicts with the disruption (0.848109ms)
+✔ fails closed instead of overriding either an original hard lock or a new pin (0.55744ms)
+✔ reconstructs the published lexicographic objective independently of assignment order (0.33203ms)
+✔ never releases an incumbent when the search limit prevents a minimality proof (0.75594ms)
+✔ replays deterministically and rejects incomplete baselines without searching (55.75149ms)
+✔ rejects malformed resource calendars before attempting a repair (0.368386ms)
+✔ resilience ranking prefers the valid schedule with lower court-loss and overrun blast radius (2.850477ms)
+✔ resilience can never make an invalid schedule outrank a valid candidate (0.441496ms)
+✔ candidate and assignment input ordering cannot change resilience evidence (1.209183ms)
+✔ exhaustive search reports OPTIMAL with lower-bound and gap evidence (16.288617ms)
+✔ a node-limited incumbent is FEASIBLE and never falsely reported as OPTIMAL (0.612984ms)
+✔ a bounded search without an incumbent reports UNKNOWN rather than INFEASIBLE (0.398571ms)
+✔ exhausted contradictory locks prove INFEASIBLE (0.426173ms)
+✔ honours locks, resource closures, dependencies, and participant rest (0.88168ms)
+✔ lower-bound proof separates resource, dependency, and participant-workload bounds (7.848001ms)
+✔ resource calendar closures are respected without allowing a contest to straddle the gap (4.216968ms)
+✔ shared resources across divisions are globally exclusive (1.168292ms)
+✔ hard match-start locks are honored and independently revalidated (1.357627ms)
+✔ hard final-resource requirements are assigned, independently verified, and malformed rules fail closed (1.831962ms)
+✔ dependencies and hard rest both delay the final beyond feeder completion (1.159418ms)
+✔ insufficient availability and an impossible finish deadline are reported as infeasible (1.366891ms)
+✔ same inputs produce the same complete schedule and proof metadata (1.039687ms)
+✔ shadow validation rejects independent mutations of completeness, identity, duration, calendar, dependency, and rest (1.484728ms)
+✔ shadow validation rejects duplicate assignments and malformed timestamps explicitly (1.162602ms)
+✖ branch-level release proves genuinely free court time is avoidable and solver repair improves it safely (26.337863ms)
+✔ a narrow bracket proves idle is dependency blocked until its single branch releases (1.929769ms)
+✔ resource closures are neither counted as idle nor offered as repair capacity (1.436375ms)
+✔ extended matches are isolated from planned occupancy and expose downstream disruption (1.020358ms)
+✖ graph adapter and CP-SAT ScheduleSolution conversion preserve proof status and replay deterministically (12.585859ms)
+✔ resolves an approved hash-bound rule pack and evaluates only its referenced semantics (10.602033ms)
+✔ fails closed for unknown, expired, unapproved, tampered, incompatible, or unauthorized packs (2.535803ms)
+✔ selects the highest exact semantic version deterministically and rejects duplicate identities (0.652103ms)
+✔ approved illustrative packs govern a structurally diverse cross-sport conformance corpus (4.128163ms)
+✔ publishes and enforces a finite registry scale envelope (5.12745ms)
+✔ adjudicates football scores through a registered declarative head-to-head policy (11.573148ms)
+✔ validates completed best-of series for tennis and padel without sport-name branches (0.876261ms)
+✔ ranks athletics distances by the best valid attempt and preserves non-result truth (1.282764ms)
+✔ accepts only registered chess score values and certifies a game draw (0.621927ms)
+✔ derives a scoreless walkover winner only from the registered opponent policy (0.447054ms)
+✔ ranks swimming times in the lower-is-better direction with a DNF outside the ranking (0.526223ms)
+✔ uses an explicit shared-rank policy for judged points and is invariant to submission order (0.80894ms)
+✔ fails closed for unregistered policies, metrics, shapes, and unresolved performance ties (0.777292ms)
+✔ never routes an unregistered scoring adapter through a default implementation (0.419883ms)
+✔ validates best-of units against a declarative minimum and win-by-two rule (0.72918ms)
+✔ preserves explicit combat decisions, disqualifications, and no-contests for downstream provenance (0.903322ms)
+✔ certifies an ordered finish with explicit motorsport non-results independent of input order (0.611011ms)
+✔ aggregates judged panels with declarative dropped highs and lows (0.526644ms)
+✔ validates relay and team composition without changing ranked-performance semantics (0.722469ms)
+✔ single round robin schedules every unordered pairing exactly once (10.958952ms)
+✔ double round robin produces a reversed return fixture for every pairing across small fields (5.42541ms)
+✔ double elimination wires complete winner and loser paths with explicit reset semantics (6.975206ms)
+✔ quarterfinal repechage produces two explicit classification paths without bye-derived losers (3.031911ms)
+✔ fails closed instead of approximating unsupported fields or reset policies (0.599163ms)
+✔ small-field compilation is deterministic, entrant-complete, and topologically ordered (11.841543ms)
+✔ an approved round-robin plan maps stable seed identities into canonical contest nodes (10.090142ms)
+✔ single-elimination and consolation reuse canonical bye topology without manufacturing loser paths (1.843129ms)
+✔ double elimination and repechage adapt their existing explicit outcome graphs (2.285405ms)
+✔ approval, entrant identity, and cardinality fail closed while conditional semantics stay explicit (5.888839ms)
+✔ every advertised entrant envelope compiles with closed proofs and deterministic replay (7808.055067ms)
+✔ stress certification fails open to UNKNOWN until every lane and every gate has evidence (8.95484ms)
+✔ a single rejected lane blocks certification even if every claimed gate is green (0.313142ms)
+✔ historical validation cannot be counterfeited with generated fixtures (0.718323ms)
+✔ real historical, shadow, and manually recoverable pilot evidence closes only the declared threshold (0.5838ms)
+✔ failure shrinking returns a one-command reproducer when one command is sufficient (0.486413ms)
+✔ computes exact Buchholz, median Buchholz, Sonneborn-Berger, head-to-head, and progressive scores (13.018277ms)
+✔ uses head-to-head only when every member of the tied group has played the others (0.681638ms)
+✔ never invents incomplete results and exposes the registered reject or provisional policy (1.0217ms)
+✔ is invariant to entrant, round, board, and left-right input ordering (1.271567ms)
+✔ assigns shared competition ranks only when that final tie policy is explicit (0.523139ms)
+✔ certifies the complete 729-case outcome corpus for a four-player three-round chess-like schedule (98.005775ms)
+✔ compiles a power-of-two single-elimination graph with explicit winner and loser ports (7.570564ms)
+✔ entrant counts 2 through 64 have explicit play-ins/byes and complete cardinality proofs (47.106504ms)
+✔ adds third-place and generic classification matches from explicit loser ports (0.746746ms)
+✔ fails closed when a requested loser port belongs to a bye (0.57029ms)
+✔ rejects unsupported entrant counts and unresolved classification sources (0.561827ms)
+✔ topology property 2-64: every entrant occupies exactly one opening slot and every actual bracket has n-1 contests (36.87979ms)
+✔ bye property 3-63: only the highest seeds receive byes and no bye creates a result or loser (41.777164ms)
+✔ seed separation property: the top two seeds occupy opposite bracket halves (3.520197ms)
+✔ loser path trap: a played contest resolves its loser but a bye cannot manufacture one (0.365802ms)
+✔ impossible hard rematch avoidance is surfaced deterministically rather than silently discarded (1.327682ms)
+✔ deterministic replay property: topology, possible entrants, and outcomes are byte-stable (11.579618ms)
+✔ Definition, Plan, Operational, and Actual truth remain distinct immutable layers (3.177942ms)
+✔ plans and operational revisions cannot skip or target stale lifecycle layers (1.810795ms)
+✔ revision identities and sequence numbers are immutable (0.526383ms)
+✔ result correction and voiding preserve explicit current-event lineage (1.184326ms)
+✔ the invariant firewall rejects overwrites, stale corrections, and invented entrants (0.960568ms)
+✔ optimistic concurrency and content-bound idempotency are enforced (0.9552ms)
+✔ event replay reconstructs the same proof and rejects tampering (1.310135ms)
+✔ managed webhook provider signs an exact bounded request and preserves idempotency (3.25668ms)
+✔ managed webhook provider recognizes replay and classifies retryable and permanent failures (1.091436ms)
+✔ managed webhook provider rejects unsafe destinations and incomplete receipts (0.413473ms)
+✔ bounded whole-spec grammar exhausts supported scheduling, qualification, and partial-withdrawal dimensions (1464.767835ms)
+✔ Play & Konnect is representable without engine-specific branches (16.086407ms)
+✔ canonical hashes ignore object key insertion order (0.194133ms)
+✔ tampering is rejected by the replay hash (2.464876ms)
+✔ qualification and bracket cardinality are independently checked (1.812682ms)
+✔ selector cardinality is independently re-derived (1.752962ms)
+✔ minimum participation is proven from the smallest pool path (1.733844ms)
+✔ unequal-pool comparisons fail closed without normalization (2.480589ms)
+✔ critical policies cannot silently lose provenance (2.08978ms)
+✔ lost user requirements prevent certification (2.628481ms)
+✔ random draw requires a pinned deterministic policy (1.826003ms)
+✔ undefined loser-from-bye paths are rejected before graph generation (1.725921ms)
+✔ progression cycles are rejected (1.382154ms)
+✔ semantic diff exposes only the changed formal value (4.201053ms)
+✔ Plan -> Validate -> Apply creates an immutable linked revision (2.717907ms)
+ℹ tests 656
+ℹ suites 0
+ℹ pass 631
+ℹ fail 25
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 82449.789188
+
+✖ failing tests:
+
+test at apps/compiler-web/test/compile-off-request-path.test.ts:1:2173
+✖ an HTTP compile solves off the event loop and yields the same plan as a direct compile (68.110109ms)
+  AssertionError [ERR_ASSERTION]: the health check answered while CP-SAT was still solving
+  + actual - expected
+  
+    [
+  +   'compile',
+      'health',
+  -   'compile'
+    ]
+  
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/compile-off-request-path.test.ts:58:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 'compile', 'health' ],
+    expected: [ 'health', 'compile' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at apps/compiler-web/test/compile-off-request-path.test.ts:1:3350
+✖ a prepared result is never trusted: a tampered one cannot become a plan, a stale one is ignored (15.663705ms)
+  AssertionError [ERR_ASSERTION]: the independent validation of the CP-SAT answer still runs on a cached result
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/compile-off-request-path.test.ts:77:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: Error: journey_solver_unknown
+        at compileReferenceRevision (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:877:11)
+        at CompetitionJourney.compile (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:1085:22)
+        at <anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/compile-off-request-path.test.ts:77:31)
+        at getActual (node:assert:611:5)
+        at strict.throws (node:assert:759:24)
+        at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/compile-off-request-path.test.ts:77:10)
+        at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+        at async Test.run (node:internal/test_runner/test:1389:7)
+        at async Test.processPendingSubtests (node:internal/test_runner/test:960:7),
+    expected: /journey_solver_rejected/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at apps/compiler-web/test/creation-source-import.test.ts:1:13010
+✖ the connected web draft appends a generic roster into the same authoritative workbench (51.044812ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  400 !== 200
+  
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/creation-source-import.test.ts:257:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 400,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps/compiler-web/test/design-system.test.ts:1:1248
+✖ every product page uses the one design system and none defines its own palette, font or accent (46.507121ms)
+  Error: journey_solver_unknown
+      at compileReferenceRevision (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:877:11)
+      at CompetitionJourney.compile (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:1085:22)
+      at journeyWithLiveCompetition (/workspace/krateasy-core-audit/apps/compiler-web/test/support/harbour-journey.ts:24:28)
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/design-system.test.ts:28:29)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.start (node:internal/test_runner/test:1242:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17)
+
+test at apps/compiler-web/test/design-system.test.ts:1:3159
+✖ organiser pages share one navigation, marking the current place and linking one competition's routes (12.622209ms)
+  Error: journey_solver_unknown
+      at compileReferenceRevision (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:877:11)
+      at CompetitionJourney.compile (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:1085:22)
+      at journeyWithLiveCompetition (/workspace/krateasy-core-audit/apps/compiler-web/test/support/harbour-journey.ts:24:28)
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/design-system.test.ts:59:29)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)
+
+test at apps/compiler-web/test/design-system.test.ts:1:4708
+✖ routes that do not apply yet are named but not linked, so the navigation never changes shape (9.093305ms)
+  Error: journey_solver_unknown
+      at compileReferenceRevision (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:877:11)
+      at CompetitionJourney.compile (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:1085:22)
+      at journeyWithLiveCompetition (/workspace/krateasy-core-audit/apps/compiler-web/test/support/harbour-journey.ts:24:28)
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/design-system.test.ts:83:30)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at apps/compiler-web/test/design-system.test.ts:1:5617
+✖ public and participant pages never expose organiser routes (8.302127ms)
+  Error: journey_solver_unknown
+      at compileReferenceRevision (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:877:11)
+      at CompetitionJourney.compile (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:1085:22)
+      at journeyWithLiveCompetition (/workspace/krateasy-core-audit/apps/compiler-web/test/support/harbour-journey.ts:24:28)
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/design-system.test.ts:94:29)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at apps/compiler-web/test/design-system.test.ts:1:6685
+✖ every competition shows one truthful, worded state instead of an internal code (8.740546ms)
+  Error: journey_solver_unknown
+      at compileReferenceRevision (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:877:11)
+      at CompetitionJourney.compile (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:1085:22)
+      at journeyWithLiveCompetition (/workspace/krateasy-core-audit/apps/compiler-web/test/support/harbour-journey.ts:24:28)
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/design-system.test.ts:115:36)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at apps/compiler-web/test/design-system.test.ts:1:9005
+✖ each competition offers one next step, derived from its state and routed to where that step happens (10.657857ms)
+  Error: journey_solver_unknown
+      at compileReferenceRevision (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:877:11)
+      at CompetitionJourney.compile (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:1085:22)
+      at journeyWithLiveCompetition (/workspace/krateasy-core-audit/apps/compiler-web/test/support/harbour-journey.ts:24:28)
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/design-system.test.ts:155:36)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at apps/compiler-web/test/design-system.test.ts:1:10431
+✖ a question the workbench repeats as a missing decision is counted once (8.493924ms)
+  Error: journey_solver_unknown
+      at compileReferenceRevision (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:877:11)
+      at CompetitionJourney.compile (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:1085:22)
+      at journeyWithLiveCompetition (/workspace/krateasy-core-audit/apps/compiler-web/test/support/harbour-journey.ts:24:28)
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/design-system.test.ts:178:30)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at apps/compiler-web/test/design-system.test.ts:1:11094
+✖ the portfolio links each competition's name to its Studio and its button to the next step (7.839612ms)
+  Error: journey_solver_unknown
+      at compileReferenceRevision (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:877:11)
+      at CompetitionJourney.compile (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:1085:22)
+      at journeyWithLiveCompetition (/workspace/krateasy-core-audit/apps/compiler-web/test/support/harbour-journey.ts:24:28)
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/design-system.test.ts:187:29)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at apps/compiler-web/test/flexible-competition-journey.test.ts:1:3585
+✖ Harbour Six-Pair Round Robin uses the same authoritative lifecycle without fixture code (61.738647ms)
+  Error: journey_solver_unknown
+      at compileReferenceRevision (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:877:11)
+      at CompetitionJourney.compile (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:1085:22)
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/flexible-competition-journey.test.ts:113:30)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.start (node:internal/test_runner/test:1242:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17)
+
+test at apps/compiler-web/test/flexible-competition-journey.test.ts:1:3585
+✖ Northside Eight-Pair Knockout uses the same authoritative lifecycle without fixture code (12.427732ms)
+  Error: journey_solver_unknown
+      at compileReferenceRevision (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:877:11)
+      at CompetitionJourney.compile (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:1085:22)
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/flexible-competition-journey.test.ts:113:30)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)
+
+test at apps/compiler-web/test/flexible-competition-journey.test.ts:1:14094
+✖ restart independently rejects a re-hashed generic workbench roster forged away from its source (10.957957ms)
+  Error: journey_solver_unknown
+      at compileReferenceRevision (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:877:11)
+      at CompetitionJourney.compile (/workspace/krateasy-core-audit/apps/compiler-web/src/competition-journey.ts:1085:22)
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/apps/compiler-web/test/flexible-competition-journey.test.ts:245:13)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at packages/competition-engine/test/cp-sat-solver.test.ts:1:1438
+✖ CP-SAT matches the exact solver objective and returns independently certified no-overlap evidence (8.440313ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'UNKNOWN'
+  - 'CERTIFIED'
+  
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/packages/competition-engine/test/cp-sat-solver.test.ts:40:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'UNKNOWN',
+    expected: 'CERTIFIED',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/competition-engine/test/cp-sat-solver.test.ts:1:2329
+✖ CP-SAT and the exact solver agree with precedence, calendars, closures, locks, and participant rest (2.802044ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'UNKNOWN'
+  - 'CERTIFIED'
+  
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/packages/competition-engine/test/cp-sat-solver.test.ts:71:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'UNKNOWN',
+    expected: 'CERTIFIED',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/competition-engine/test/cp-sat-solver.test.ts:1:3698
+✖ only an exhausted CP-SAT proof becomes INFEASIBLE; bounded or version-drift runs stay UNKNOWN (2.014687ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'UNKNOWN'
+  - 'INFEASIBLE'
+  
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/packages/competition-engine/test/cp-sat-solver.test.ts:92:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'UNKNOWN',
+    expected: 'INFEASIBLE',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/competition-engine/test/cp-sat-solver.test.ts:1:5266
+✖ the published tested scale envelope is backed by an executed 128-task deterministic fixture (4.900637ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'UNKNOWN'
+  - 'CERTIFIED'
+  
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/packages/competition-engine/test/cp-sat-solver.test.ts:141:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'UNKNOWN',
+    expected: 'CERTIFIED',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/competition-engine/test/cp-sat-solver.test.ts:1:7460
+✖ the CP-SAT readiness probe is healthy only when the pinned backend solves its known model (3.594308ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    {
+      name: 'cp-sat-solver',
+      required: true,
+  +   status: 'UNHEALTHY'
+  -   status: 'HEALTHY'
+    }
+  
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/packages/competition-engine/test/cp-sat-solver.test.ts:179:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { name: 'cp-sat-solver', required: true, status: 'UNHEALTHY' },
+    expected: { name: 'cp-sat-solver', required: true, status: 'HEALTHY' },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at packages/competition-engine/test/cp-sat-solver.test.ts:1:8206
+✖ the worker never publishes a feasible answer that the wall-time safety cap cut short (1.928357ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  null !== 0
+  
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/packages/competition-engine/test/cp-sat-solver.test.ts:207:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: null,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/competition-engine/test/cp-sat-solver.test.ts:1:9635
+✖ solveAsync returns the same schedule as solve without blocking the event loop (7.791224ms)
+  AssertionError [ERR_ASSERTION]: timers kept running while CP-SAT solved in its child process
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/packages/competition-engine/test/cp-sat-solver.test.ts:229:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at packages/competition-engine/test/qualification-outcome-coverage.test.ts:1:6536
+✖ CP-SAT keeps hard rest for every possible qualifier and its plan passes the verifier (9.05571ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'UNKNOWN'
+  - 'OPTIMAL'
+  
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/packages/competition-engine/test/qualification-outcome-coverage.test.ts:124:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'UNKNOWN',
+    expected: 'OPTIMAL',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/competition-engine/test/scale-envelope-campaign.test.ts:1:140
+✖ scale campaign records latency, memory, gap, validation, and an explicit repair-evidence boundary (12.5449ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'UNKNOWN'
+  - 'CERTIFIED'
+  
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/packages/competition-engine/test/scale-envelope-campaign.test.ts:9:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.start (node:internal/test_runner/test:1242:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'UNKNOWN',
+    expected: 'CERTIFIED',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/competition-engine/test/scheduling-quality.test.ts:1:4281
+✖ branch-level release proves genuinely free court time is avoidable and solver repair improves it safely (26.337863ms)
+  AssertionError [ERR_ASSERTION]: CP-SAT feasibility is unknown; no repair is proposed.
+  + actual - expected
+  
+  + 'REJECTED'
+  - 'IMPROVED'
+  
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/packages/competition-engine/test/scheduling-quality.test.ts:82:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.start (node:internal/test_runner/test:1242:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'REJECTED',
+    expected: 'IMPROVED',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/competition-engine/test/scheduling-quality.test.ts:1:7900
+✖ graph adapter and CP-SAT ScheduleSolution conversion preserve proof status and replay deterministically (12.585859ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(first.status === "OPTIMAL" || first.status === "FEASIBLE")
+  
+      at TestContext.<anonymous> (/workspace/krateasy-core-audit/packages/competition-engine/test/scheduling-quality.test.ts:139:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

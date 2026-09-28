@@ -1,24 +1,16 @@
-> Required Phase G outcome: organiser participant/pair/pool/division edits must produce guarded automatic structural and schedule repair. See [acceptance contract](docs/G_RECONFIGURATION_ACCEPTANCE.md). This clarification preserves D → E → F → G order; G remains unimplemented as an integrated creator journey.
-
-> Current continuation: D1 membership and D4a resource/duration gates passed; D4b protected start locks implemented with focused/integrated verification. Full D still requires organiser and real-browser acceptance, with court pinning explicitly unsupported. See docs/D_REVIEW_GATE.md. E/F remain gated. Earlier milestone and ticket text below is retained history, not permission to restart or skip gates.
-
-> Continuation: **D revision-safe command slice passed**; see [contract](docs/D_COMMAND_SLICE.md) and [evidence](docs/D_REVIEW_GATE.md#d-command-integrity-continuation). Next: remaining D membership and operational controls. Full D/E/F gates unchanged.
-
-> Current status: **D live visual creator review milestone**. See [D_REVIEW_GATE](docs/D_REVIEW_GATE.md). B/C bounded evidence exists; full D remains open, E/F and later programme gates are not passed. Historical A1 handoff sections below remain reference records of earlier tickets, not current execution instructions.
-
 # Finite migration and implementation plan
 
 Status: ACTIVE. Supersedes competing implementation sequences. Source: the user's supplied finite plan, [authority record](docs/AUTHORITY_SOURCES.md).
 
 ## Current slice and gate state
 
-Current delivery: **Ticket 1 / A1 — Documentation authority reset** on `architecture/compiler-runtime-reset`. Documentation only. Its gate evidence is [A1_EXIT_GATE](docs/A1_EXIT_GATE.md). Passing A1 is not passing Phase A. No later phase is certified by this reset.
+Current delivery: **D4c — protected draft court locks**; see [contract](docs/D_COURT_LOCK_SLICE.md) and [D gate](docs/D_REVIEW_GATE.md). Prior bounded D slices cover revision-safe commands, membership, resource windows/durations and start locks. Full D requires complete P&K organiser acceptance and real-browser/mobile/accessibility evidence. E/F/G remain gated.
 
-Next allowed work after A1: record A2's P&K expansion freeze, then Ticket 2 / A3 scenario corpus and audit harness. Do not start B until the complete A exit gate passes. Do not start the next ticket in the same change set.
+The required later G outcome is automatic guarded structural/schedule repair for participant, pair, pool and division changes; [G acceptance](docs/G_RECONFIGURATION_ACCEPTANCE.md) records the exact requirements. It is not an implemented creator journey.
 
 Every slice must contain JOB, INPUT, OUTPUT, AUTHORITATIVE OWNER, INVARIANTS, TELEMETRY, ACCEPTANCE SCENARIO, NON-GOALS and EXIT GATE. Work outside the current slice goes to FUTURE.md unless it violates a hard invariant or blocks current acceptance; document that exception and its evidence.
 
-## A1 — current ticket contract
+## Historical A1 ticket contract
 
 - JOB: Remove competing implementation authorities so a fresh agent can identify product, exclusions, truth owners and current work without chat history.
 - INPUT: The two supplied contracts and tracked repository documentation at baseline `71b7160b60295d8f43aba9ba51cd221dc8a4b146`.
@@ -53,7 +45,7 @@ The table below preserves the complete required gates. A/B/C evidence is separat
 
 After N, the foundational programme ends. Customer-driven bounded features are independent product bets, not another architecture programme.
 
-## Next ticket handoff — A2 then A3, not implementation permission in A1
+## Historical A1 handoff — A2 then A3
 
 A2: P&K remains production maintenance only. No generic multi-tenancy, second scheduler/compiler, or separate completion of old PLATFORM_SCOPE.md; exceptions only for keeping live service functioning. Record repository baseline and scope when starting next ticket; this branch has not inspected or changed P&K.
 

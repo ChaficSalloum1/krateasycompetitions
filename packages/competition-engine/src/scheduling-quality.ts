@@ -238,8 +238,8 @@ export function compileGraphSchedulingProblem(spec: TournamentSpec, graph: Compe
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || (end - start) % 60_000 !== 0) findings.push(error(
     "TSQ101", "/scheduling", "CP-SAT scheduling requires a positive whole-minute horizon.",
   ));
-  const locked = spec.scheduling.constraints.filter(({ rule, strength }) => rule === "locked_match_start" && strength === "HARD");
-  if (locked.length) findings.push(error("TSQ102", "/scheduling/constraints", "Graph-to-CP-SAT adapter does not infer a resource for legacy time-only locks."));
+  const locked = spec.scheduling.constraints.filter(({ rule }) => rule === "locked_match_start" || rule === "locked_match_resource");
+  if (locked.length) findings.push(error("TSQ102", "/scheduling/constraints", "Graph-to-CP-SAT adapter does not yet support projected start/court locks; use an explicitly supported lock adapter."));
   const minimumRestMinutes = Number(spec.scheduling.constraints.find(({ rule, strength }) => rule === "minimum_rest" && strength === "HARD")?.value ?? 0);
   // Any feeder entrant can qualify through a `complete` edge, so with hard rest each such feeder and its
   // qualification-fed contest share a synthetic participant: CP-SAT then keeps the rest gap between them
