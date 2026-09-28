@@ -102,3 +102,5 @@ Inventory: 59 pre-existing documentation files; all classified. The PDF is retai
 - `docs/D_MEMBERSHIP_SLICE.md`: ACTIVE bounded D1 ownership/state/invariant/acceptance contract and gate record.
 - `docs/D_OPERATIONS_SLICE.md`: ACTIVE bounded D4a resource/duration contract and gate record.
 - `docs/D_LOCK_SLICE.md`: ACTIVE bounded D4b start-lock contract and gate record.
+
+- `docs/G_RECONFIGURATION_ACCEPTANCE.md`: ACTIVE future Phase G acceptance clarification from this conversation; no permission to skip current gates.

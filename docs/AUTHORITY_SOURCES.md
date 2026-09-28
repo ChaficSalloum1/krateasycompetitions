@@ -38,3 +38,7 @@ The plan's A1 list includes MODULE_CONTRACTS.md although the shorter Ticket 1 de
 Inventory baseline: `71b7160b60295d8f43aba9ba51cd221dc8a4b146` in `ChaficSalloum1/krateasycompetitions`.
 
 The review inventories all tracked Markdown and the tracked PDF report, then reads governing hierarchy passages and relevant technical ownership contracts (source agent brief, master product hierarchy, Guard publication, live-change, structure-edit acceptance and deployment runbook). It does not claim a line-by-line verification of every archived report or a fresh correctness audit of code. All files receive a category and rationale in DOCUMENT_REGISTRY. Versioned dependency requirement/constraint text files are executable configuration, not planning documents, and are untouched.
+
+## In-conversation clarification — 2026-09-28
+
+The user explicitly requires participant/pair/pool/division changes, including pool and division counts, to drive automatic guarded bracket/schedule reconfiguration. `G_RECONFIGURATION_ACCEPTANCE.md` records that acceptance clarification under the existing Phase G. It imports no other-chat rules and changes no preceding gate status.
