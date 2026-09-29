@@ -4,7 +4,7 @@ Status: ACTIVE. Supersedes competing implementation sequences. Source: the user'
 
 ## Current slice and gate state
 
-Current delivery: **D4c — protected draft court locks**; see [contract](docs/D_COURT_LOCK_SLICE.md) and [D gate](docs/D_REVIEW_GATE.md). Prior bounded D slices cover revision-safe commands, membership, resource windows/durations and start locks. Full D requires complete P&K organiser acceptance and real-browser/mobile/accessibility evidence. E/F/G remain gated.
+Current delivery: **D10 — visual rule map and simplified organiser review**; see [contract](docs/D_VISUAL_RULE_MAP_SLICE.md) and [D gate](docs/D_REVIEW_GATE.md). Prior bounded D slices cover revision-safe commands, membership, resource windows/durations, start/court locks, format/roster composition, independent cup controls, interpretation clarity and bounded question coverage. Full D requires complete P&K organiser acceptance and real-browser/mobile/accessibility evidence. E/F/G remain gated.
 
 The required later G outcome is automatic guarded structural/schedule repair for participant, pair, pool and division changes; [G acceptance](docs/G_RECONFIGURATION_ACCEPTANCE.md) records the exact requirements. It is not an implemented creator journey.
 
@@ -66,3 +66,7 @@ Ticket 3 is Phase B only, admitted after A. Do not proceed beyond the current sl
 ## Required review record
 
 Every PR states Phase, Slice, Entry condition, Exit condition, Evidence, Next allowed slice. No “while I was here” work except a documented current invariant/acceptance blocker. Record command, exact revision/environment, scenario and result for executable claims. A review report or old test count is not a new gate pass.
+
+D11 review correction: upfront missing-decision flow and honest draft/bracket/schedule checking states; content-addressed assets. See docs/D_QUESTION_DISCOVERY_SLICE.md. Full D stays open; E/F/G remain gated.
+
+D12 current correction: versioned requirement coverage by domain noun and lifecycle boundary, dependency-aware questions, unsupported/invalid evidence, explicit compiled defaults and missing secondary-cup bye policy. Read docs/D_REQUIREMENT_MODEL_SLICE.md. D remains open; schedule moves and division breaks are recorded for F/G, not implemented in D.

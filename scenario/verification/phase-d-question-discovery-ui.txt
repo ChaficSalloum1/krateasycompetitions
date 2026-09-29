@@ -1,0 +1,6 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> creator:check-ui
+> node scripts/check-creator-ui.mjs
+
+PASS: actual content-addressed UI — upfront questions, explicit check flush, honest assurance boundaries, source/answer/open interpretation basis, two-cup controls, roster, questions, cardinality, undo, live text, review, pool rules, operations, locks and HTML escaping. DOM emulation only; not browser layout/accessibility QA.
