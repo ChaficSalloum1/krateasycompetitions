@@ -66,3 +66,5 @@ Ticket 3 is Phase B only, admitted after A. Do not proceed beyond the current sl
 ## Required review record
 
 Every PR states Phase, Slice, Entry condition, Exit condition, Evidence, Next allowed slice. No “while I was here” work except a documented current invariant/acceptance blocker. Record command, exact revision/environment, scenario and result for executable claims. A review report or old test count is not a new gate pass.
+
+D11 review correction: upfront missing-decision flow and honest draft/bracket/schedule checking states; content-addressed assets. See docs/D_QUESTION_DISCOVERY_SLICE.md. Full D stays open; E/F/G remain gated.

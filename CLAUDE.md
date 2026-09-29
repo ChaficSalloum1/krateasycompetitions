@@ -14,3 +14,5 @@ Status: ACTIVE. Applies to any coding agent, not only Claude.
 10. Every PR: Phase, Slice, Entry condition, Exit condition, Evidence, Next allowed slice. Do not merge/cut over/deploy merely because tests passed. No production competition changes in this review.
 
 **DO NOT PROCEED BEYOND THIS SLICE.** Determine whether adjacent work violates a hard invariant or blocks acceptance. If neither, record it in FUTURE.md and do not implement it.
+
+D11 addresses reported invisible questions: the question/check panel now precedes the editor, explicit checking flushes pending text, and generated HTML pins assets by content hash. Read docs/D_QUESTION_DISCOVERY_SLICE.md. No browser or tournament certification claim follows.
