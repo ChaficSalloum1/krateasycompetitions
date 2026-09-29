@@ -4,7 +4,7 @@ Status: ACTIVE. Supersedes competing implementation sequences. Source: the user'
 
 ## Current slice and gate state
 
-Current delivery: **D9 — visible interpretation basis**; see [contract](docs/D_EVIDENCE_CLARITY_SLICE.md) and [D gate](docs/D_REVIEW_GATE.md). Prior bounded D slices cover revision-safe commands, membership, resource windows/durations, start/court locks, format/roster composition, independent cup controls, interpretation clarity and bounded question coverage. Full D requires complete P&K organiser acceptance and real-browser/mobile/accessibility evidence. E/F/G remain gated.
+Current delivery: **D10 — visual rule map and simplified organiser review**; see [contract](docs/D_VISUAL_RULE_MAP_SLICE.md) and [D gate](docs/D_REVIEW_GATE.md). Prior bounded D slices cover revision-safe commands, membership, resource windows/durations, start/court locks, format/roster composition, independent cup controls, interpretation clarity and bounded question coverage. Full D requires complete P&K organiser acceptance and real-browser/mobile/accessibility evidence. E/F/G remain gated.
 
 The required later G outcome is automatic guarded structural/schedule repair for participant, pair, pool and division changes; [G acceptance](docs/G_RECONFIGURATION_ACCEPTANCE.md) records the exact requirements. It is not an implemented creator journey.
 

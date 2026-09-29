@@ -1,6 +1,6 @@
 import type {Decision,Draft,DivisionDraft,SourceFact,Value} from "./interpretation.js";
 
-export const RULE_CATALOG_VERSION="creator-rule-catalog/1.0.0";
+export const RULE_CATALOG_VERSION="creator-rule-catalog/1.0.1";
 type Kind=Decision["kind"];
 type Option={value:Value;label:string};
 export interface RuleConcept {
@@ -56,10 +56,10 @@ export const RULE_CATALOG:readonly RuleConcept[]=[
   division("bracketSlots","main bracket capacity","bracketSlots",()=>"How many bracket slots?",()=>"If unset, the smallest fitting bracket is used.","number",undefined,bracket,()=>false),
   division("byePolicy","bye allocation","byePolicy",()=>"Who receives the byes?",()=>"The field size requires byes, so allocation needs a declared rule.","choice",choice([["highest_seeds","Highest seeds first"]]),needsByes),
   division("rematches","opening rematches","rematches",()=>"How should opening rematches be handled?",()=>"Impossible avoidance remains a finding; no qualifier is replaced.","choice",choice([["avoid","Avoid same-pool and previous opponents where possible"],["allow","Allow rematches"]]),bracket),
-  division("secondaryBracketSlots","second-cup capacity","secondaryBracketSlots",()=>"How many second-cup slots?",()=>"If unset, the smallest fitting bracket is used.","number",undefined,d=>d.remainder==="secondary",()=>false),
-  division("secondaryProtectedSeeds","second-cup seed protection","secondaryProtectedSeeds",()=>"How many second-cup seeds?",()=>"If unset, the main-cup seed policy is inherited.","choice",undefined,d=>d.remainder==="secondary",()=>false),
-  division("secondaryByePolicy","second-cup byes","secondaryByePolicy",()=>"Who receives second-cup byes?",()=>"If unset, the main-cup bye policy is inherited.","choice",undefined,d=>d.remainder==="secondary",()=>false),
-  division("secondaryRematches","second-cup rematches","secondaryRematches",()=>"How are second-cup rematches handled?",()=>"If unset, the main-cup rematch policy is inherited.","choice",undefined,d=>d.remainder==="secondary",()=>false)
+  division("secondaryBracketSlots","second-cup capacity","secondaryBracketSlots",()=>"How many second-cup slots?",()=>"If unset, the smallest fitting bracket is used.","number",undefined,d=>pools(d)&&d.remainder==="secondary",()=>false),
+  division("secondaryProtectedSeeds","second-cup seed protection","secondaryProtectedSeeds",()=>"How many second-cup seeds?",()=>"If unset, the main-cup seed policy is inherited.","choice",undefined,d=>pools(d)&&d.remainder==="secondary",()=>false),
+  division("secondaryByePolicy","second-cup byes","secondaryByePolicy",()=>"Who receives second-cup byes?",()=>"If unset, the main-cup bye policy is inherited.","choice",undefined,d=>pools(d)&&d.remainder==="secondary",()=>false),
+  division("secondaryRematches","second-cup rematches","secondaryRematches",()=>"How are second-cup rematches handled?",()=>"If unset, the main-cup rematch policy is inherited.","choice",undefined,d=>pools(d)&&d.remainder==="secondary",()=>false)
 ];
 
 export function evaluateRuleCoverage(draft:Draft,facts:SourceFact[],conflictPaths:Set<string>):{coverage:RuleCoverage[];missing:Decision[]}{
