@@ -1,6 +1,6 @@
 import type {Decision,Draft,DivisionDraft,SourceFact,Value} from "./interpretation.js";
 
-export const RULE_CATALOG_VERSION="creator-rule-catalog/1.0.1";
+export const RULE_CATALOG_VERSION="creator-rule-catalog/1.1.0";
 type Kind=Decision["kind"];
 type Option={value:Value;label:string};
 export interface RuleConcept {
@@ -22,7 +22,25 @@ const division=(id:string,noun:string,field:string,question:(d:DivisionDraft)=>s
 const pools=(d:DivisionDraft)=>d.format==="pools_knockout";
 const bracket=(d:DivisionDraft)=>d.format==="knockout"||pools(d);
 const needsComparison=(d:DivisionDraft)=>pools(d)&&(d.qualification==="best_overall"||d.qualification==="winner_priority"||(d.qualification==="top_per_pool"&&Number(d.runnersUp)>0));
-const needsByes=(d:DivisionDraft)=>{if(!bracket(d))return false;const count=d.format==="knockout"?d.entrants:d.qualification==="top_per_pool"&&d.poolSizes&&d.places!==null&&d.runnersUp!==null?d.poolSizes.length*d.places+d.runnersUp:d.places;return typeof count==="number"&&count>=2&&(count&(count-1))!==0;};
+const needsByes=(d:DivisionDraft)=>{
+  if(!bracket(d))return false;
+  const count=d.format==="knockout"?d.entrants:d.qualification==="top_per_pool"&&d.poolSizes&&d.places!==null&&d.runnersUp!==null?d.poolSizes.length*d.places+d.runnersUp:d.places;
+  const nonPower=(n:number|null)=>typeof n==="number"&&n>=2&&(n&(n-1))!==0;
+  // A secondary bracket inherits the main bye policy unless explicitly overridden.
+  return nonPower(count)||(pools(d)&&d.remainder==="secondary"&&d.secondaryByePolicy===null&&d.entrants!==null&&count!==null&&nonPower(d.entrants-count));
+};
+/** Prerequisites govern question timing and make conditional applicability inspectable. */
+export const RULE_DEPENDENCIES:Readonly<Record<string,readonly string[]>>={
+  tiebreak:["divisions.*.format"], poolSizes:["format"], qualification:["format"], places:["format","qualification"],
+  runnersUp:["format","qualification"], comparison:["format","qualification","runnersUp"], remainder:["format"], cup:["format"],
+  secondaryCup:["format","remainder"], protectedSeeds:["format"], bracketSlots:["format"],
+  byePolicy:["format","entrants","qualification","places","poolSizes","runnersUp","remainder"], rematches:["format"],
+  secondaryBracketSlots:["format","remainder"],secondaryProtectedSeeds:["format","remainder"],secondaryByePolicy:["format","remainder"],secondaryRematches:["format","remainder"]
+};
+export function dependencyPaths(ruleId:string,path:string,draft:Draft):string[]{
+  const prefix=path.startsWith("divisions.")?path.split(".").slice(0,2).join(".")+".":"";
+  return (RULE_DEPENDENCIES[ruleId]??[]).flatMap(key=>key==="divisions.*.format"?draft.divisions.map((_,i)=>`divisions.${i}.format`):[prefix+key]);
+}
 // References to independently enforced draft/schema findings. The catalog does not perform validation.
 const RULE_INVARIANTS:Readonly<Record<string,readonly string[]>>={
   duration:["INVALID_VALUE"],rest:["INVALID_VALUE"],courts:["INVALID_VALUE"],start:["INVALID_TIME","RESOURCE_WINDOW"],end:["INVALID_TIME","RESOURCE_WINDOW"],timezone:["INVALID_TIMEZONE"],scoring:["UNSUPPORTED"],tiebreak:["UNSUPPORTED"],
@@ -54,7 +72,7 @@ export const RULE_CATALOG:readonly RuleConcept[]=[
   division("secondaryCup","second cup","secondaryCup",()=>"What is the second cup called?",d=>`${d.label} division`,"text",undefined,d=>pools(d)&&d.remainder==="secondary"),
   division("protectedSeeds","seed protection","protectedSeeds",()=>"How many top seeds are protected?",()=>"Choose 2 or 4; protection is hierarchical.","choice",[{value:2,label:"Top 2 in opposite halves"},{value:4,label:"Top 4 in separate quarters"}],bracket),
   division("bracketSlots","main bracket capacity","bracketSlots",()=>"How many bracket slots?",()=>"If unset, the smallest fitting bracket is used.","number",undefined,bracket,()=>false),
-  division("byePolicy","bye allocation","byePolicy",()=>"Who receives the byes?",()=>"The field size requires byes, so allocation needs a declared rule.","choice",choice([["highest_seeds","Highest seeds first"]]),needsByes),
+  division("byePolicy","bye allocation","byePolicy",()=>"Who receives the byes?",()=>"The field size requires byes, in the main or second cup, so allocation needs a declared rule.","choice",choice([["highest_seeds","Highest seeds first"]]),needsByes),
   division("rematches","opening rematches","rematches",()=>"How should opening rematches be handled?",()=>"Impossible avoidance remains a finding; no qualifier is replaced.","choice",choice([["avoid","Avoid same-pool and previous opponents where possible"],["allow","Allow rematches"]]),bracket),
   division("secondaryBracketSlots","second-cup capacity","secondaryBracketSlots",()=>"How many second-cup slots?",()=>"If unset, the smallest fitting bracket is used.","number",undefined,d=>pools(d)&&d.remainder==="secondary",()=>false),
   division("secondaryProtectedSeeds","second-cup seed protection","secondaryProtectedSeeds",()=>"How many second-cup seeds?",()=>"If unset, the main-cup seed policy is inherited.","choice",undefined,d=>pools(d)&&d.remainder==="secondary",()=>false),
@@ -62,7 +80,7 @@ export const RULE_CATALOG:readonly RuleConcept[]=[
   division("secondaryRematches","second-cup rematches","secondaryRematches",()=>"How are second-cup rematches handled?",()=>"If unset, the main-cup rematch policy is inherited.","choice",undefined,d=>pools(d)&&d.remainder==="secondary",()=>false)
 ];
 
-export function evaluateRuleCoverage(draft:Draft,facts:SourceFact[],conflictPaths:Set<string>):{coverage:RuleCoverage[];missing:Decision[]}{
+export function evaluateRuleCoverage(draft:Draft,facts:SourceFact[],conflictPaths:Set<string>,invalidPaths:Set<string>=new Set()):{coverage:RuleCoverage[];missing:Decision[]}{
   const coverage:RuleCoverage[]=[],missing:Decision[]=[];
   for(const rule of RULE_CATALOG){
     const indexes=rule.scope==="competition"?[-1]:draft.divisions.map((_,i)=>i);
@@ -76,5 +94,9 @@ export function evaluateRuleCoverage(draft:Draft,facts:SourceFact[],conflictPath
       if(status==="MISSING")missing.push({id:path,path,question:rule.question(draft,division),why:reason,kind:rule.kind,ruleId:rule.id,...(rule.options?{options:rule.options}:{})});
     }
   }
-  return {coverage,missing};
+  const actionable=missing.filter(item=>!dependencyPaths(item.ruleId!,item.path,draft).some(path=>{
+    const prerequisite=coverage.find(row=>row.path===path);
+    return prerequisite?.status==="MISSING"||prerequisite?.status==="CONFLICT"||invalidPaths.has(path);
+  }));
+  return {coverage,missing:actionable};
 }

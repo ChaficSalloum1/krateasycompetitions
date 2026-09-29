@@ -31,3 +31,7 @@ A3 follow-up: preserve the supported selector envelope in the new independent qu
 
 - F adapter work: graph-to-CP-SAT currently rejects projected start/court locks (`TSQ102`). D4c proves the legacy scheduler/independent validator and normalized typed model handle supported pins, and proves the CP-SAT adapter rejects them instead of ignoring them. F must join explicit Plan locks to its production solver adapter.
 - F solver-status audit: legacy deterministic list scheduling labels search failure INFEASIBLE without exhaustive proof. Existing audit-import protection is not a fix to the producer. Reconcile this before F can certify solver evidence; no schedule-search status is exposed by the D creator.
+
+## Authorised schedule controls — 2026-09-29
+
+User explicitly requested visual scheduling with match moves and division-wide breaks. Implement under F/G after D/E gates. Model a division break as a scoped availability constraint, distinct from court closure and global rest. A drag/move creates a candidate against an expected revision. Recheck resources, all possible participants, dependencies, rest, breaks and protected locks independently; show conflicts and affected future before approval. Reject atomically, never silently relax a hard invariant. G repairs measure entrant/match/court/time/published-information changes. K/L additionally preserve completed truth and protect in-progress contests. No schedule-editing capability is claimed by D12's coverage map.

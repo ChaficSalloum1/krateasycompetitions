@@ -43,3 +43,7 @@ No new core primitive is justified by presentation convenience. Phase N classifi
 | creator/rule-catalog | Versioned supported draft nouns, conditional question requirements and source/answer coverage | Definition validation, broader sport ontology, Guard authority | docs/D_RULE_CATALOG_SLICE.md; creator-rule-catalog tests and intent corpus |
 
 All three use CreatorSession's revision-checked commands and immutable snapshots. Successful commands clear review and append transition evidence; rejected commands commit no input/history changes. UI modules own presentation only. Their READY_FOR_REVIEW/REVIEWED states never mean LOCKED, published or Guard-certified.
+
+## Creator requirement report — D12
+
+JOB: expose current requirement coverage and exact gaps. INPUTS: Interpretation plus existing compilation/validation findings. OUTPUTS: competition-requirements/1.0.0 report with source, revision, interpretation and report hashes. OWNS: non-authoritative coverage projection. DOES NOT OWN: rule truth, question answers, independent assurance, Guard authority, scheduling. STATE: pure derived KNOWN/PROPOSED/MISSING/WAITING/CONFLICT/UNSUPPORTED/INVALID/NOT_APPLICABLE/UNRESOLVED/NOT_EVALUATED. COMMANDS: none; CreatorSession retains the mutation protocol. INVARIANTS/FAILURES/TESTS: docs/D_REQUIREMENT_MODEL_SLICE.md. Unknown catalog concepts fail closed rather than disappear. EVENTS/TELEMETRY: existing draft command events, structure_node_opened for requirement-map inspection. ACCEPTANCE: 117 creator tests plus actual bundled interaction; no later gate certified.

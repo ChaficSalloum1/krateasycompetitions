@@ -1,3 +1,4 @@
+import {inspectDraft} from "./definition.js";
 import { canonicalHash } from "@tournament-os/tournament-schema";
 import { ingestCreationSource } from "../creation-source-ingestion.js";
 import type { CreationSource } from "../creation-proposal.js";
@@ -139,7 +140,7 @@ export function interpret(source:CreationSource,answers?:Answers,revision=1,rost
     try{setField(draft,path,value);facts.push({id:`fact-${facts.length+1}`,path,value,sourceHash,locator:`answer:${path}`,quote:"Explicit organiser decision",origin:"answer"});}catch{failures.push(`Unknown answer field ${path}`);}
   }
   const unresolvedConflicts=new Set(conflicts.filter(conflict=>!Object.hasOwn(applied,conflict.path)).map(conflict=>conflict.path));
-  const {coverage,missing:decisions}=evaluateRuleCoverage(draft,facts,unresolvedConflicts);
+  const {coverage,missing:decisions}=evaluateRuleCoverage(draft,facts,unresolvedConflicts,new Set(inspectDraft(draft).map(f=>f.path)));
   for(const conflict of conflicts)if(!Object.hasOwn(applied,conflict.path))decisions.push({id:`conflict:${conflict.path}`,path:conflict.path,question:`Which value is correct for ${conflict.path}?`,why:conflict.quotes.join(" / "),kind:"choice",options:conflict.values.map(value=>({value,label:JSON.stringify(value)}))});
   for(const item of unparsed)if(applied[item.id]!=="context_only")decisions.push({id:item.id,path:item.id,question:"Does this contain a rule we still need to model?",why:item.text,kind:"choice",options:[{value:"context_only",label:"Context only — no competition rule"}]});
   const partial={sourceHash,ruleCatalogVersion:RULE_CATALOG_VERSION,coverage,rosterSourceHash:rosterSource?canonicalHash(rosterSource):null,draft,roster,facts,decisions,conflicts,unparsed,failures,revision};

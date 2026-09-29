@@ -1,3 +1,4 @@
+import {buildRequirementReport} from "./requirements.js";
 import type {StartLock} from "./plan-locks.js";
 import type {OperationsEdit} from "./operations.js";
 import type {MembershipEdit} from "./membership.js";
@@ -40,7 +41,8 @@ function sourceValid(source:CreationSource):boolean {
 }
 function evaluate(inputs:Inputs,revision:number){
   const interpretation=interpret(inputs.source,inputs.answers,revision,inputs.rosterSource);
-  return {interpretation,compilation:compileInterpretation(interpretation,inputs.membership,inputs.operations,inputs.planLocks)};
+  const compilation=compileInterpretation(interpretation,inputs.membership,inputs.operations,inputs.planLocks);
+  return {interpretation,compilation,requirements:buildRequirementReport(interpretation,compilation)};
 }
 function stateOf(current:ReturnType<typeof evaluate>,reviewedHash:string|null):DraftState {
   if(current.compilation.status==="BLOCKED")return "BLOCKED";

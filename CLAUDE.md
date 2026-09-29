@@ -16,3 +16,5 @@ Status: ACTIVE. Applies to any coding agent, not only Claude.
 **DO NOT PROCEED BEYOND THIS SLICE.** Determine whether adjacent work violates a hard invariant or blocks acceptance. If neither, record it in FUTURE.md and do not implement it.
 
 D11 addresses reported invisible questions: the question/check panel now precedes the editor, explicit checking flushes pending text, and generated HTML pins assets by content hash. Read docs/D_QUESTION_DISCOVERY_SLICE.md. No browser or tournament certification claim follows.
+
+D12 current correction: versioned requirement coverage by domain noun and lifecycle boundary, dependency-aware questions, unsupported/invalid evidence, explicit compiled defaults and missing secondary-cup bye policy. Read docs/D_REQUIREMENT_MODEL_SLICE.md. D remains open; schedule moves and division breaks are recorded for F/G, not implemented in D.
