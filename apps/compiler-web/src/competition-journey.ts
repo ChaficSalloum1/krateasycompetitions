@@ -292,6 +292,18 @@ export type PoolPlacementRequest =
   | { readonly kind: "AUTOMATIC" }
   | { readonly kind: "RULES"; readonly rules: readonly PoolRule[] };
 
+/** What replacing the roster would change, shown before it is applied; applying requires this exact preview hash. */
+export interface RosterReplacementPreview {
+  readonly previewHash: string;
+  readonly draftVersion: number;
+  readonly entrantCount: number;
+  readonly added: readonly { readonly entrantId: string; readonly displayName: string }[];
+  readonly removed: readonly { readonly entrantId: string; readonly displayName: string }[];
+  readonly renamed: readonly { readonly entrantId: string; readonly from: string; readonly to: string }[];
+  readonly reseeded: number;
+  readonly consequences: readonly string[];
+}
+
 /** What a pool change would do, shown before it is applied; applying requires this exact preview hash. */
 export interface PoolMembershipPreview {
   readonly previewHash: string;
@@ -1583,6 +1595,62 @@ export class CompetitionJourney {
       ...(membership ? { poolMembership: membership } : {}),
       ...(rules?.length ? { poolRules: rules } : {}),
       poolMembershipHistory: [...(current.poolMembershipHistory ?? []), entry] });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  /**
+   * Shows what replacing the roster would do: pairs added, removed and renamed, seeds that change, and
+   * the consequences for a created plan, saved pools and pool rules. Every source that carries entrants is
+   * replaced by the new one in a single revision; other sources (the event's facts) are kept.
+   */
+  public previewRosterReplacement(id: string, expectedDraftVersion: number, source: CreationSource): RosterReplacementPreview {
+    const current = this.require(id);
+    if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
+    if (current.approval) throw new Error("approved_revision_is_immutable");
+    const incoming = ingestCreationSource(source);
+    if (incoming.status !== "ACCEPTED" || incoming.entrants.length === 0) throw new JourneyExplainedError("roster_replacement_invalid",
+      `The new roster could not be read${incoming.findings.length ? `: ${incoming.findings.join("; ")}` : ""}. Nothing changed.`);
+    const sources = current.sources ?? [current.source];
+    const previous = sources.map(ingestCreationSource).flatMap(({ entrants }) => entrants)
+      .filter((entrant, index, all) => all.findIndex(({ id: other }) => other === entrant.id) === index);
+    if (previous.length === 0) throw new Error("roster_replacement_requires_roster");
+    const before = new Map(previous.map((entrant) => [entrant.id, entrant]));
+    const after = new Map(incoming.entrants.map((entrant) => [entrant.id, entrant]));
+    const added = incoming.entrants.filter(({ id: entrantId }) => !before.has(entrantId)).map(({ id: entrantId, displayName }) => ({ entrantId, displayName }));
+    const removed = previous.filter(({ id: entrantId }) => !after.has(entrantId)).map(({ id: entrantId, displayName }) => ({ entrantId, displayName }));
+    const renamed = incoming.entrants.filter(({ id: entrantId, displayName }) => before.has(entrantId) && before.get(entrantId)!.displayName !== displayName)
+      .map(({ id: entrantId, displayName }) => ({ entrantId, from: before.get(entrantId)!.displayName, to: displayName }));
+    const reseeded = incoming.entrants.filter(({ id: entrantId, seed }) => before.has(entrantId) && before.get(entrantId)!.seed !== seed).length;
+    const removedIds = new Set(removed.map(({ entrantId }) => entrantId));
+    const consequences = [
+      ...(current.compiled ? ["The plan already created is set aside. Create and check the plan again before approval."] : []),
+      ...(current.poolMembership && (added.length || removed.length) ? ["Your saved pools no longer cover the roster. Place them again or draw them automatically."] : []),
+      ...((current.poolRules ?? []).some(({ entrantIds }) => entrantIds.some((entrantId) => removedIds.has(entrantId)))
+        ? ["A pool rule names a pair who leaves. Change the rules to continue."] : []),
+      ...(incoming.entrants.length !== current.proposal.blueprint.participantCount
+        ? [`The roster has ${incoming.entrants.length} entrants; the event's facts say ${current.proposal.blueprint.participantCount ?? "none"}. Update the facts to match.`] : []),
+    ];
+    const body = { competitionId: id, draftVersion: current.draftVersion, recordHash: current.recordHash,
+      sourceHash: canonicalHash(source), added, removed, renamed, reseeded, consequences };
+    return { previewHash: canonicalHash(body), draftVersion: current.draftVersion, entrantCount: incoming.entrants.length,
+      added, removed, renamed, reseeded, consequences };
+  }
+
+  /** Replaces the roster exactly as previewed, in one revision. */
+  public applyRosterReplacement(id: string, expectedDraftVersion: number, source: CreationSource,
+    expectedPreviewHash: string): CompetitionJourneySnapshot {
+    const preview = this.previewRosterReplacement(id, expectedDraftVersion, source);
+    if (preview.previewHash !== expectedPreviewHash) throw new Error("roster_replacement_preview_mismatch");
+    const current = this.require(id);
+    const kept = (current.sources ?? [current.source]).filter((earlier) => ingestCreationSource(earlier).entrants.length === 0);
+    const sources = [...kept, source];
+    const updatedAt = this.canonicalNow();
+    const currentWorkbench = current.workbench ?? analyseCompetitionSources(current.sources ?? [current.source], current.createdAt);
+    const workbench = rebaseWorkbenchSources(currentWorkbench, sources, updatedAt);
+    const { compiled: _compiled, approval: _approval, publication: _publication, ...draft } = withoutSeal(current);
+    const revised = sealRecord({ ...draft, draftVersion: current.draftVersion + 1, updatedAt, source, sources, workbench });
     this.records.set(id, revised);
     this.persist();
     return snapshotOf(revised);

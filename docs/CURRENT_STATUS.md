@@ -45,7 +45,7 @@ The shortest honest route to a hosted pilot is these slices, in order.
 3. **Pilot-critical creation correctness**, brought in from the draft stack and reimplemented on `main`:
    - ~~"keep together" and "keep apart" pool rules~~ (item 59);
    - ~~knockout draws that do what their policy declares, with hierarchical top-seed protection~~ (item 58);
-   - roster replacement with stale pool, seed and assignment detection.
+   - ~~roster replacement with stale pool, seed and assignment detection~~ (item 60).
 4. **Pilot scheduling controls**, with PRs #13–#16 as reference material:
    - per-court availability windows;
    - stage and round durations;

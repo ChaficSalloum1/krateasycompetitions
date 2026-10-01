@@ -510,4 +510,15 @@ No authority conflict required product-owner direction. The smallest connected s
       - a forged store with tampered rules is refused at load;
       - in a browser on a phone-width screen, a keep-apart rule is reviewed and applied.
 
+60. **Roster replacement** (`previewRosterReplacement`, `applyRosterReplacement`, `POST …/roster-replace-preview` and `…/roster-replace-apply`, Studio "Replace roster"):
+    - **One change.** Every source that carries entrants is replaced by the new roster in a single revision. The event's facts are kept. Before this, a replacement needed "remove latest source" and then "add", and that worked only if the roster was the latest source.
+    - **Preview.** It lists pairs joining, leaving and renamed, and how many seeds change. Its consequences cover:
+      - a created plan, which is set aside;
+      - saved pools that no longer cover the roster;
+      - pool rules that name a leaving pair;
+      - an entrant count that differs from the event's facts.
+    - **Apply.** It requires the exact preview hash. An unreadable roster is refused with the reason, and nothing changes.
+    - **What comes after.** The stale detection in items 57 and 59 then blocks compiling until pools and rules match the new roster.
+    - **Tests** (`roster-replacement.test.ts`, `browser/pool-editor.test.ts`): the preview's contents, a mismatched hash and an invalid roster are each checked, along with a single-revision apply that compiles. The stale pools and rules after a replacement are checked too. In a browser on a phone-width screen, a reviewed replacement of a compiled draft's roster is applied.
+
 Broader format/sport connection, non-pilot loser-path/hard-rematch reconstruction and a verified on-device advisory model remain governed follow-ons rather than St Albans deployment blockers. The remaining pilot gates require external authority or deployment inputs: provider/fallback selection and credentials, authorised emergency details, named-assistive-technology/outdoor accessibility acceptance, full staff/manual recovery rehearsal, production persistence/restore evidence, support assignment and final role approvals. The emergency pack cannot be declared ready until the venue/pilot safety owner supplies and approves the named responders, contacts, venue/access and evacuation facts; until then the explicit fallback is the venue's separately controlled printed safety plan. External delivery remains fail closed until the pilot owner selects credentials, a provider and its declared fallback. The executable release manifest lists every remaining gate, accountable role and fixed fallback against the exact closed rehearsal scope; no missing external fact is represented as passed.

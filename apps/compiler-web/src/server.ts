@@ -869,7 +869,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end(html);
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|pool-membership-preview|pool-membership-apply|edit-preview|edit-apply|compile|approve|amend|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|participant-access-rotate|participant-access-revoke|participant-recovery-code|participant-recover|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|roster-replace-preview|roster-replace-apply|pool-membership-preview|pool-membership-apply|edit-preview|edit-apply|compile|approve|amend|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|participant-access-rotate|participant-access-revoke|participant-recovery-code|participant-recover|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
@@ -890,7 +890,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
           json(response, 405, { apiVersion: "1.0", error: "method_not_allowed" }, { allow: "GET, POST" });
           return;
         }
-        const body = await readJsonRequestBody(request, operation === "sources" || operation === "draft" ? 8_388_608 : 65_536);
+        const body = await readJsonRequestBody(request, operation === "sources" || operation === "draft" || operation?.startsWith("roster-replace") ? 8_388_608 : 65_536);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid_journey_command");
         const command = body as Record<string, unknown>;
         if (operation === "draft") {
@@ -904,6 +904,17 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
             || !Number.isSafeInteger(command.expectedDraftVersion)) throw new Error("invalid_journey_command");
           json(response, 200, competitionJourney.addSource(competitionId, command.expectedDraftVersion as number,
             parseCreationSource(command.source)));
+          return;
+        }
+        if (operation === "roster-replace-preview" || operation === "roster-replace-apply") {
+          const apply = operation === "roster-replace-apply";
+          if (Object.keys(command).some((key) => !["expectedDraftVersion", "source", ...(apply ? ["expectedPreviewHash"] : [])].includes(key))
+            || !Number.isSafeInteger(command.expectedDraftVersion) || (apply && typeof command.expectedPreviewHash !== "string"))
+            throw new Error("invalid_journey_command");
+          const source = parseCreationSource(command.source);
+          json(response, 200, apply
+            ? competitionJourney.applyRosterReplacement(competitionId, command.expectedDraftVersion as number, source, command.expectedPreviewHash as string)
+            : competitionJourney.previewRosterReplacement(competitionId, command.expectedDraftVersion as number, source));
           return;
         }
         if (operation === "pool-membership-preview" || operation === "pool-membership-apply") {
