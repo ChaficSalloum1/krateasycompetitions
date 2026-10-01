@@ -42,15 +42,24 @@ function roundRobin(stage: StageDefinition, entrants: readonly Entrant[], resour
   return nodes;
 }
 
-/** Declared draw rules, mapped to the draw engine's constraints. Anything a policy does not declare keeps its default. */
-function drawConstraintsFor(priorities: TournamentSpec["drawPolicies"][number]["priorities"]): NonNullable<ConstraintDrawInput["constraints"]> {
+const SUPPORTED_DRAW_RULES = new Set(["structural_validity", "protected_byes", "protected_seed_separation",
+  "avoid_opening_round_pool_rematch", "avoid_same_pool_rematch", "avoid_any_rematch", "avoid_opening_round_rematch"]);
+
+/**
+ * Declared draw rules, mapped to the draw engine's constraints. A rule the engine cannot enforce is never
+ * silently dropped: it is returned as unsupported and the draw fails closed.
+ */
+function drawConstraintsFor(priorities: TournamentSpec["drawPolicies"][number]["priorities"]) {
   const declared = new Map(priorities.map(({ rule, strength, priority }) => [rule, { strength, priority }]));
-  const rematch = declared.get("avoid_opening_round_pool_rematch") ?? declared.get("avoid_same_pool_rematch");
-  return {
+  const poolRematch = declared.get("avoid_opening_round_pool_rematch") ?? declared.get("avoid_same_pool_rematch");
+  const anyRematch = declared.get("avoid_any_rematch") ?? declared.get("avoid_opening_round_rematch");
+  const constraints: NonNullable<ConstraintDrawInput["constraints"]> = {
     ...(declared.get("protected_byes") ? { protected_byes: { enabled: true, ...declared.get("protected_byes")! } } : {}),
-    avoid_same_pool_rematch: rematch ? { enabled: true, ...rematch } : { enabled: false },
-    avoid_any_rematch: { enabled: false },
+    ...(declared.get("protected_seed_separation") ? { protected_seed_separation: { enabled: true, ...declared.get("protected_seed_separation")! } } : {}),
+    avoid_same_pool_rematch: poolRematch ? { enabled: true, ...poolRematch } : { enabled: false },
+    avoid_any_rematch: anyRematch ? { enabled: true, ...anyRematch } : { enabled: false },
   };
+  return { constraints, unsupported: priorities.map(({ rule }) => rule).filter((rule) => !SUPPORTED_DRAW_RULES.has(rule)) };
 }
 
 /**
@@ -64,11 +73,21 @@ function knockoutPlacement(spec: TournamentSpec, stage: StageDefinition, ordered
   const structure = spec.competitionStructures.find(({ stageIds }) => stageIds.includes(stage.id));
   const policy = structure ? spec.drawPolicies.find(({ structureId }) => structureId === structure.id) : undefined;
   if (policy?.placement !== "optimised" || ordered.length < 2) return seeded;
-  const draw = placeConstraintDraw({ structureId: structure!.id, entrants: ordered, priorMeetings: [],
-    constraints: drawConstraintsFor(policy.priorities), fixedByeSlots: true });
+  const { constraints, unsupported } = drawConstraintsFor(policy.priorities);
+  if (unsupported.length) {
+    findings.push(makeFinding("TSC512", "The knockout draw policy declares a rule the draw engine cannot enforce.",
+      { structureId: structure!.id, rules: unsupported }));
+    return seeded;
+  }
+  // Entrants who shared a pool have already played each other, so they are each other's prior meetings.
+  const priorMeetings = ordered.flatMap((left, index) => ordered.slice(index + 1)
+    .filter((right) => left.poolId && left.poolId === right.poolId).map((right) => [left.id, right.id] as const));
+  const draw = placeConstraintDraw({ structureId: structure!.id, entrants: ordered, priorMeetings, constraints, fixedByeSlots: true });
   if (draw.status !== "PLACED" || draw.orderedSlotIds.length !== bracketSize) {
-    findings.push(makeFinding("TSC511", "The declared knockout draw rules cannot all be met for these entrants.",
-      { structureId: structure!.id, violations: draw.unavoidableViolations.map(({ rule, message }) => ({ rule, message })) }));
+    findings.push(makeFinding("TSC511", draw.status === "UNKNOWN"
+      ? "No knockout draw meeting every hard draw rule was found within the search limit; one may still exist."
+      : "The declared knockout draw rules cannot all be met for these entrants.",
+    { structureId: structure!.id, status: draw.status, violations: draw.unavoidableViolations.map(({ rule, message }) => ({ rule, message })) }));
     return seeded;
   }
   return draw.orderedSlotIds;

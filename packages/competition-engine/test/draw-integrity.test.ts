@@ -50,3 +50,35 @@ test("an optimised draw avoids a bye-holder opening against its own pool, holdin
   const moved = draw.orderedSlotIds.filter((id, index) => id !== seeded[index]).length;
   assert.ok(moved <= 2, `the draw moves as few pairs as it can (${moved} slots changed)`);
 });
+
+test("a large bracket whose seeded opening pairs all share a pool is repaired by local search, not reported impossible", () => {
+  // Sixteen entrants in eight pools of two, seeded so that every seeded opening pair (1v16, 8v9, ...) is a pool pair.
+  const order = seedOrder(16);
+  const poolOf = new Map<number, string>();
+  for (let index = 0; index < 16; index += 2) { poolOf.set(order[index]!, `P${index / 2}`); poolOf.set(order[index + 1]!, `P${index / 2}`); }
+  const entrants = Array.from({ length: 16 }, (_, i) => entrant(i + 1, poolOf.get(i + 1)));
+  const draw = placeConstraintDraw({ structureId: "ko", entrants, priorMeetings: [], fixedByeSlots: true,
+    constraints: { avoid_same_pool_rematch: { enabled: true, strength: "HARD", priority: 1 }, avoid_any_rematch: { enabled: false } } });
+  assert.equal(draw.status, "PLACED");
+  assert.deepEqual(draw.violations.filter(({ rule }) => rule === "avoid_same_pool_rematch"), []);
+});
+
+test("an exhausted search that finds nothing is UNKNOWN beyond the exhaustive size, never INFEASIBLE", () => {
+  // Every pair has met before, so no opening round can avoid a rematch; at 16 entrants the search is bounded.
+  const entrants = Array.from({ length: 16 }, (_, i) => entrant(i + 1));
+  const priorMeetings = entrants.flatMap((left, index) => entrants.slice(index + 1).map((right) => [left.id, right.id] as const));
+  const draw = placeConstraintDraw({ structureId: "ko", entrants, priorMeetings, fixedByeSlots: true, candidateLimit: 50,
+    constraints: { avoid_same_pool_rematch: { enabled: false }, avoid_any_rematch: { enabled: true, strength: "HARD", priority: 1 } } });
+  assert.equal(draw.status, "UNKNOWN");
+  const small = placeConstraintDraw({ structureId: "ko", entrants: entrants.slice(0, 4), priorMeetings, fixedByeSlots: true,
+    constraints: { avoid_same_pool_rematch: { enabled: false }, avoid_any_rematch: { enabled: true, strength: "HARD", priority: 1 } } });
+  assert.equal(small.status, "INFEASIBLE", "a complete search may say impossible");
+});
+
+test("holding byes in place is part of the draw's proof", () => {
+  const entrants = Array.from({ length: 6 }, (_, i) => entrant(i + 1));
+  const base = { structureId: "ko", entrants, priorMeetings: [] as const,
+    constraints: { avoid_same_pool_rematch: { enabled: false }, avoid_any_rematch: { enabled: false } } };
+  assert.notEqual(placeConstraintDraw({ ...base, fixedByeSlots: true }).proofHash,
+    placeConstraintDraw({ ...base, fixedByeSlots: false }).proofHash);
+});

@@ -44,7 +44,8 @@ export interface ConstraintDrawAlternative {
 }
 
 export interface ConstraintDrawResult {
-  status: "PLACED" | "INFEASIBLE";
+  /** UNKNOWN: the bounded search ended without a placement meeting every hard rule; one may still exist. */
+  status: "PLACED" | "INFEASIBLE" | "UNKNOWN";
   structureId: string;
   orderedSlotIds: Array<string | null>;
   violations: DrawConstraintViolation[];
@@ -151,27 +152,6 @@ function exhaustiveCandidates(values: readonly (string | null)[]): Array<Array<s
   };
   visit();
   return candidates;
-}
-
-function boundedCandidates(baseline: readonly (string | null)[], limit: number, fixedByes = false): Array<Array<string | null>> {
-  const result: Array<Array<string | null>> = [[...baseline]];
-  const seen = new Set([baseline.map((value) => value ?? "-").join("|")]);
-  for (let cursor = 0; cursor < result.length && result.length < limit; cursor += 1) {
-    const current = result[cursor]!;
-    for (let left = 0; left < current.length && result.length < limit; left += 1) {
-      for (let right = left + 1; right < current.length && result.length < limit; right += 1) {
-        if (current[left] === current[right]) continue;
-        if (fixedByes && (current[left] === null || current[right] === null)) continue;
-        const next = [...current];
-        [next[left], next[right]] = [next[right]!, next[left]!];
-        const key = next.map((value) => value ?? "-").join("|");
-        if (seen.has(key)) continue;
-        seen.add(key);
-        result.push(next);
-      }
-    }
-  }
-  return result;
 }
 
 function evaluate(
@@ -316,6 +296,7 @@ function finishResult(partial: Omit<ConstraintDrawResult, "proofHash">, input: C
       priorMeetings: input.priorMeetings.map(([left, right]) => [left, right].sort()).sort((left, right) => left.join("|").localeCompare(right.join("|"))),
       constraints: resolveConstraints(input),
       protectedSeedCount: input.protectedSeedCount ?? null,
+      fixedByeSlots: Boolean(input.fixedByeSlots),
       candidateLimit: input.candidateLimit ?? null,
       alternativeLimit: input.alternativeLimit ?? null,
     },
@@ -340,15 +321,42 @@ export function placeConstraintDraw(input: ConstraintDrawInput): ConstraintDrawR
   const candidateLimit = Math.max(1, input.candidateLimit ?? 4096);
   const keepsByes = (slots: readonly (string | null)[]) => !input.fixedByeSlots
     || slots.every((value, index) => (value === null) === (baseline[index] === null));
-  const candidates = (searchComplete ? exhaustiveCandidates(baseline) : boundedCandidates(baseline, candidateLimit, Boolean(input.fixedByeSlots)))
-    .filter(keepsByes);
+  const candidates = searchComplete ? exhaustiveCandidates(baseline).filter(keepsByes) : [];
   const protectedSeedCount = Math.min(
     input.protectedSeedCount ?? highestPowerOfTwoAtMost(Math.min(4, input.entrants.length)),
     input.entrants.length,
   );
   const priorMeetings = new Set(input.priorMeetings.map(([left, right]) => pairKey(left, right)));
-  const evaluations = candidates.map((slots) => evaluate(slots, input.entrants, constraints, protectedSeedCount, priorMeetings, baseline))
-    .sort((left, right) => compareEvaluations(left, right, constraints));
+  const score = (slots: Array<string | null>) => evaluate(slots, input.entrants, constraints, protectedSeedCount, priorMeetings, baseline);
+  let evaluations: Evaluation[];
+  if (searchComplete) evaluations = candidates.map(score);
+  else {
+    // Larger brackets: follow improving pairwise swaps from the seeded bracket, up to the candidate limit.
+    // A single breadth-first ring around the baseline cannot reach draws that need several disjoint swaps.
+    evaluations = [score([...baseline])];
+    const seen = new Set([evaluations[0]!.key]);
+    let current = evaluations[0]!;
+    while (evaluations.length < candidateLimit) {
+      let best = current;
+      for (let left = 0; left < current.slots.length && evaluations.length < candidateLimit; left += 1) {
+        for (let right = left + 1; right < current.slots.length && evaluations.length < candidateLimit; right += 1) {
+          if (current.slots[left] === current.slots[right]) continue;
+          if (input.fixedByeSlots && (current.slots[left] === null || current.slots[right] === null)) continue;
+          const slots = [...current.slots];
+          [slots[left], slots[right]] = [slots[right]!, slots[left]!];
+          const key = slots.map((value) => value ?? "-").join("|");
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const candidate = score(slots);
+          evaluations.push(candidate);
+          if (compareEvaluations(candidate, best, constraints) < 0) best = candidate;
+        }
+      }
+      if (best === current) break;
+      current = best;
+    }
+  }
+  evaluations.sort((left, right) => compareEvaluations(left, right, constraints));
   const best = evaluations[0]!;
   const feasible = evaluations.filter(({ hardViolationCount }) => hardViolationCount === 0);
   const selected = feasible[0];
@@ -383,7 +391,7 @@ export function placeConstraintDraw(input: ConstraintDrawInput): ConstraintDrawR
     },
   )];
   return finishResult({
-    status: selected ? "PLACED" : "INFEASIBLE",
+    status: selected ? "PLACED" : searchComplete ? "INFEASIBLE" : "UNKNOWN",
     structureId: input.structureId,
     orderedSlotIds: selected ? [...selected.slots] : [],
     violations: representative.violations,

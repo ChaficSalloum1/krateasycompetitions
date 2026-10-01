@@ -33,3 +33,36 @@ test("the event's knockout avoids an opening same-pool meeting that the plain se
   assert.deepEqual(byes, seededGraph.nodes.filter(({ stageId, roundIndex, kind }) => stageId === "open.main" && roundIndex === 1 && kind === "bye")
     .map(({ id }) => id).sort(), "the bracket's shape is the same as the seeded bracket's, so plan and replay agree");
 });
+
+function knockoutFixture() {
+  const event = liveEvent();
+  const record = (event.journey as unknown as { records: Map<string, { compiled: { spec: Parameters<typeof buildCompetitionGraph>[0] } }> })
+    .records.get(event.competition.id)!;
+  const spec = record.compiled.spec;
+  const roster = Object.values(event.competition.poolMembership!.pools).flatMap(({ entrants }) => entrants.map(({ entrantId }) => entrantId));
+  const entrants: Entrant[] = roster.map((id, index) => ({ id, divisionId: "open", memberIds: [`${id}.a`, `${id}.b`], seed: index + 1 }));
+  const pool = ["P1", "P2", "P3", "P1", "P2", "P3"];
+  const qualified = pool.map((poolId, index) => ({ ...entrants[index]!, seed: index + 1, poolId: `open.pools.${poolId}` }));
+  const withRules = (priorities: (typeof spec.drawPolicies)[number]["priorities"]) => ({ ...spec,
+    drawPolicies: spec.drawPolicies.map((policy) => policy.structureId === "open.knockout.structure" ? { ...policy, priorities } : policy) });
+  return { spec, entrants, qualified, withRules };
+}
+
+test("a declared draw rule the engine cannot enforce fails closed with TSC512 instead of being ignored", () => {
+  const { entrants, qualified, withRules } = knockoutFixture();
+  const graph = buildCompetitionGraph(withRules([{ rule: "avoid_same_club", strength: "HARD", priority: 1 }]),
+    { open: entrants }, { "open.knockout.structure": qualified });
+  assert.equal(graph.findings.filter(({ code }) => code === "TSC512").length, 1);
+});
+
+test("a declared any-rematch rule is enforced: pool-mates are prior meetings and are kept apart in the opening round", () => {
+  const { entrants, qualified, withRules } = knockoutFixture();
+  const graph = buildCompetitionGraph(withRules([{ rule: "avoid_any_rematch", strength: "HARD", priority: 1 }]),
+    { open: entrants }, { "open.knockout.structure": qualified });
+  assert.deepEqual(graph.findings.filter(({ code }) => code === "TSC511" || code === "TSC512"), []);
+  const poolOf = new Map(qualified.map(({ id, poolId }) => [id, poolId]));
+  for (const node of graph.nodes.filter(({ stageId, roundIndex, kind }) => stageId === "open.main" && roundIndex === 1 && kind !== "bye")) {
+    const ids = node.slots.flatMap((slot) => slot.type === "entrant" ? [slot.entrantId] : []);
+    if (ids.length === 2) assert.notEqual(poolOf.get(ids[0]!), poolOf.get(ids[1]!), `${ids.join(" v ")} met in their pool`);
+  }
+});
