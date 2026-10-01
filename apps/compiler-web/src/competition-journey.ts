@@ -65,7 +65,7 @@ import { definitionFromProductionLock, entrantsFromProductionLock, isProductionL
   verifiedScheduleFromProductionLock } from "./production-lock-definition.js";
 import { connectedBlueprintFindings, connectedBlueprintFromWorkbench,
   definitionFromConnectedBlueprint, evenPoolSizes, eventLocalTime } from "./generic-blueprint-definition.js";
-import { applyScheduleControls as withScheduleControls, controllableRounds, graphRoundName, hasScheduleControls, parseScheduleControls,
+import { applyScheduleControls as withScheduleControls, contestLabelFromId, controllableRounds, hasScheduleControls, parseScheduleControls,
   protectionGraphFindings, scheduleControlFindings, type ScheduleControlRound, type ScheduleControls } from "./schedule-controls.js";
 import {
   activatePublishedLiveState,
@@ -831,17 +831,6 @@ const emptyScheduleControls = (): ScheduleControls => ({ courtHours: [], duratio
 
 const roundLabels: Record<ScheduleControlRound, string> = { semifinal: "Semi-finals", final: "Final" };
 
-/** A match's name in the organiser's terms, from where it sits in the competition. */
-function contestLabel(node: CompetitionGraph["nodes"][number], definition: TournamentSpec | TournamentDefinition): string {
-  const stage = definition.stages.find(({ id }) => id === node.stageId);
-  const stageLabel = stage?.label ?? node.stageId;
-  if (node.poolId) return `${stageLabel}: pool ${node.poolId.slice(node.poolId.lastIndexOf(".P") + 2)}, match ${node.index}`;
-  const rounds = stage ? controllableRounds(stage) : [];
-  if (stage && rounds.includes("final") && node.round === graphRoundName(stage, "final")) return `${stageLabel}: final`;
-  if (stage && rounds.includes("semifinal") && node.round === graphRoundName(stage, "semifinal")) return `${stageLabel}: semi-final ${node.index}`;
-  return `${stageLabel}: round ${node.roundIndex}, match ${node.index}`;
-}
-
 function scheduleControlsView(record: StoredJourneyRecord): ScheduleControlsView | undefined {
   const basis = scheduleControlsBasis(record);
   if (!basis) return hasScheduleControls(record.scheduleControls) ? { controls: record.scheduleControls, stale: true,
@@ -854,7 +843,7 @@ function scheduleControlsView(record: StoredJourneyRecord): ScheduleControlsView
   const courtPrefix = `${definition.resources[0]!.id}.`;
   const matches = compiled ? compiled.graph.nodes.filter(({ kind }) => kind === "contest").flatMap((node) => {
     const placed = compiled.schedule.contests.find(({ contestId }) => contestId === node.id);
-    return placed ? [{ contestId: node.id, label: contestLabel(node, compiled.spec),
+    return placed ? [{ contestId: node.id, label: contestLabelFromId(node.id, compiled.spec),
       plannedStart: eventLocalTime(placed.start, timezone), plannedCourt: Number(placed.resourceId.slice(courtPrefix.length)) }] : [];
   }).sort((left, right) => left.plannedStart.localeCompare(right.plannedStart) || left.plannedCourt - right.plannedCourt) : [];
   const labels = new Map(matches.map(({ contestId, label }) => [contestId, label]));
@@ -865,7 +854,7 @@ function scheduleControlsView(record: StoredJourneyRecord): ScheduleControlsView
     stages: definition.stages.map((stage) => ({ stageId: stage.id, label: stage.label,
       rounds: controllableRounds(stage).map((round) => ({ round, label: roundLabels[round] })) })),
     matches,
-    protectedLabels: Object.fromEntries(controls.protections.map(({ contestId }) => [contestId, labels.get(contestId) ?? contestId])),
+    protectedLabels: Object.fromEntries(controls.protections.map(({ contestId }) => [contestId, labels.get(contestId) ?? contestLabelFromId(contestId, definition)])),
   };
 }
 

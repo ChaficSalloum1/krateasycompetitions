@@ -521,4 +521,27 @@ No authority conflict required product-owner direction. The smallest connected s
     - **What comes after.** The stale detection in items 57 and 59 then blocks compiling until pools and rules match the new roster.
     - **Tests** (`roster-replacement.test.ts`, `browser/pool-editor.test.ts`): the preview's contents, a mismatched hash and an invalid roster are each checked, along with a single-revision apply that compiles. The stale pools and rules after a replacement are checked too. In a browser on a phone-width screen, a reviewed replacement of a compiled draft's roster is applied.
 
+61. **Pilot scheduling controls** (`ResourceDefinition.unitAvailability`, the `protected_assignment` constraint, `schedule-controls.ts` in the engine and the web app, `previewScheduleControls` / `applyScheduleControls`, `POST …/schedule-controls-preview` and `…/schedule-controls-apply`, Studio "Scheduling"):
+    - **Court hours.** A court can have its own opening hours inside the event's. Every scheduler uses them, and so do the Guard's capacity ledger and the plan view.
+    - **Match lengths.** A stage, or its semi-finals or final, can have its own match length. Organiser round names are mapped to the compiler's: a four-slot bracket's semi-finals are its "round-1".
+    - **Protected matches.** A protected match is pinned to a start, a court, or both:
+      - the list scheduler, the CP-SAT adapter and worker, and the branch-and-bound solver all honour them;
+      - CP-SAT now also narrows a stage/round's required court. Before, it ignored that rule and the validator then rejected its plan;
+      - a time-only lock used to be refused (`TSQ102`) and is now a fixed start.
+    - **Independent check.** `validateSchedule`, which the Guard runs on every compile and live replay, checks the controls itself:
+      - `TSV407`: a moved start;
+      - `TSV412`: a moved court, or a malformed protection;
+      - `TSV413`: a protection naming a match the competition does not schedule, or a court that cannot host it;
+      - `TSV415`: court hours that are malformed or outside the venue's.
+      So a recompile can never silently drop or move a protected match.
+    - **Changing controls.** The full set is previewed: courts, lengths and protected matches changed, court time before and after, and a created plan set aside. It is applied with the exact hash and audited (who and when, plus the hash of the controls in force). The record is re-verified at load.
+    - **Stale controls.** Controls that no longer fit the event's facts (a court, time or round that has gone) make the draft need input, and compiling is refused until they are changed. A protected match the competition no longer has refuses the plan with the reason. A protected match is chosen from a created plan.
+    - **Tests** (engine `schedule-controls.test.ts`, web `schedule-controls.test.ts`, `browser/schedule-editor.test.ts`):
+      - both schedulers honour court hours and every kind of protection;
+      - CP-SAT honours a required court;
+      - the validator catches a moved court, a moved start, an unknown match, malformed protections and court hours outside the venue's;
+      - the journey's preview text, its refusals, stale controls, and a tampered store refused at load;
+      - a protected final keeps its 17:00 start and court 1 through live play to the end;
+      - in a browser on a phone-width screen, the organiser sets court hours, a final's length and a protected final, a bad time is refused with the reason, and the next plan honours all three.
+
 Broader format/sport connection, non-pilot loser-path/hard-rematch reconstruction and a verified on-device advisory model remain governed follow-ons rather than St Albans deployment blockers. The remaining pilot gates require external authority or deployment inputs: provider/fallback selection and credentials, authorised emergency details, named-assistive-technology/outdoor accessibility acceptance, full staff/manual recovery rehearsal, production persistence/restore evidence, support assignment and final role approvals. The emergency pack cannot be declared ready until the venue/pilot safety owner supplies and approves the named responders, contacts, venue/access and evacuation facts; until then the explicit fallback is the venue's separately controlled printed safety plan. External delivery remains fail closed until the pilot owner selects credentials, a provider and its declared fallback. The executable release manifest lists every remaining gate, accountable role and fixed fallback against the exact closed rehearsal scope; no missing external fact is represented as passed.

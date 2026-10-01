@@ -86,6 +86,24 @@ export function graphRoundName(stage: TournamentDefinition["stages"][number], ro
   return size === 4 ? "round-1" : "semifinal";
 }
 
+/**
+ * A match's name in the organiser's terms, read from its id and the definition alone, so a protected
+ * match keeps its name while no plan exists. Ids are the compiler's: `<stage>.P<pool>.R<n>.M<m>` for pool
+ * matches and `<stage>.R<round>.M<m>` for knockout matches, whose last round is the final.
+ */
+export function contestLabelFromId(contestId: string, definition: Pick<TournamentDefinition, "stages">): string {
+  const pool = /^(.+)\.P(\d+)\.R\d+\.M(\d+)$/.exec(contestId);
+  const poolStage = pool ? definition.stages.find(({ id }) => id === pool[1]) : undefined;
+  if (pool && poolStage) return `${poolStage.label}: pool ${pool[2]}, match ${pool[3]}`;
+  const knockout = /^(.+)\.R(\d+)\.M(\d+)$/.exec(contestId);
+  const stage = knockout ? definition.stages.find(({ id }) => id === knockout[1]) : undefined;
+  if (!knockout || !stage) return contestId;
+  const rounds = Math.log2(bracketSize(stage)); const round = Number(knockout[2]);
+  if (stage.primitive === "single_elimination" && round === rounds) return `${stage.label}: final`;
+  if (stage.primitive === "single_elimination" && rounds >= 2 && round === rounds - 1) return `${stage.label}: semi-final ${knockout[3]}`;
+  return `${stage.label}: round ${round}, match ${knockout[3]}`;
+}
+
 const minutesOf = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
 
 /**
