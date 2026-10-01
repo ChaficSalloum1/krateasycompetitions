@@ -101,6 +101,8 @@ export interface PoolConfiguration {
   sizes: number[];
   rounds: 1 | 2;
   allocation: "snake" | "random" | "manual" | "optimised";
+  /** Organiser rules every allocation must satisfy: keep these entrants in one pool, or each in a different pool. */
+  membershipConstraints?: { kind: "TOGETHER" | "SEPARATE"; entrantIds: string[] }[];
 }
 
 export interface BracketConfiguration {

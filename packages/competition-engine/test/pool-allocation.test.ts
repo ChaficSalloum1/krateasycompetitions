@@ -86,3 +86,20 @@ test("the primary competition graph executes the declared pool-allocation adapte
   assert.notDeepEqual(uniqueFirstPoolEntrants, ["advanced.team.1", "advanced.team.2", "advanced.team.3"]);
   assert.ok(graph.stageProofs?.some(({ stageId, adapterId }) => stageId === "advanced.pools" && adapterId === "pool-allocation/optimised@1"));
 });
+
+test("every allocation must satisfy the organiser's keep-together and keep-apart rules", () => {
+  const roster = Array.from({ length: 12 }, (_, i) => ({ id: `r${i + 1}`, divisionId: "open", memberIds: [], seed: i + 1 }));
+  const request = { stageId: "rules", sizes: [4, 4, 4], entrants: roster, randomisation: { mode: "none" as const } };
+  // The seeded snake draw puts r1, r6, r7 and r12 together, and r1, r2 and r3 apart.
+  const together = [{ kind: "TOGETHER" as const, entrantIds: ["r1", "r2"] }];
+  const snake = allocateStagePools({ ...request, allocation: "snake", membershipConstraints: together });
+  assert.equal(snake.status, "REJECTED", "a draw that breaks a rule is refused, whatever made it");
+  assert.ok(snake.findings.some(({ code }) => code === "POOL_MEMBERSHIP_RULE"));
+  const rules = [...together, { kind: "SEPARATE" as const, entrantIds: ["r6", "r7", "r12"] }];
+  const optimised = allocateStagePools({ ...request, allocation: "optimised", membershipConstraints: rules });
+  assert.equal(optimised.status, "ALLOCATED");
+  const poolOf = (id: string) => optimised.pools.findIndex((pool) => pool.some((entrant) => entrant.id === id));
+  assert.equal(poolOf("r1"), poolOf("r2"));
+  assert.equal(new Set(["r6", "r7", "r12"].map(poolOf)).size, 3);
+  assert.deepEqual(optimised.pools.map((pool) => pool.length), [4, 4, 4]);
+});

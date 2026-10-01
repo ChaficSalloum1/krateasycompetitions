@@ -482,4 +482,43 @@ No authority conflict required product-owner direction. The smallest connected s
       - a placement left over from another format can be cleared;
       - in a browser on a phone-width screen, an uneven save is refused with the reason, a valid one is reviewed and applied, and a return to the automatic draw is reviewed and recorded.
 
+58. **Knockout draws do what their policy declares (`knockoutPlacement` in `graph.ts`, `draw-constraints.ts`):**
+    - **The gap.** A definition could declare an `optimised` draw that avoids opening-round pool rematches, but the graph builder ignored draw policies and always used the plain seeded order. The constraint draw that implements those rules had no caller.
+    - **Executing the policy.** A structure whose policy is `optimised` is now placed by the draw engine under its declared rules (protected byes, and avoiding an opening same-pool meeting). The same placement runs for the plan and for every live replay. Rules that cannot all be met raise TSC511 rather than silently using another draw.
+    - **Bye-aware rematches.** An entrant with a bye opens against whoever wins the neighbouring first-round match, so both of those entrants count as its possible opening opponents.
+    - **Byes held in place** (`fixedByeSlots`). The bracket's shape never depends on who qualified, so live progression's comparison of planned and actual contests still holds.
+    - **Fewest moves.** Among equally good draws the one closest to the seeded bracket wins, so a draw with nothing to fix is exactly the seeded bracket.
+    - **Hierarchical seed protection.** Seeds 1 and 2 must be in opposite halves as well as the top four in separate quarters. This was found by the draft stack.
+    - **St Albans.** Its production-lock source pairs every knockout match by seed, so its definition now declares a `seeded` draw, instead of claiming an optimised one that its published schedule does not follow.
+    - **The plain seeded order is sound.** `seedOrder` separates every tier at every bracket size up to 128. The draw that ran before this change was correct; it just was not the declared one.
+    - **Tests** (`draw-integrity.test.ts`, `knockout-draw.test.ts`). The hierarchical, bye-aware and real-event draw tests fail against the previous code.
+    - **Not yet.** The Guard does not yet independently re-check the executed draw against its declared hard rules. That belongs to the Guard programme in `ROADMAP.md`.
+
+59. **Keep-together and keep-apart pool rules** (`PoolConfiguration.membershipConstraints`; `previewPoolMembership` with `{ kind: "RULES" }`; Studio "Pool rules"):
+    - **What a rule is.** It keeps two or more pairs in one pool, or each in a different pool.
+    - **Engine.** Every pool allocation, whoever made it, must satisfy the rules (`POOL_MEMBERSHIP_RULE`).
+    - **The automatic draw.** When rules exist, it becomes the optimised pool construction with the rules as hard constraints. With no rules it is unchanged: the seeded draw.
+    - **Same allocation everywhere.** The Studio shows the allocation compilation produces, and live progression replays it.
+    - **Checked both ways.** A saved placement must satisfy the rules, and a rule that a saved placement breaks is refused with the reason. Rules that are malformed (fewer than two pairs, an unknown pair, more together than a pool holds, more apart than there are pools) or that cannot all be met are refused.
+    - **Changing rules.** Rule changes are previewed, applied with the exact hash, and audited (`RULES_SET`, with the hash of the rules in force).
+    - **Load-time check.** Rules without their audit entry are refused (`journey_store_integrity_failed`).
+    - **Stale rules.** A rule naming a pair who has left the roster makes the draft need input, and compiling is refused until the rules are changed.
+    - **Tests** (`pool-rules.test.ts`, the engine allocation test, `browser/pool-editor.test.ts`):
+      - rules shape the plan's pool matches, and an event with rules plays live to the final from the pools it planned;
+      - placements and rules are cross-checked, and invalid rules are refused;
+      - a roster change makes a rule stale;
+      - a forged store with tampered rules is refused at load;
+      - in a browser on a phone-width screen, a keep-apart rule is reviewed and applied.
+
+60. **Roster replacement** (`previewRosterReplacement`, `applyRosterReplacement`, `POST …/roster-replace-preview` and `…/roster-replace-apply`, Studio "Replace roster"):
+    - **One change.** Every source that carries entrants is replaced by the new roster in a single revision. The event's facts are kept. Before this, a replacement needed "remove latest source" and then "add", and that worked only if the roster was the latest source.
+    - **Preview.** It lists pairs joining, leaving and renamed, and how many seeds change. Its consequences cover:
+      - a created plan, which is set aside;
+      - saved pools that no longer cover the roster;
+      - pool rules that name a leaving pair;
+      - an entrant count that differs from the event's facts.
+    - **Apply.** It requires the exact preview hash. An unreadable roster is refused with the reason, and nothing changes.
+    - **What comes after.** The stale detection in items 57 and 59 then blocks compiling until pools and rules match the new roster.
+    - **Tests** (`roster-replacement.test.ts`, `browser/pool-editor.test.ts`): the preview's contents, a mismatched hash and an invalid roster are each checked, along with a single-revision apply that compiles. The stale pools and rules after a replacement are checked too. In a browser on a phone-width screen, a reviewed replacement of a compiled draft's roster is applied.
+
 Broader format/sport connection, non-pilot loser-path/hard-rematch reconstruction and a verified on-device advisory model remain governed follow-ons rather than St Albans deployment blockers. The remaining pilot gates require external authority or deployment inputs: provider/fallback selection and credentials, authorised emergency details, named-assistive-technology/outdoor accessibility acceptance, full staff/manual recovery rehearsal, production persistence/restore evidence, support assignment and final role approvals. The emergency pack cannot be declared ready until the venue/pilot safety owner supplies and approves the named responders, contacts, venue/access and evacuation facts; until then the explicit fallback is the venue's separately controlled printed safety plan. External delivery remains fail closed until the pilot owner selects credentials, a provider and its declared fallback. The executable release manifest lists every remaining gate, accountable role and fixed fallback against the exact closed rehearsal scope; no missing external fact is represented as passed.
