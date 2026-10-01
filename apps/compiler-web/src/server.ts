@@ -869,7 +869,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end(html);
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|edit-preview|edit-apply|compile|approve|amend|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|participant-access-rotate|participant-access-revoke|participant-recovery-code|participant-recover|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|pool-membership|pool-membership-clear|edit-preview|edit-apply|compile|approve|amend|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|participant-access-rotate|participant-access-revoke|participant-recovery-code|participant-recover|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
@@ -904,6 +904,27 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
             || !Number.isSafeInteger(command.expectedDraftVersion)) throw new Error("invalid_journey_command");
           json(response, 200, competitionJourney.addSource(competitionId, command.expectedDraftVersion as number,
             parseCreationSource(command.source)));
+          return;
+        }
+        if (operation === "pool-membership") {
+          const assignments = command.assignments;
+          if (Object.keys(command).some((key) => !["expectedDraftVersion", "stageId", "basisHash", "assignments"].includes(key))
+            || !Number.isSafeInteger(command.expectedDraftVersion) || typeof command.stageId !== "string"
+            || typeof command.basisHash !== "string" || !Array.isArray(assignments) || assignments.length > 4_096
+            || !assignments.every((assignment) => assignment && typeof assignment === "object" && !Array.isArray(assignment)
+              && Object.keys(assignment).every((key) => key === "entrantId" || key === "poolId")
+              && typeof (assignment as Record<string, unknown>).entrantId === "string"
+              && typeof (assignment as Record<string, unknown>).poolId === "string"))
+            throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.setPoolMembership(competitionId, command.expectedDraftVersion as number,
+            { stageId: command.stageId, basisHash: command.basisHash,
+              assignments: assignments as { entrantId: string; poolId: string }[] }, "local.organiser"));
+          return;
+        }
+        if (operation === "pool-membership-clear") {
+          if (Object.keys(command).some((key) => key !== "expectedDraftVersion") || !Number.isSafeInteger(command.expectedDraftVersion))
+            throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.clearPoolMembership(competitionId, command.expectedDraftVersion as number));
           return;
         }
         if (operation === "source-remove") {

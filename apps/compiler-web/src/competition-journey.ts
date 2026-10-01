@@ -36,6 +36,7 @@ import {
   type OutboxMessage,
   runAuthoritativeRestoreDrill,
   deriveLiveControlRoom,
+  allocateStagePools,
 } from "@tournament-os/competition-engine";
 import {
   isStAlbansMilestoneTemplate,
@@ -63,7 +64,7 @@ import {
 import { definitionFromProductionLock, entrantsFromProductionLock, isProductionLockWorkbench, participantNamesFromProductionLock,
   verifiedScheduleFromProductionLock } from "./production-lock-definition.js";
 import { connectedBlueprintFindings, connectedBlueprintFromWorkbench,
-  definitionFromConnectedBlueprint } from "./generic-blueprint-definition.js";
+  definitionFromConnectedBlueprint, evenPoolSizes } from "./generic-blueprint-definition.js";
 import {
   activatePublishedLiveState,
   independentlyVerifyNoShowOption,
@@ -251,7 +252,28 @@ interface StoredJourneyRecord {
   readonly amendment?: JourneyAmendment;
   /** Published revisions a later approval has replaced before play. */
   readonly publicationHistory?: readonly SupersededPublication[];
+  /** The organiser's exact pool placement, bound to the roster and pool sizes it was made for. */
+  readonly poolMembership?: JourneyPoolMembership;
   readonly recordHash: string;
+}
+
+interface JourneyPoolMembership {
+  readonly stageId: string;
+  readonly basisHash: string;
+  readonly assignments: readonly { readonly entrantId: string; readonly poolId: string }[];
+  readonly decidedBy: string;
+  readonly decidedAt: string;
+}
+
+/** What the Studio shows for a pools stage: the pools in force, and whether they are the organiser's own. */
+export interface PoolMembershipView {
+  readonly stageId: string;
+  readonly basisHash: string;
+  readonly sizes: readonly number[];
+  readonly source: "AUTOMATIC" | "ORGANISER";
+  /** A saved placement made for a different roster or pool sizes. It blocks compilation until cleared or redone. */
+  readonly stale: boolean;
+  readonly pools: readonly { readonly poolId: string; readonly entrants: readonly { readonly entrantId: string; readonly displayName: string }[] }[];
 }
 
 interface JourneyAmendment {
@@ -285,6 +307,7 @@ export interface CompetitionJourneySnapshot {
   /** Set while a published revision is being changed before play. */
   readonly amendment?: { readonly fromRevision: number; readonly requestedBy: string; readonly requestedAt: string };
   readonly publicationHistory?: readonly SupersededPublication[];
+  readonly poolMembership?: PoolMembershipView;
   readonly sourceMode: CreationSource["mode"];
   readonly blueprint: CompetitionBlueprint;
   readonly understood: readonly string[];
@@ -499,14 +522,68 @@ function genericSourceRoster(record: StoredJourneyRecord) {
   return roster;
 }
 
-function genericRosterEntrants(record: StoredJourneyRecord): Record<string, Entrant[]> | null {
+function genericRosterBase(record: StoredJourneyRecord): Entrant[] | null {
   const roster = genericSourceRoster(record);
   if (!roster) return null;
   const ordered = roster.every(({ seed }) => seed !== undefined)
     ? [...roster].sort((left, right) => left.seed! - right.seed!) : [...roster];
-  const entrants = ordered.map(({ id, divisionId, memberIds, seed }, index) => ({ id, divisionId,
+  return ordered.map(({ id, divisionId, memberIds, seed }, index) => ({ id, divisionId,
     memberIds: [...memberIds], seed: seed ?? index + 1 }));
-  return { open: entrants };
+}
+
+/** The generic roster, carrying the organiser's pool placement when one is saved and still applies. */
+function genericRosterEntrants(record: StoredJourneyRecord): Record<string, Entrant[]> | null {
+  const entrants = genericRosterBase(record);
+  if (!entrants) return null;
+  const membership = applicablePoolMembership(record);
+  if (!membership) return { open: entrants };
+  const poolOf = new Map(membership.assignments.map(({ entrantId, poolId }) => [entrantId, poolId]));
+  return { open: entrants.map((entrant) => ({ ...entrant, poolId: poolOf.get(entrant.id)! })) };
+}
+
+const GENERIC_POOL_STAGE_ID = "open.pools";
+
+/**
+ * The pools stage a placement applies to, with a fingerprint of everything the placement depends on:
+ * the stage, its pool sizes and the exact roster. A placement made under another fingerprint is stale.
+ */
+function poolMembershipBasis(record: StoredJourneyRecord) {
+  const blueprint = connectedBlueprintFromWorkbench(record.proposal.blueprint,
+    record.workbench ?? analyseCompetitionSources(record.sources ?? [record.source], record.createdAt));
+  if (!usesGenericRoster(blueprint) || blueprint.format !== "pools_to_knockout"
+    || !blueprint.participantCount || !blueprint.poolSize) return null;
+  const entrants = genericRosterBase(record);
+  if (!entrants) return null;
+  const sizes = evenPoolSizes(blueprint.participantCount, blueprint.poolSize);
+  if (sizes.reduce((sum, size) => sum + size, 0) !== entrants.length) return null;
+  const stageId = GENERIC_POOL_STAGE_ID;
+  const basisHash = canonicalHash({ stageId, sizes, entrantIds: entrants.map(({ id }) => id).sort() });
+  return { stageId, sizes, entrants, basisHash, poolIds: sizes.map((_, index) => `${stageId}.P${index + 1}`) };
+}
+
+function applicablePoolMembership(record: StoredJourneyRecord): JourneyPoolMembership | null {
+  if (!record.poolMembership) return null;
+  const basis = poolMembershipBasis(record);
+  return basis && basis.basisHash === record.poolMembership.basisHash ? record.poolMembership : null;
+}
+
+function poolMembershipIsStale(record: StoredJourneyRecord): boolean {
+  return Boolean(record.poolMembership) && !applicablePoolMembership(record);
+}
+
+function poolMembershipView(record: StoredJourneyRecord): PoolMembershipView | undefined {
+  const basis = poolMembershipBasis(record);
+  if (!basis) return undefined;
+  const names = authoritativeParticipantNames(record);
+  const saved = applicablePoolMembership(record);
+  const pools = saved
+    ? basis.poolIds.map((poolId) => saved.assignments.filter((assignment) => assignment.poolId === poolId).map(({ entrantId }) => entrantId))
+    : allocateStagePools({ stageId: basis.stageId, allocation: "snake", sizes: basis.sizes, entrants: basis.entrants,
+      randomisation: { mode: "none" } }).pools.map((pool) => pool.map(({ id }) => id));
+  return { stageId: basis.stageId, basisHash: basis.basisHash, sizes: basis.sizes,
+    source: saved ? "ORGANISER" : "AUTOMATIC", stale: poolMembershipIsStale(record),
+    pools: basis.poolIds.map((poolId, index) => ({ poolId,
+      entrants: (pools[index] ?? []).map((entrantId) => ({ entrantId, displayName: names[entrantId] ?? entrantId })) })) };
 }
 
 function authoritativeEntrants(record: StoredJourneyRecord): Record<string, ReturnType<typeof createEntrants>[string]> | null {
@@ -691,6 +768,7 @@ function statusOf(record: StoredJourneyRecord): CompetitionJourneyStatus {
   if (record.publication) return "PUBLISHED";
   if (record.compiled?.guardReport.status === "PASSED") return "READY_FOR_APPROVAL";
   if (record.compiled) return "GUARD_BLOCKED";
+  if (poolMembershipIsStale(record)) return "NEEDS_INPUT";
   if (record.workbench?.missingDecisions.length || record.workbench?.conflicts.length
     || record.workbench?.unsupportedSemantics.some(({ blocking }) => blocking)) return "NEEDS_INPUT";
   if (record.workbench && definitionFromProductionLock(record.workbench)) return "DRAFT";
@@ -821,6 +899,7 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
     ...(record.amendment ? { amendment: { fromRevision: record.amendment.base.publication.revision,
       requestedBy: record.amendment.requestedBy, requestedAt: record.amendment.requestedAt } } : {}),
     ...(record.publicationHistory?.length ? { publicationHistory: record.publicationHistory } : {}),
+    ...(() => { const view = poolMembershipView(record); return view ? { poolMembership: view } : {}; })(),
     sourceMode: record.source.mode,
     blueprint: effectiveBlueprint,
     understood: record.proposal.understood,
@@ -888,6 +967,11 @@ function referenceCompilationInputs(record: StoredJourneyRecord, compiledAt: str
       quantity: blueprint.resourceCount ?? resource.quantity,
       availability: [{ start: blueprint.startsAt!, end: blueprint.endsAt! }] } : resource),
   };
+  if (connectedBlueprintDefinition && applicablePoolMembership(record)) {
+    const stage = definition.stages.find(({ id }) => id === GENERIC_POOL_STAGE_ID);
+    if (!stage?.pool) throw new Error("pool_membership_stage_missing");
+    stage.pool = { ...stage.pool, allocation: "manual" };
+  }
   const revision = ((record.compiled ?? record.amendment?.base.compiled)?.revision ?? 0) + 1;
   const spec = compileDefinition(definition, {
     specId: record.id,
@@ -1081,6 +1165,7 @@ export class CompetitionJourney {
       supportFindings: findingsForWorkbench(workbench, proposal.blueprint),
       ...(current.amendment ? { amendment: current.amendment } : {}),
       ...(current.publicationHistory ? { publicationHistory: current.publicationHistory } : {}),
+      ...(current.poolMembership ? { poolMembership: current.poolMembership } : {}),
     });
     this.records.set(id, revised);
     this.persist();
@@ -1157,6 +1242,8 @@ export class CompetitionJourney {
     if ((!current.proposal.compilationCanStart && !workbenchReady) || current.supportFindings.length || current.workbench?.missingDecisions.length
       || current.workbench?.conflicts.length || current.workbench?.unsupportedSemantics.some(({ blocking }) => blocking))
       throw new Error("journey_not_ready");
+    if (poolMembershipIsStale(current)) throw new JourneyExplainedError("pool_membership_stale",
+      "The saved pool placement was made for a different roster or pool sizes. Place the pools again, or clear the placement to draw them automatically.");
     if (current.approval) throw new Error("approved_revision_is_immutable");
     return current;
   }
@@ -1242,6 +1329,52 @@ export class CompetitionJourney {
     const { compiled: _compiled, approval: _approval, publication: _publication, ...draft } = withoutSeal(current);
     const revised = sealRecord({ ...draft, draftVersion: current.draftVersion + 1, updatedAt: requestedAt,
       amendment: { requestedBy, requestedAt, base: { compiled, approval, publication } } });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  /**
+   * Saves the organiser's exact pool placement for a draft. It must place every entrant of the current
+   * roster exactly once, fill every pool to its declared size, and carry the fingerprint the Studio was
+   * shown, so a placement can never apply to a roster or pool sizes it was not made for.
+   */
+  public setPoolMembership(id: string, expectedDraftVersion: number, input: { readonly stageId: string;
+    readonly basisHash: string; readonly assignments: readonly { readonly entrantId: string; readonly poolId: string }[] },
+  decidedBy: string): CompetitionJourneySnapshot {
+    const current = this.require(id);
+    if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
+    if (current.approval) throw new Error("approved_revision_is_immutable");
+    if (!decidedBy.trim()) throw new Error("pool_membership_requires_actor");
+    const basis = poolMembershipBasis(current);
+    if (!basis || input.stageId !== basis.stageId) throw new Error("pool_membership_not_applicable");
+    if (input.basisHash !== basis.basisHash) throw new Error("pool_membership_stale");
+    const placed = input.assignments.map(({ entrantId }) => entrantId);
+    if (placed.length !== basis.entrants.length || new Set(placed).size !== placed.length
+      || basis.entrants.some(({ id: entrantId }) => !placed.includes(entrantId))
+      || input.assignments.some(({ poolId }) => !basis.poolIds.includes(poolId))
+      || basis.poolIds.some((poolId, index) => input.assignments.filter((assignment) => assignment.poolId === poolId).length !== basis.sizes[index]))
+      throw new JourneyExplainedError("pool_membership_invalid",
+        `Place every entrant exactly once, with ${basis.sizes.join(", ")} in the pools.`);
+    const decidedAt = this.canonicalNow();
+    const assignments = basis.entrants.map(({ id: entrantId }) => ({ entrantId,
+      poolId: input.assignments.find((assignment) => assignment.entrantId === entrantId)!.poolId }));
+    const { compiled: _compiled, approval: _approval, publication: _publication, ...draft } = withoutSeal(current);
+    const revised = sealRecord({ ...draft, draftVersion: current.draftVersion + 1, updatedAt: decidedAt,
+      poolMembership: { stageId: basis.stageId, basisHash: basis.basisHash, assignments, decidedBy, decidedAt } });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  /** Discards a saved pool placement, so the pools are drawn automatically again. */
+  public clearPoolMembership(id: string, expectedDraftVersion: number): CompetitionJourneySnapshot {
+    const current = this.require(id);
+    if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
+    if (current.approval) throw new Error("approved_revision_is_immutable");
+    if (!current.poolMembership) return snapshotOf(current);
+    const { compiled: _compiled, approval: _approval, publication: _publication, poolMembership: _membership, ...draft } = withoutSeal(current);
+    const revised = sealRecord({ ...draft, draftVersion: current.draftVersion + 1, updatedAt: this.canonicalNow() });
     this.records.set(id, revised);
     this.persist();
     return snapshotOf(revised);

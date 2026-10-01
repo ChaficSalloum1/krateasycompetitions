@@ -38,10 +38,10 @@ Their creator is a client-side prototype, separate from the persisted, server-ow
 
 ## Order of work
 
-1. Merge PR #5 once CI is green.
+1. ~~Merge PR #5 once CI is green.~~ Merged.
 2. Bring the valuable creator capabilities from #6–#17 into the server-owned Studio, one at a time.
-3. Production identity, tenant membership and durable PostgreSQL, proven by the golden path against a non-production deployment.
+   - Done: pool placement by the organiser (traceability item 57).
+   - Next: "keep together" and "keep apart" pool rules; hierarchical protection of the top seeds in the knockout draw (the prototype found that seeds 1 and 2 can meet before the final); roster replacement with stale-assignment detection; per-court windows; court and start locks; the visual rule map.
+3. Production identity, tenant membership and durable PostgreSQL, proven by the golden path against a non-production deployment. Today the competition journey stores data in a local JSON file, and its organiser routes are disabled in production mode. So this is engineering in the repository: a PostgreSQL journey store, organiser sign-in, and the Studio routes behind it. A hosting account alone does not deliver it.
 4. Visual and accessibility regression on the connected pages.
 5. Pilot gates, then the St Albans pilot.
-
-No new feature branches until step 1 is done.
