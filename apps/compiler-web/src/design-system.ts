@@ -55,7 +55,9 @@ export const COMPETITION_STATES: Readonly<Record<CompetitionStateKey, {
   NEEDS_INPUT: { label: "Needs input", tone: "warning", description: "Required facts are missing or in conflict before it can be compiled." },
   DRAFT: { label: "Draft", tone: "neutral", description: "Complete and ready to compile." },
   BLOCKED: { label: "Blocked by Guard", tone: "danger", description: "The compiled plan has findings that block approval." },
-  CERTIFIED: { label: "Certified", tone: "accent", description: "Guard passed; waiting for separate approval and publication." },
+  // The key is historical. A plan here has passed the Guard but is not approved or published, so it is
+  // never called "certified" to the organiser.
+  CERTIFIED: { label: "Guard passed", tone: "accent", description: "Ready for approval. Nothing is published until it is approved." },
   PUBLISHED: { label: "Published", tone: "positive", description: "An exact approved revision is published and can go live." },
   LIVE: { label: "Live", tone: "positive", description: "Play is running from the published revision." },
   CLOSED: { label: "Closed", tone: "neutral", description: "Finished, sealed and exportable." },

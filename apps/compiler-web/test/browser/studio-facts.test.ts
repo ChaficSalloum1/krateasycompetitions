@@ -54,7 +54,7 @@ test("an organiser changes a compiled draft's courts and match length in the Stu
   { courts: 3, minutes: 20, starts: facts.startsAt, ends: facts.endsAt, pairs: 8 }, "only what was changed changes");
   assert.ok(revised.workbench.sources.some(({ kind }) => kind === "csv"), "the roster is kept");
 
-  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Create certified plan" }).click()]);
+  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Create and check plan" }).click()]);
   const recompiled = j.read(c.id)!;
   assert.equal(recompiled.status, "READY_FOR_APPROVAL");
   assert.equal(recompiled.compiled!.guardStatus, "PASSED");
@@ -82,7 +82,7 @@ test("a draft missing its rules is completed from the Studio alone", async () =>
   assert.equal(completed.status, "DRAFT", "every decision is made; the draft can be compiled");
   assert.deepEqual({ scoring: completed.blueprint.scoringPolicy, draw: completed.blueprint.drawPolicy },
     { scoring: rules.scoringPolicy, draw: rules.drawPolicy });
-  assert.ok(await page.getByRole("button", { name: "Create certified plan" }).isVisible());
+  assert.ok(await page.getByRole("button", { name: "Create and check plan" }).isVisible());
   await page.close();
 });
 
@@ -102,7 +102,7 @@ test("after approval and before play, the organiser changes the courts and publi
   await page.getByText("Change the event's facts").click();
   await page.locator("#facts-form").getByLabel("Number of courts").fill("3");
   await Promise.all([page.waitForEvent("load"), page.locator("#facts-form").getByRole("button", { name: "Save facts" }).click()]);
-  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Create certified plan" }).click()]);
+  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Create and check plan" }).click()]);
   for (const box of await page.locator("#acks input[type=checkbox]").all()) await box.check();
   await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Approve and publish exact revision" }).click()]);
 

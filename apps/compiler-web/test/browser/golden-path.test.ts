@@ -62,7 +62,7 @@ test("an organiser creates, publishes, runs and closes a competition in one brow
   // 2. Roster, plan, approval.
   await page.locator("#source-csv").fill(roster);
   await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Add entrant source" }).click()]);
-  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Create certified plan" }).click()]);
+  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Create and check plan" }).click()]);
   assert.equal(journey.read(competitionId)!.compiled!.guardStatus, "PASSED");
   for (const box of await page.locator("#acks input[type=checkbox]").all()) await box.check();
   await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Approve and publish exact revision" }).click()]);

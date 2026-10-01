@@ -95,9 +95,10 @@ export function connectedBlueprintFindings(blueprint: CompetitionBlueprint): rea
     findings.push("Minimum disruption is a live-repair objective; choose finish on time or fair recovery for initial compilation.");
   if (blueprint.participantCount && blueprint.minimumMatches) {
     const guaranteed = blueprint.format === "round_robin" ? blueprint.participantCount - 1
-      // Pools: every entrant plays the rest of its pool (smallest pool − 1), then at least one knockout match.
+      // Pools: every entrant plays the rest of its pool (smallest pool − 1). Only qualifiers play on, so a
+      // knockout match is not guaranteed to anyone who finishes outside the qualifying places.
       : blueprint.format === "pools_to_knockout" && blueprint.poolSize
-        ? Math.min(...evenPoolSizes(blueprint.participantCount, blueprint.poolSize)) : 1;
+        ? Math.min(...evenPoolSizes(blueprint.participantCount, blueprint.poolSize)) - 1 : 1;
     if (blueprint.minimumMatches > guaranteed)
       findings.push(`The selected ${blueprint.format?.replaceAll("_", " ")} format guarantees at most ${guaranteed} matches per entrant in this envelope, below the requested minimum of ${blueprint.minimumMatches}.`);
   }

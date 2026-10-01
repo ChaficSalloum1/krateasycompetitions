@@ -369,7 +369,7 @@ No authority conflict required product-owner direction. The smallest connected s
       2. ~~A simulated tie blocks publication~~: resolved by item 52, which supersedes item 51's rule.
       3. ~~No page for changing facts~~: resolved by item 53.
       4. ~~No change after approval except repairs~~: resolved before play by item 54. During live play, the guarded live repairs remain the only path.
-      5. ~~Formats a new tournament can use~~: resolved by item 52. Pools into a knockout is built generically for any size.
+      5. ~~Formats a new tournament can use~~: resolved by item 52. Pools into a knockout is built generically, within the tested envelope stated there.
 
 51. **Engine reliability measured by a format benchmark (`scripts/format-benchmark.ts`, `npm run bench:formats`, run in CI):** 48 club events are created the way an organiser creates them and compiled through the product journey:
     - round robin with 6, 8 and 12 pairs, and single elimination with 8, 16 and 32 pairs;
@@ -395,8 +395,8 @@ No authority conflict required product-owner direction. The smallest connected s
     - **Explained refusals.** A plan that cannot be produced is refused with its reason (`JourneyExplainedError`), and the Studio shows it. For example: "These matches need 1,980 court-minutes (66 matches), but the courts and hours give 1,080. Add courts, shorten matches or extend the day."
 
 52. **Pools into a knockout for any event, and pool ties decided by the organiser during play:**
-    - **Generic pools into a knockout** (`generic-blueprint-definition.ts`). A tournament created in the product can be pools into a knockout at any size, not only the fixed St Albans template:
-      - even pools of 3 to 8 (`evenPoolSizes`);
+    - **Generic pools into a knockout** (`generic-blueprint-definition.ts`). A tournament created in the product can be pools into a knockout, not only the fixed St Albans template:
+      - a target pool size of 3 to 8, split into even pools that differ by at most one (`evenPoolSizes`);
       - one or more qualifiers per pool;
       - a single-elimination knockout with byes when the qualifiers are not a power of two.
       Like round robin, it asks for explicit scoring, tiebreak, withdrawal and draw rules. The St Albans template keeps its own definition.
@@ -444,5 +444,21 @@ No authority conflict required product-owner direction. The smallest connected s
     6. **Close:** confirm the four closure acknowledgements on the receipt page and create the closure, with 6 completed results and none unresolved.
     - Live commands carry the server's real clock, so the event is scheduled for today.
     - Each command waits for Run Control's reload of the authoritative state before the next one. Run Control does not poll, so no other request can satisfy that wait.
+
+56. **Corrections to items 52–55 after review:**
+    - **Guaranteed matches for pools into a knockout.** The definition counted the smallest pool's size, as if every entrant also played a knockout match. Only qualifiers play on, so pools of N guarantee N − 1. It now refuses a minimum above that. `pools-guarantee.test.ts` covers pools of 4, which guarantee 3, and 13 pairs with a target of 4, which make pools of 4, 3, 3 and 3 and guarantee 2. The first case fails against the previous code.
+    - **Tested envelope, not "any size".** Pools into a knockout is evidenced for:
+      - 12 to 32 entrants with a target pool size of 4, including uneven pools of 3 to 5;
+      - 1 or 2 qualifiers per pool;
+      - 2 to 6 courts;
+      - 20- and 25-minute matches (the format benchmark).
+      A 12-pair event is also played live to its close. Other target sizes from 3 to 8 are accepted by validation but have no benchmark evidence yet.
+    - **"Certified" is not used for an unapproved plan.** A Guard-passed plan awaiting approval is labelled "Guard passed — ready for approval" in the shared status vocabulary. The Studio says "Create and check plan" and "Guard-passed plan". "Certified" keeps its meaning: every registered invariant passes for a stated envelope.
+    - **Decision record: pool ties that decide progression (supersedes the rule in item 51).**
+      - *Decision.* A standings policy whose final fallback is the organiser's decision does not block publication. Approval records that ties may need a decision (TSC712, acknowledged). Actual progression is blocked until the organiser records the order of a tie that really occurs, in Run Control, with a reason.
+      - *Why.* Whether such a tie occurs depends on results that do not exist at publication. Blocking on one simulated result set made publication depend on chance. This way publication is deterministic, and no tied entrant progresses without a recorded, audited decision.
+      - *Consequences.* Every event with a manual-decision tiebreak, including the St Albans and Harbour references, requires the TSC712 acknowledgement at approval. The knockout fed by a tied pool waits for the decision.
+      - *Status.* Decided by engineering on the owner's delegation. It is open to the competition-rules owner's approval (pilot gate COMPETITION_RULES_APPROVAL).
+    - **Not yet proven: production identity and durability.** The browser golden path runs the in-memory journey on the development server. Real authentication, tenant membership and a durable PostgreSQL-backed acceptance journey on a non-production deployment are still required before the product is called deployed.
 
 Broader format/sport connection, non-pilot loser-path/hard-rematch reconstruction and a verified on-device advisory model remain governed follow-ons rather than St Albans deployment blockers. The remaining pilot gates require external authority or deployment inputs: provider/fallback selection and credentials, authorised emergency details, named-assistive-technology/outdoor accessibility acceptance, full staff/manual recovery rehearsal, production persistence/restore evidence, support assignment and final role approvals. The emergency pack cannot be declared ready until the venue/pilot safety owner supplies and approves the named responders, contacts, venue/access and evacuation facts; until then the explicit fallback is the venue's separately controlled printed safety plan. External delivery remains fail closed until the pilot owner selects credentials, a provider and its declared fallback. The executable release manifest lists every remaining gate, accountable role and fixed fallback against the exact closed rehearsal scope; no missing external fact is represented as passed.
