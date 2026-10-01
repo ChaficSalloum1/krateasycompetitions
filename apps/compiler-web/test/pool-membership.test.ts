@@ -140,3 +140,16 @@ test("the organiser's pools carry into live play and the knockout fills from the
   assert.deepEqual([...knockout].sort(), [...placed].sort(), "the knockout is filled from the placed pools");
   assert.notDeepEqual([...placed].sort(), [...qualifiers(start.poolMembership!)].sort(), "and not from the automatic draw");
 });
+
+test("a placement left over from a format without these pools stays visible so it can be cleared", () => {
+  const { journey, c: start } = draft();
+  let c = journey.setPoolMembership(start.id, start.draftVersion, { stageId: start.poolMembership!.stageId,
+    basisHash: start.poolMembership!.basisHash, assignments: placeTopSeedsTogether(start.poolMembership) }, "organiser.author");
+  c = journey.revise(c.id, c.draftVersion, { mode: "quick", value: { ...facts, format: "round_robin", minimumMatches: 11 } });
+  assert.equal(c.status, "NEEDS_INPUT", "the obsolete placement still blocks the plan");
+  assert.deepEqual({ stale: c.poolMembership?.stale, pools: c.poolMembership?.pools.length }, { stale: true, pools: 0 },
+    "and the Studio still has it to show, with nothing left to place");
+  c = journey.clearPoolMembership(c.id, c.draftVersion);
+  assert.equal(c.poolMembership, undefined);
+  assert.equal(c.status, "DRAFT");
+});

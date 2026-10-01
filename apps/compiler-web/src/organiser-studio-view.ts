@@ -86,10 +86,10 @@ export function renderPoolEditor(view: PoolEditorView, escape: (value: unknown) 
     + entrants.map(({ entrantId, displayName }) => `<div class="field pool-entrant"><label for="pool-of-${escape(entrantId)}">${escape(displayName)}</label><select id="pool-of-${escape(entrantId)}" data-entrant-id="${escape(entrantId)}">${options(poolId)}</select></div>`).join("")
     + `</fieldset>`).join("");
   const state = view.stale
-    ? `<p class="decision" role="alert"><strong>The saved pools no longer match the roster or pool sizes</strong><small>Place the pools again, or draw them automatically.</small></p>`
+    ? `<p class="decision" role="alert"><strong>The saved pools no longer match the roster or pool sizes</strong><small>${view.pools.length ? "Place the pools again, or draw them automatically." : "This event no longer has these pools. Clear the saved placement to continue."}</small></p>`
     : `<p class="evidence">${view.source === "ORGANISER" ? "These are your pools." : "Drawn automatically from the seeds. Move pairs to place them yourself."}</p>`;
   return `<details id="pool-editor"${view.stale ? " open" : ""}><summary>Pools</summary>${state}<form id="pool-form" class="pool-form">${pools}`
-    + `<div class="wide"><button class="primary" type="submit">Save pools</button>${view.source === "ORGANISER" || view.stale ? ` <button class="secondary" type="button" id="pool-clear">Draw automatically again</button>` : ""}<p class="evidence" id="pool-status" role="status" aria-live="polite"></p></div></form></details>`;
+    + `<div class="wide">${view.pools.length ? `<button class="primary" type="submit">Save pools</button>` : ""}${view.source === "ORGANISER" || view.stale ? ` <button class="secondary" type="button" id="pool-clear">Draw automatically again</button>` : ""}<p class="evidence" id="pool-status" role="status" aria-live="polite"></p></div></form></details>`;
 }
 
 /**

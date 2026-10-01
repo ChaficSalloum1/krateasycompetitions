@@ -573,7 +573,10 @@ function poolMembershipIsStale(record: StoredJourneyRecord): boolean {
 
 function poolMembershipView(record: StoredJourneyRecord): PoolMembershipView | undefined {
   const basis = poolMembershipBasis(record);
-  if (!basis) return undefined;
+  // A saved placement whose pools no longer exist (another format, or a roster that no longer fills the
+  // pools) still blocks compiling, so it stays visible with the one action left: clearing it.
+  if (!basis) return record.poolMembership ? { stageId: record.poolMembership.stageId, basisHash: record.poolMembership.basisHash,
+    sizes: [], source: "AUTOMATIC", stale: true, pools: [] } : undefined;
   const names = authoritativeParticipantNames(record);
   const saved = applicablePoolMembership(record);
   const pools = saved
