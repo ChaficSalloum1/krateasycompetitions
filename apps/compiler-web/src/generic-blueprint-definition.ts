@@ -43,6 +43,19 @@ function localInstant(date: string, time: string, timeZone: string): string {
   return new Date(instant).toISOString();
 }
 
+/** An event-day wall-clock time ("HH:MM") as an instant, on the local date the event starts. */
+export function eventDayInstant(startsAt: string, timeZone: string, time: string): string | null {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return null;
+  const day = localParts(startsAt, timeZone);
+  return localInstant(`${day.year}-${day.month}-${day.day}`, `${time}:00`, timeZone);
+}
+
+/** An instant's wall-clock time ("HH:MM") in the event's timezone. */
+export function eventLocalTime(instant: string, timeZone: string): string {
+  const parts = localParts(instant, timeZone);
+  return `${parts.hour}:${parts.minute}`;
+}
+
 function shiftToEventDate(instant: string, originalStart: string, eventDate: string, timeZone: string): string {
   const parts = localParts(instant, timeZone); const start = localParts(originalStart, timeZone);
   const originalDay = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day));

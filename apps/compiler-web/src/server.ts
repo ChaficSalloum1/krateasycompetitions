@@ -21,6 +21,7 @@ import { compilerHtml } from "./ui.js";
 import { creatorHtml } from "./creator-view.js";
 import { productHtml } from "./product-view.js";
 import { createCompetitionProposal, parseCreationProposalPayload } from "./creation-proposal.js";
+import { parseScheduleControls } from "./schedule-controls.js";
 import { CompetitionJourney, JourneyExplainedError, parseConnectedLiveCommand, parseCreationSource,
   type CompetitionJourneyOptions, type PoolPlacementRequest } from "./competition-journey.js";
 import { renderCompetitionGuardPreflight } from "./guard-preflight-view.js";
@@ -869,7 +870,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end(html);
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|roster-replace-preview|roster-replace-apply|pool-membership-preview|pool-membership-apply|edit-preview|edit-apply|compile|approve|amend|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|participant-access-rotate|participant-access-revoke|participant-recovery-code|participant-recover|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|roster-replace-preview|roster-replace-apply|pool-membership-preview|pool-membership-apply|schedule-controls-preview|schedule-controls-apply|edit-preview|edit-apply|compile|approve|amend|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|participant-access-rotate|participant-access-revoke|participant-recovery-code|participant-recover|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
@@ -927,6 +928,19 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
             ? competitionJourney.applyPoolMembership(competitionId, command.expectedDraftVersion as number, request,
               command.expectedPreviewHash as string, "local.organiser")
             : competitionJourney.previewPoolMembership(competitionId, command.expectedDraftVersion as number, request));
+          return;
+        }
+        if (operation === "schedule-controls-preview" || operation === "schedule-controls-apply") {
+          const apply = operation === "schedule-controls-apply";
+          if (Object.keys(command).some((key) => !["expectedDraftVersion", "controls", ...(apply ? ["expectedPreviewHash"] : [])].includes(key))
+            || !Number.isSafeInteger(command.expectedDraftVersion) || (apply && typeof command.expectedPreviewHash !== "string"))
+            throw new Error("invalid_journey_command");
+          const controls = parseScheduleControls(command.controls);
+          if (!controls) throw new Error("invalid_journey_command");
+          json(response, 200, apply
+            ? competitionJourney.applyScheduleControls(competitionId, command.expectedDraftVersion as number, controls,
+              command.expectedPreviewHash as string, "local.organiser")
+            : competitionJourney.previewScheduleControls(competitionId, command.expectedDraftVersion as number, controls));
           return;
         }
         if (operation === "source-remove") {

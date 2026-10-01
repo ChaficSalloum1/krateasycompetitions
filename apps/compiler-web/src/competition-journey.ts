@@ -64,7 +64,9 @@ import {
 import { definitionFromProductionLock, entrantsFromProductionLock, isProductionLockWorkbench, participantNamesFromProductionLock,
   verifiedScheduleFromProductionLock } from "./production-lock-definition.js";
 import { connectedBlueprintFindings, connectedBlueprintFromWorkbench,
-  definitionFromConnectedBlueprint, evenPoolSizes } from "./generic-blueprint-definition.js";
+  definitionFromConnectedBlueprint, evenPoolSizes, eventLocalTime } from "./generic-blueprint-definition.js";
+import { applyScheduleControls as withScheduleControls, controllableRounds, graphRoundName, hasScheduleControls, parseScheduleControls,
+  protectionGraphFindings, scheduleControlFindings, type ScheduleControlRound, type ScheduleControls } from "./schedule-controls.js";
 import {
   activatePublishedLiveState,
   independentlyVerifyNoShowOption,
@@ -258,7 +260,46 @@ interface StoredJourneyRecord {
   readonly poolMembershipHistory?: readonly PoolMembershipChangeRecord[];
   /** The organiser's "keep together" and "keep apart" rules, which every pool allocation must satisfy. */
   readonly poolRules?: readonly PoolRule[];
+  /** The organiser's scheduling controls: court hours, match lengths and protected matches. */
+  readonly scheduleControls?: ScheduleControls;
+  /** Every applied scheduling-controls change, attributed. */
+  readonly scheduleControlsHistory?: readonly ScheduleControlsChangeRecord[];
   readonly recordHash: string;
+}
+
+export interface ScheduleControlsChangeRecord {
+  /** The hash of the full controls in force afterwards. */
+  readonly controlsHash: string;
+  readonly previewHash: string;
+  readonly decidedBy: string;
+  readonly decidedAt: string;
+}
+
+/** What a change to the scheduling controls would do; applying it requires this exact preview hash. */
+export interface ScheduleControlsPreview {
+  readonly previewHash: string;
+  readonly draftVersion: number;
+  readonly controls: ScheduleControls;
+  readonly changes: readonly string[];
+  readonly consequences: readonly string[];
+}
+
+/** What the Studio shows for scheduling: the controls in force and what they can be set on. */
+export interface ScheduleControlsView {
+  readonly controls: ScheduleControls;
+  /** Controls that no longer fit the event's facts. They block compilation until they are changed. */
+  readonly stale: boolean;
+  readonly timezone: string;
+  readonly opens: string;
+  readonly closes: string;
+  readonly courts: number;
+  readonly matchMinutes: number;
+  readonly stages: readonly { readonly stageId: string; readonly label: string;
+    readonly rounds: readonly { readonly round: ScheduleControlRound; readonly label: string }[] }[];
+  /** Matches of the plan last created, which can be protected; empty until a plan exists. */
+  readonly matches: readonly { readonly contestId: string; readonly label: string; readonly plannedStart: string; readonly plannedCourt: number }[];
+  /** Labels for every protected match, including ones no plan has placed yet. */
+  readonly protectedLabels: Readonly<Record<string, string>>;
 }
 
 interface JourneyPoolMembership {
@@ -361,6 +402,8 @@ export interface CompetitionJourneySnapshot {
   readonly publicationHistory?: readonly SupersededPublication[];
   readonly poolMembership?: PoolMembershipView;
   readonly poolMembershipHistory?: readonly PoolMembershipChangeRecord[];
+  readonly scheduleControls?: ScheduleControlsView;
+  readonly scheduleControlsHistory?: readonly ScheduleControlsChangeRecord[];
   readonly sourceMode: CreationSource["mode"];
   readonly blueprint: CompetitionBlueprint;
   readonly understood: readonly string[];
@@ -737,6 +780,95 @@ function poolMembershipView(record: StoredJourneyRecord): PoolMembershipView | u
       entrants: (pools[index] ?? []).map((entrantId) => ({ entrantId, displayName: names[entrantId] ?? entrantId })) })) };
 }
 
+/** The event a record's scheduling controls apply to: a connected event with its facts and definition. */
+function scheduleControlsBasis(record: StoredJourneyRecord) {
+  if (record.workbench && definitionFromProductionLock(record.workbench)) return null;
+  const blueprint = connectedBlueprintFromWorkbench(record.proposal.blueprint,
+    record.workbench ?? analyseCompetitionSources(record.sources ?? [record.source], record.createdAt));
+  const definition = definitionFromConnectedBlueprint(blueprint, record.sources ?? [record.source]);
+  return definition ? { blueprint, definition } : null;
+}
+
+function scheduleControlsAreStale(record: StoredJourneyRecord): boolean {
+  if (!hasScheduleControls(record.scheduleControls)) return false;
+  const basis = scheduleControlsBasis(record);
+  return !basis || scheduleControlFindings(record.scheduleControls, basis.blueprint, basis.definition).length > 0;
+}
+
+function scheduleControlsExplanation(findings: readonly string[], blueprint: CompetitionBlueprint): string {
+  const hours = `${eventLocalTime(blueprint.startsAt!, blueprint.timezone!)}–${eventLocalTime(blueprint.endsAt!, blueprint.timezone!)}`;
+  const messages: Record<string, string> = {
+    COURT_HOURS_COURT: `Choose courts from 1 to ${blueprint.resourceCount ?? 0}, each once.`,
+    COURT_HOURS_TIME: `A court must open before it closes, within the event's hours (${hours}).`,
+    DURATION_STAGE: "A match length names a stage this event does not have.",
+    DURATION_ROUND: "A match length names a round this stage does not have.",
+    DURATION_MINUTES: "Match lengths must be from 5 to 240 minutes.",
+    DURATION_DUPLICATE: "Give each stage or round one match length.",
+    PROTECTION_EMPTY: "A protected match needs a start time, a court, or both.",
+    PROTECTION_DUPLICATE: "Protect each match once.",
+    PROTECTION_COURT: `A protected match must use a court from 1 to ${blueprint.resourceCount ?? 0}.`,
+    PROTECTION_TIME: `A protected start must be within the event's hours (${hours}).`,
+    PROTECTION_OUTSIDE_COURT_HOURS: "A protected start must be within its court's opening hours.",
+    EVENT_HOURS_UNKNOWN: "Set the event's date, times and timezone first.",
+  };
+  return findings.map((code) => messages[code] ?? code).join(" ");
+}
+
+/** Load-time verification: the controls in force are canonical and exactly the ones the latest change recorded. */
+function verifyStoredScheduleControls(record: StoredJourneyRecord): boolean {
+  const history = record.scheduleControlsHistory ?? [];
+  if (!Array.isArray(history) || !history.every((entry) => /^[a-f0-9]{64}$/.test(entry.controlsHash)
+    && /^[a-f0-9]{64}$/.test(entry.previewHash) && typeof entry.decidedBy === "string" && entry.decidedBy.trim() !== ""
+    && isIsoInstant(entry.decidedAt))) return false;
+  const controls = record.scheduleControls;
+  if (controls === undefined) return history.length === 0 || history.at(-1)!.controlsHash === canonicalHash(emptyScheduleControls());
+  const canonical = parseScheduleControls(controls);
+  return canonical !== null && canonicalHash(canonical) === canonicalHash(controls)
+    && hasScheduleControls(controls) && history.at(-1)?.controlsHash === canonicalHash(controls);
+}
+
+const emptyScheduleControls = (): ScheduleControls => ({ courtHours: [], durations: [], protections: [] });
+
+const roundLabels: Record<ScheduleControlRound, string> = { semifinal: "Semi-finals", final: "Final" };
+
+/** A match's name in the organiser's terms, from where it sits in the competition. */
+function contestLabel(node: CompetitionGraph["nodes"][number], definition: TournamentSpec | TournamentDefinition): string {
+  const stage = definition.stages.find(({ id }) => id === node.stageId);
+  const stageLabel = stage?.label ?? node.stageId;
+  if (node.poolId) return `${stageLabel}: pool ${node.poolId.slice(node.poolId.lastIndexOf(".P") + 2)}, match ${node.index}`;
+  const rounds = stage ? controllableRounds(stage) : [];
+  if (stage && rounds.includes("final") && node.round === graphRoundName(stage, "final")) return `${stageLabel}: final`;
+  if (stage && rounds.includes("semifinal") && node.round === graphRoundName(stage, "semifinal")) return `${stageLabel}: semi-final ${node.index}`;
+  return `${stageLabel}: round ${node.roundIndex}, match ${node.index}`;
+}
+
+function scheduleControlsView(record: StoredJourneyRecord): ScheduleControlsView | undefined {
+  const basis = scheduleControlsBasis(record);
+  if (!basis) return hasScheduleControls(record.scheduleControls) ? { controls: record.scheduleControls, stale: true,
+    timezone: "", opens: "", closes: "", courts: 0, matchMinutes: 0, stages: [], matches: [],
+    protectedLabels: Object.fromEntries(record.scheduleControls.protections.map(({ contestId }) => [contestId, contestId])) } : undefined;
+  const { blueprint, definition } = basis;
+  const controls = record.scheduleControls ?? emptyScheduleControls();
+  const compiled = record.compiled;
+  const timezone = blueprint.timezone!;
+  const courtPrefix = `${definition.resources[0]!.id}.`;
+  const matches = compiled ? compiled.graph.nodes.filter(({ kind }) => kind === "contest").flatMap((node) => {
+    const placed = compiled.schedule.contests.find(({ contestId }) => contestId === node.id);
+    return placed ? [{ contestId: node.id, label: contestLabel(node, compiled.spec),
+      plannedStart: eventLocalTime(placed.start, timezone), plannedCourt: Number(placed.resourceId.slice(courtPrefix.length)) }] : [];
+  }).sort((left, right) => left.plannedStart.localeCompare(right.plannedStart) || left.plannedCourt - right.plannedCourt) : [];
+  const labels = new Map(matches.map(({ contestId, label }) => [contestId, label]));
+  return {
+    controls, stale: scheduleControlsAreStale(record), timezone,
+    opens: eventLocalTime(blueprint.startsAt!, timezone), closes: eventLocalTime(blueprint.endsAt!, timezone),
+    courts: blueprint.resourceCount ?? 0, matchMinutes: blueprint.matchDurationMinutes ?? 0,
+    stages: definition.stages.map((stage) => ({ stageId: stage.id, label: stage.label,
+      rounds: controllableRounds(stage).map((round) => ({ round, label: roundLabels[round] })) })),
+    matches,
+    protectedLabels: Object.fromEntries(controls.protections.map(({ contestId }) => [contestId, labels.get(contestId) ?? contestId])),
+  };
+}
+
 function authoritativeEntrants(record: StoredJourneyRecord): Record<string, ReturnType<typeof createEntrants>[string]> | null {
   if (!record.compiled) return null;
   const productionLock = record.workbench ? entrantsFromProductionLock(record.workbench) : null;
@@ -820,6 +952,7 @@ function verifyRecord(record: StoredJourneyRecord): boolean {
   if (recordHash !== makeRecordHash(body)) return false;
   if (record.compiled && usesGenericRoster(record.proposal.blueprint) && !genericSourceRoster(record)) return false;
   if (!verifyStoredPoolMembership(record)) return false;
+  if (!verifyStoredScheduleControls(record)) return false;
   if (record.amendment) {
     const { base } = record.amendment;
     if (record.live || record.closure || record.approval || record.publication
@@ -920,7 +1053,7 @@ function statusOf(record: StoredJourneyRecord): CompetitionJourneyStatus {
   if (record.publication) return "PUBLISHED";
   if (record.compiled?.guardReport.status === "PASSED") return "READY_FOR_APPROVAL";
   if (record.compiled) return "GUARD_BLOCKED";
-  if (poolMembershipIsStale(record) || poolRulesAreStale(record)) return "NEEDS_INPUT";
+  if (poolMembershipIsStale(record) || poolRulesAreStale(record) || scheduleControlsAreStale(record)) return "NEEDS_INPUT";
   if (record.workbench?.missingDecisions.length || record.workbench?.conflicts.length
     || record.workbench?.unsupportedSemantics.some(({ blocking }) => blocking)) return "NEEDS_INPUT";
   if (record.workbench && definitionFromProductionLock(record.workbench)) return "DRAFT";
@@ -1053,6 +1186,8 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
     ...(record.publicationHistory?.length ? { publicationHistory: record.publicationHistory } : {}),
     ...(() => { const view = poolMembershipView(record); return view ? { poolMembership: view } : {}; })(),
     ...(record.poolMembershipHistory?.length ? { poolMembershipHistory: record.poolMembershipHistory } : {}),
+    ...(() => { const view = scheduleControlsView(record); return view ? { scheduleControls: view } : {}; })(),
+    ...(record.scheduleControlsHistory?.length ? { scheduleControlsHistory: record.scheduleControlsHistory } : {}),
     sourceMode: record.source.mode,
     blueprint: effectiveBlueprint,
     understood: record.proposal.understood,
@@ -1110,7 +1245,9 @@ function referenceCompilationInputs(record: StoredJourneyRecord, compiledAt: str
   const workbench = record.workbench ?? analyseCompetitionSources(record.sources ?? [record.source], record.createdAt);
   const blueprint = connectedBlueprintFromWorkbench(record.proposal.blueprint, workbench);
   const productionLockDefinition = record.workbench ? definitionFromProductionLock(record.workbench) : null;
-  const connectedBlueprintDefinition = definitionFromConnectedBlueprint(blueprint, record.sources ?? [record.source]);
+  const plainConnectedDefinition = definitionFromConnectedBlueprint(blueprint, record.sources ?? [record.source]);
+  const connectedBlueprintDefinition = plainConnectedDefinition && hasScheduleControls(record.scheduleControls)
+    ? withScheduleControls(plainConnectedDefinition, blueprint, record.scheduleControls) : plainConnectedDefinition;
   if (!productionLockDefinition && !connectedBlueprintDefinition && (!blueprint.startsAt || !blueprint.endsAt)) throw new Error("journey_not_ready");
   const base = structuredClone(playAndKonnectDefinition);
   const definition: TournamentDefinition = productionLockDefinition ?? connectedBlueprintDefinition ?? {
@@ -1141,6 +1278,9 @@ function referenceCompilationInputs(record: StoredJourneyRecord, compiledAt: str
     : connectedBlueprintDefinition ? genericRosterEntrants(record) : null;
   if ((productionLockDefinition || connectedBlueprintDefinition) && !entrants) throw new Error("journey_roster_unavailable");
   const scenario = runScenario(spec, entrants ?? createEntrants(spec), `journey:${record.id}:revision:${revision}`);
+  if (connectedBlueprintDefinition && hasScheduleControls(record.scheduleControls)
+    && protectionGraphFindings(record.scheduleControls, scenario.graph).length) throw new JourneyExplainedError("schedule_controls_stale",
+    "A protected match is no longer part of this competition. Remove its protection to continue.");
   return { spec, scenario, revision, productionLockDefinition, connectedBlueprintDefinition };
 }
 
@@ -1323,6 +1463,8 @@ export class CompetitionJourney {
       ...(current.poolMembership ? { poolMembership: current.poolMembership } : {}),
       ...(current.poolMembershipHistory ? { poolMembershipHistory: current.poolMembershipHistory } : {}),
       ...(current.poolRules ? { poolRules: current.poolRules } : {}),
+      ...(current.scheduleControls ? { scheduleControls: current.scheduleControls } : {}),
+      ...(current.scheduleControlsHistory ? { scheduleControlsHistory: current.scheduleControlsHistory } : {}),
     });
     this.records.set(id, revised);
     this.persist();
@@ -1403,6 +1545,8 @@ export class CompetitionJourney {
       "The saved pool placement was made for a different roster or pool sizes. Place the pools again, or clear the placement to draw them automatically.");
     if (poolRulesAreStale(current)) throw new JourneyExplainedError("pool_rules_stale",
       "A keep-together or keep-apart rule names a pair who is no longer in the roster, or no longer fits the pools. Change the rules to continue.");
+    if (scheduleControlsAreStale(current)) throw new JourneyExplainedError("schedule_controls_stale",
+      "A scheduling control no longer fits the event: a court, time or round it names has changed. Change the scheduling controls to continue.");
     if (current.approval) throw new Error("approved_revision_is_immutable");
     return current;
   }
@@ -1595,6 +1739,97 @@ export class CompetitionJourney {
       ...(membership ? { poolMembership: membership } : {}),
       ...(rules?.length ? { poolRules: rules } : {}),
       poolMembershipHistory: [...(current.poolMembershipHistory ?? []), entry] });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  /**
+   * Shows what a change to the scheduling controls would do before anything is saved: each court whose
+   * hours change, each match length, each protected match, the court time available, and what happens to
+   * a plan already created. The request is the full set of controls to be in force afterwards.
+   */
+  public previewScheduleControls(id: string, expectedDraftVersion: number, requested: ScheduleControls): ScheduleControlsPreview {
+    const current = this.require(id);
+    if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
+    if (current.approval) throw new Error("approved_revision_is_immutable");
+    const basis = scheduleControlsBasis(current);
+    const controls = parseScheduleControls(requested);
+    if (!controls) throw new Error("schedule_controls_invalid");
+    if (!basis) {
+      // Controls left behind by a change of format can always be cleared, so they never block for good.
+      if (!hasScheduleControls(current.scheduleControls) || hasScheduleControls(controls)) throw new Error("schedule_controls_not_applicable");
+      const changes = ["Every scheduling control is removed."];
+      const body = { competitionId: current.id, draftVersion: current.draftVersion, recordHash: current.recordHash, controls, changes, consequences: [] };
+      return { previewHash: canonicalHash(body), draftVersion: current.draftVersion, controls, changes, consequences: [] };
+    }
+    const { blueprint, definition } = basis;
+    const findings = scheduleControlFindings(controls, blueprint, definition);
+    if (findings.length) throw new JourneyExplainedError("schedule_controls_invalid", scheduleControlsExplanation(findings, blueprint));
+    const before = current.scheduleControls ?? { courtHours: [], durations: [], protections: [] };
+    if (canonicalHash(before) === canonicalHash(controls)) throw new Error("schedule_controls_unchanged");
+    const known = current.compiled?.graph;
+    const newlyProtected = controls.protections.filter(({ contestId }) => !before.protections.some((entry) => entry.contestId === contestId));
+    if (newlyProtected.length && !known) throw new JourneyExplainedError("schedule_controls_need_plan",
+      "Create the plan first, then choose the matches to protect from it.");
+    if (known && protectionGraphFindings({ ...controls, protections: newlyProtected }, known).length)
+      throw new JourneyExplainedError("schedule_controls_invalid", "A protected match is not part of this competition.");
+    const view = scheduleControlsView(current)!;
+    const label = (contestId: string) => view.protectedLabels[contestId] ?? view.matches.find((match) => match.contestId === contestId)?.label ?? contestId;
+    const stageName = (stageId: string, round?: ScheduleControlRound) => {
+      const stage = definition.stages.find((entry) => entry.id === stageId);
+      return `${stage?.label ?? stageId}${round ? ` ${round === "final" ? "final" : "semi-finals"}` : ""}`;
+    };
+    const changes: string[] = [];
+    const courts = [...new Set([...before.courtHours, ...controls.courtHours].map(({ court }) => court))].sort((a, b) => a - b);
+    for (const court of courts) {
+      const was = before.courtHours.find((entry) => entry.court === court); const will = controls.courtHours.find((entry) => entry.court === court);
+      if (will && (!was || was.opens !== will.opens || was.closes !== will.closes)) changes.push(`Court ${court} is open ${will.opens}–${will.closes}.`);
+      else if (was && !will) changes.push(`Court ${court} is open for the whole event again.`);
+    }
+    const lengthKey = ({ stageId, round }: { stageId: string; round?: string }) => `${stageId}:${round ?? ""}`;
+    for (const key of [...new Set([...before.durations, ...controls.durations].map(lengthKey))].sort()) {
+      const was = before.durations.find((entry) => lengthKey(entry) === key); const will = controls.durations.find((entry) => lengthKey(entry) === key);
+      const entry = (will ?? was)!;
+      if (will && was?.minutes !== will.minutes) changes.push(`${stageName(entry.stageId, entry.round)}: ${will.minutes}-minute matches.`);
+      else if (was && !will) changes.push(`${stageName(entry.stageId, entry.round)}: back to the event's match length.`);
+    }
+    for (const contestId of [...new Set([...before.protections, ...controls.protections].map(({ contestId }) => contestId))].sort()) {
+      const was = before.protections.find((entry) => entry.contestId === contestId); const will = controls.protections.find((entry) => entry.contestId === contestId);
+      if (will && (was?.start !== will.start || was?.court !== will.court)) changes.push(`${label(contestId)} is protected: ${[
+        will.start ? `starts at ${will.start}` : "", will.court ? `on court ${will.court}` : ""].filter(Boolean).join(" ")}.`);
+      else if (was && !will) changes.push(`${label(contestId)} is no longer protected.`);
+    }
+    const courtMinutes = (subject: ScheduleControls) => {
+      const opens = Date.parse(blueprint.startsAt!); const closes = Date.parse(blueprint.endsAt!);
+      const minutes = (from: string, to: string) => Number(to.slice(0, 2)) * 60 + Number(to.slice(3)) - Number(from.slice(0, 2)) * 60 - Number(from.slice(3));
+      return Array.from({ length: blueprint.resourceCount ?? 0 }, (_, index) => {
+        const hours = subject.courtHours.find(({ court }) => court === index + 1);
+        return hours ? minutes(hours.opens, hours.closes) : (closes - opens) / 60_000;
+      }).reduce((sum, value) => sum + value, 0);
+    };
+    const consequences: string[] = [];
+    if (current.compiled) consequences.push("The plan already created is set aside. Create and check the plan again before approval.");
+    const [courtTimeBefore, courtTimeAfter] = [courtMinutes(before), courtMinutes(controls)];
+    if (courtTimeBefore !== courtTimeAfter) consequences.push(`Court time available goes from ${courtTimeBefore.toLocaleString("en-GB")} to ${courtTimeAfter.toLocaleString("en-GB")} minutes.`);
+    if (controls.protections.length) consequences.push("Protected matches are held exactly; the plan is refused rather than moving one.");
+    const body = { competitionId: current.id, draftVersion: current.draftVersion, recordHash: current.recordHash, controls, changes, consequences };
+    return { previewHash: canonicalHash(body), draftVersion: current.draftVersion, controls, changes, consequences };
+  }
+
+  /** Applies exactly the scheduling controls that were previewed, attributed to the person who applied them. */
+  public applyScheduleControls(id: string, expectedDraftVersion: number, requested: ScheduleControls,
+    expectedPreviewHash: string, decidedBy: string): CompetitionJourneySnapshot {
+    if (!decidedBy.trim()) throw new Error("schedule_controls_requires_actor");
+    const preview = this.previewScheduleControls(id, expectedDraftVersion, requested);
+    if (preview.previewHash !== expectedPreviewHash) throw new Error("schedule_controls_preview_mismatch");
+    const current = this.require(id);
+    const decidedAt = this.canonicalNow();
+    const { compiled: _compiled, approval: _approval, publication: _publication, scheduleControls: _previous, ...draft } = withoutSeal(current);
+    const entry: ScheduleControlsChangeRecord = { controlsHash: canonicalHash(preview.controls), previewHash: preview.previewHash, decidedBy, decidedAt };
+    const revised = sealRecord({ ...draft, draftVersion: current.draftVersion + 1, updatedAt: decidedAt,
+      ...(hasScheduleControls(preview.controls) ? { scheduleControls: preview.controls } : {}),
+      scheduleControlsHistory: [...(current.scheduleControlsHistory ?? []), entry] });
     this.records.set(id, revised);
     this.persist();
     return snapshotOf(revised);
