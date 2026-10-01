@@ -91,3 +91,32 @@ test("drawing the pools automatically again discards the organiser's placement",
   assert.deepEqual(after.poolMembershipHistory!.map(({ action }) => action), ["PLACED", "RETURNED_TO_AUTOMATIC"]);
   await page.close();
 });
+
+test("an organiser keeps two pairs apart with a pool rule, reviewed before it applies", async () => {
+  const journey = new CompetitionJourney({ organizationId: "org.flexible", now: () => "2026-11-01T08:00:00.000Z" });
+  let c = journey.create({ mode: "quick", value: facts }, "organiser.author");
+  c = journey.addSource(c.id, c.draftVersion, { mode: "csv", text: roster });
+  const together = (view: NonNullable<typeof c.poolMembership>) => view.pools.some(({ entrants }) =>
+    ["pk.pair.4", "pk.pair.9"].every((id) => entrants.some(({ entrantId }) => entrantId === id)));
+  assert.ok(together(c.poolMembership!), "the seeded draw puts pairs 4 and 9 in one pool");
+  const origin = await hosts.serve(journey);
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page.goto(`${origin}/competitions/${encodeURIComponent(c.id)}`);
+  await page.getByText("Pools", { exact: true }).click();
+  const rules = page.getByRole("region", { name: "Pool rules" });
+  await rules.getByLabel("Rule").selectOption("SEPARATE");
+  await rules.getByLabel("Winter Pair 4", { exact: true }).check();
+  await rules.getByLabel("Winter Pair 9", { exact: true }).check();
+  await rules.getByRole("button", { name: "Add rule" }).click();
+  const review = page.getByRole("region", { name: "Review the pool change" });
+  await review.waitFor();
+  assert.match(await review.innerText(), /1 pool rule will apply to every draw/);
+  assert.ok(together(journey.read(c.id)!.poolMembership!), "nothing changes until the review is applied");
+  assert.ok(await noHorizontalOverflow(page));
+  await Promise.all([page.waitForEvent("load"), review.getByRole("button", { name: "Apply this change" }).click()]);
+  const after = journey.read(c.id)!;
+  assert.ok(!together(after.poolMembership!), "pairs 4 and 9 are now in different pools");
+  await page.getByText("Pools", { exact: true }).click();
+  assert.match(await page.getByRole("region", { name: "Pool rules" }).innerText(), /Keep apart: Winter Pair 4, Winter Pair 9/);
+  await page.close();
+});

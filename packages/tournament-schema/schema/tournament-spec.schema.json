@@ -71,7 +71,8 @@
       "properties": {
         "poolCount": { "type": "integer", "minimum": 1 },
         "sizes": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 2 } },
-        "rounds": { "enum": [1, 2] }, "allocation": { "enum": ["snake", "random", "manual", "optimised"] }
+        "rounds": { "enum": [1, 2] }, "allocation": { "enum": ["snake", "random", "manual", "optimised"] },
+        "membershipConstraints": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["kind", "entrantIds"], "properties": { "kind": { "enum": ["TOGETHER", "SEPARATE"] }, "entrantIds": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } } } } }
       }
     },
     "bracket": {

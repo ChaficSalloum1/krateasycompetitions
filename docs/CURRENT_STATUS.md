@@ -43,7 +43,7 @@ The shortest honest route to a hosted pilot is these slices, in order.
 1. ~~Merge PR #5 once CI is green.~~ Merged.
 2. ~~Finish PR #18 (pool placement).~~ Merged (traceability item 57).
 3. **Pilot-critical creation correctness**, brought in from the draft stack and reimplemented on `main`:
-   - "keep together" and "keep apart" pool rules;
+   - ~~"keep together" and "keep apart" pool rules~~ (item 59);
    - ~~knockout draws that do what their policy declares, with hierarchical top-seed protection~~ (item 58);
    - roster replacement with stale pool, seed and assignment detection.
 4. **Pilot scheduling controls**, with PRs #13–#16 as reference material:

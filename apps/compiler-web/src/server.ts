@@ -1319,6 +1319,17 @@ if (process.argv[1]?.endsWith("server.ts") || process.argv[1]?.endsWith("server.
 function parsePoolPlacementRequest(value: unknown): PoolPlacementRequest {
   const request = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
   if (request?.kind === "AUTOMATIC" && Object.keys(request).length === 1) return { kind: "AUTOMATIC" };
+  if (request?.kind === "RULES") {
+    const rules = request.rules;
+    if (Object.keys(request).some((key) => key !== "kind" && key !== "rules") || !Array.isArray(rules) || rules.length > 256
+      || !rules.every((rule) => rule && typeof rule === "object" && !Array.isArray(rule)
+        && Object.keys(rule).every((key) => key === "kind" || key === "entrantIds")
+        && ((rule as Record<string, unknown>).kind === "TOGETHER" || (rule as Record<string, unknown>).kind === "SEPARATE")
+        && Array.isArray((rule as Record<string, unknown>).entrantIds) && ((rule as Record<string, unknown>).entrantIds as unknown[]).length <= 64
+        && ((rule as Record<string, unknown>).entrantIds as unknown[]).every((id) => typeof id === "string")))
+      throw new Error("invalid_journey_command");
+    return { kind: "RULES", rules: rules as { kind: "TOGETHER" | "SEPARATE"; entrantIds: string[] }[] };
+  }
   const assignments = request?.assignments;
   if (request?.kind !== "PLACED" || Object.keys(request).some((key) => !["kind", "stageId", "basisHash", "assignments"].includes(key))
     || typeof request.stageId !== "string" || typeof request.basisHash !== "string"

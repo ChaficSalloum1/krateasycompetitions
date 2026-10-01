@@ -9,6 +9,7 @@ export interface PoolAllocationRequest {
   readonly sizes: readonly number[];
   readonly entrants: readonly Entrant[];
   readonly randomisation: RandomisationPolicy;
+  readonly membershipConstraints?: PoolConfiguration["membershipConstraints"];
 }
 
 export interface PoolAllocationFinding { readonly code: string; readonly message: string; readonly evidence?: unknown; }
@@ -54,6 +55,17 @@ function finalize(request: PoolAllocationRequest, status: PoolAllocationResult["
   const entrantCoverage = entrantIds.length === expectedIds.length && new Set(entrantIds).size === entrantIds.length &&
     entrantIds.slice().sort().every((id, index) => id === expectedIds[index]);
   const sizeClosure = pools.length === request.sizes.length && pools.every((pool, index) => pool.length === request.sizes[index]);
+  // Every allocation, whoever made it, must satisfy the organiser's membership rules.
+  if (status === "ALLOCATED") {
+    const violations = (request.membershipConstraints ?? []).filter((rule) => {
+      const poolIndexes = rule.entrantIds.map((id) => pools.findIndex((pool) => pool.some((entrant) => entrant.id === id)));
+      return poolIndexes.some((index) => index < 0) || (rule.kind === "TOGETHER"
+        ? new Set(poolIndexes).size !== 1 : new Set(poolIndexes).size !== poolIndexes.length);
+    });
+    if (violations.length) return finalize(request, "REJECTED", [], violations.map((rule) => ({ code: "POOL_MEMBERSHIP_RULE",
+      message: rule.kind === "TOGETHER" ? "Entrants who must share a pool were placed apart." : "Entrants who must be in different pools share one.",
+      evidence: rule })), sourceProofHash);
+  }
   const proofBase = { allocation: request.allocation, entrantCoverage, sizeClosure, sourceProofHash };
   return deepFreeze({ status, pools: structuredClone(pools), findings: [...findings], proof: { ...proofBase, proofHash: canonicalHash(hashable({ request, pools, proof: proofBase })) } });
 }
@@ -100,7 +112,7 @@ export function allocateStagePools(request: PoolAllocationRequest): Readonly<Poo
     const construction = constructPools({
       id: request.stageId, entrants: request.entrants.map(({ id, seed }) => ({ id, ...(seed === undefined ? {} : { seed }) })),
       poolCount: request.sizes.length, size: { minimum: Math.min(...request.sizes), maximum: Math.max(...request.sizes) },
-      targetSizes: request.sizes, hardConstraints: [],
+      targetSizes: request.sizes, hardConstraints: request.membershipConstraints ?? [],
       objectives: [
         { kind: "BALANCE_SIZE", priority: 1, weight: 1 },
         { kind: "BALANCE_SEED_STRENGTH", priority: 2, weight: 1 },

@@ -164,6 +164,7 @@ export function buildCompetitionGraph(
         const allocation = allocateStagePools({
           stageId: stage.id, allocation: stage.pool.allocation, sizes: stage.pool.sizes,
           entrants, randomisation: spec.randomisation,
+          ...(stage.pool.membershipConstraints?.length ? { membershipConstraints: stage.pool.membershipConstraints } : {}),
         });
         if (allocation.status === "ALLOCATED") {
           nodes.push(...roundRobin(stage, allocation.pools.flat(), spec.sport.defaultResourceType));

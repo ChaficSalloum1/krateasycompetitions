@@ -494,4 +494,20 @@ No authority conflict required product-owner direction. The smallest connected s
     - **Tests** (`draw-integrity.test.ts`, `knockout-draw.test.ts`). The hierarchical, bye-aware and real-event draw tests fail against the previous code.
     - **Not yet.** The Guard does not yet independently re-check the executed draw against its declared hard rules. That belongs to the Guard programme in `ROADMAP.md`.
 
+59. **Keep-together and keep-apart pool rules** (`PoolConfiguration.membershipConstraints`; `previewPoolMembership` with `{ kind: "RULES" }`; Studio "Pool rules"):
+    - **What a rule is.** It keeps two or more pairs in one pool, or each in a different pool.
+    - **Engine.** Every pool allocation, whoever made it, must satisfy the rules (`POOL_MEMBERSHIP_RULE`).
+    - **The automatic draw.** When rules exist, it becomes the optimised pool construction with the rules as hard constraints. With no rules it is unchanged: the seeded draw.
+    - **Same allocation everywhere.** The Studio shows the allocation compilation produces, and live progression replays it.
+    - **Checked both ways.** A saved placement must satisfy the rules, and a rule that a saved placement breaks is refused with the reason. Rules that are malformed (fewer than two pairs, an unknown pair, more together than a pool holds, more apart than there are pools) or that cannot all be met are refused.
+    - **Changing rules.** Rule changes are previewed, applied with the exact hash, and audited (`RULES_SET`, with the hash of the rules in force).
+    - **Load-time check.** Rules without their audit entry are refused (`journey_store_integrity_failed`).
+    - **Stale rules.** A rule naming a pair who has left the roster makes the draft need input, and compiling is refused until the rules are changed.
+    - **Tests** (`pool-rules.test.ts`, the engine allocation test, `browser/pool-editor.test.ts`):
+      - rules shape the plan's pool matches, and an event with rules plays live to the final from the pools it planned;
+      - placements and rules are cross-checked, and invalid rules are refused;
+      - a roster change makes a rule stale;
+      - a forged store with tampered rules is refused at load;
+      - in a browser on a phone-width screen, a keep-apart rule is reviewed and applied.
+
 Broader format/sport connection, non-pilot loser-path/hard-rematch reconstruction and a verified on-device advisory model remain governed follow-ons rather than St Albans deployment blockers. The remaining pilot gates require external authority or deployment inputs: provider/fallback selection and credentials, authorised emergency details, named-assistive-technology/outdoor accessibility acceptance, full staff/manual recovery rehearsal, production persistence/restore evidence, support assignment and final role approvals. The emergency pack cannot be declared ready until the venue/pilot safety owner supplies and approves the named responders, contacts, venue/access and evacuation facts; until then the explicit fallback is the venue's separately controlled printed safety plan. External delivery remains fail closed until the pilot owner selects credentials, a provider and its declared fallback. The executable release manifest lists every remaining gate, accountable role and fixed fallback against the exact closed rehearsal scope; no missing external fact is represented as passed.
