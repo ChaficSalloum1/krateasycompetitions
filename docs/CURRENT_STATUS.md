@@ -38,10 +38,51 @@ Their creator is a client-side prototype, separate from the persisted, server-ow
 
 ## Order of work
 
+The shortest honest route to a hosted pilot is these slices, in order.
+
 1. ~~Merge PR #5 once CI is green.~~ Merged.
-2. Bring the valuable creator capabilities from #6–#17 into the server-owned Studio, one at a time.
-   - Done: pool placement by the organiser (traceability item 57).
-   - Next: "keep together" and "keep apart" pool rules; hierarchical protection of the top seeds in the knockout draw (the prototype found that seeds 1 and 2 can meet before the final); roster replacement with stale-assignment detection; per-court windows; court and start locks; the visual rule map.
-3. Production identity, tenant membership and durable PostgreSQL, proven by the golden path against a non-production deployment. Today the competition journey stores data in a local JSON file, and its organiser routes are disabled in production mode. So this is engineering in the repository: a PostgreSQL journey store, organiser sign-in, and the Studio routes behind it. A hosting account alone does not deliver it.
-4. Visual and accessibility regression on the connected pages.
-5. Pilot gates, then the St Albans pilot.
+2. **Finish PR #18 (pool placement).** It adds:
+   - one validator, re-run when a record is loaded or restored;
+   - forged-record tests;
+   - preview, then apply with the exact hash, for every pool change;
+   - an attributed return to the automatic draw.
+   It is not merged yet.
+3. **Pilot-critical creation correctness**, brought in from the draft stack and reimplemented on `main`:
+   - "keep together" and "keep apart" pool rules;
+   - protection of the top seeds in the knockout draw (the prototype found that seeds 1 and 2 can meet before the final);
+   - roster replacement with stale pool, seed and assignment detection.
+4. **Pilot scheduling controls**, with PRs #13–#16 as reference material:
+   - per-court availability windows;
+   - stage and round durations;
+   - protected start-time locks and protected court assignments;
+   - independent verification that the locks hold after recompiling.
+5. **Production identity and durable PostgreSQL.** Today the competition journey stores data in a local JSON file, and its organiser routes are disabled in production mode. So this is engineering in the repository, not only a hosting account:
+   - sign-in, organisation membership and roles;
+   - tenant-isolated Studio routes, and separate people for consequential approvals;
+   - a PostgreSQL journey store with migrations, restart and replay, backup and isolated restore;
+   - the Studio routes enabled safely in production;
+   - the browser golden path run against a hosted non-production deployment.
+6. **Interface, design and accessibility (E3)**, refining the connected product rather than redesigning it:
+   - the visual rule and structure map;
+   - consistent navigation;
+   - shared colour tokens in place of page-local colours;
+   - an impact preview for live tie decisions;
+   - screenshot regression at phone, desktop, 200% and 400%;
+   - keyboard, focus, contrast, forced-colour and screen-reader acceptance;
+   - loading, permission-denied and stale states.
+7. **Operational pilot evidence (E4).** The eleven gates in `pilot-release-readiness.ts`, then the pilot.
+
+Deferred until after the pilot: universal PDF, ZIP and image ingestion; Scenario Lab; more sports; and wider format claims.
+
+## How the other branches are used
+
+| Branch | Use |
+|---|---|
+| PR #6 | Obsolete documentation reset; not merged. |
+| PRs #7–#8 | Salvage individual adversarial and draw-integrity tests, and the missing draw rules. |
+| PRs #9–#11 | A client-side creator prototype. Reuse requirements and interaction ideas only. |
+| PR #12 | Mostly superseded by PR #18. "Keep together" and "keep apart" remain useful. |
+| PRs #13–#16 | Court windows, durations and protected locks. Port selectively. |
+| PR #17 | Salvage roster replacement, missing-decision coverage and rule-map ideas. |
+| `claude/tender-euler-rbnhkw` | An earlier production experiment (Clerk, PostgreSQL, R2, Resend). Reference for slice 5; not merged or cherry-picked. |
+| PR #2 | Its document is already identical on `main`; it can be closed. |

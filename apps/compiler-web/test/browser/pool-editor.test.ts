@@ -39,7 +39,7 @@ test("an organiser places two pairs in each other's pools and the plan is built 
 
   await editor.getByLabel("Winter Pair 2", { exact: true }).selectOption(one);
   assert.equal(await editor.locator(`fieldset[data-pool-id="${one}"] .pool-count`).innerText(), "5 of 4", "the count follows the move");
-  const refused = page.waitForResponse((r) => r.url().endsWith("/pool-membership"));
+  const refused = page.waitForResponse((r) => r.url().endsWith("/pool-membership-preview"));
   await editor.getByRole("button", { name: "Save pools" }).click();
   assert.equal((await refused).status() >= 400, true, "an uneven placement is refused");
   assert.match(await page.locator("#pool-status").innerText(), /Place every entrant exactly once, with 4, 4, 4/);
@@ -47,7 +47,14 @@ test("an organiser places two pairs in each other's pools and the plan is built 
   await editor.getByLabel(partner, { exact: true }).selectOption(two);
   assert.equal(await editor.locator(`fieldset[data-pool-id="${one}"] .pool-count`).innerText(), "4 of 4");
   assert.ok(await noHorizontalOverflow(page), "the pools read without horizontal scrolling on a phone");
-  await Promise.all([page.waitForEvent("load"), editor.getByRole("button", { name: "Save pools" }).click()]);
+  await editor.getByRole("button", { name: "Save pools" }).click();
+  const review = page.getByRole("region", { name: "Review the pool change" });
+  await review.waitFor();
+  assert.match(await review.innerText(), /2 pairs move/);
+  assert.match(await review.innerText(), /Winter Pair 2: Pool \d → Pool \d/);
+  assert.match(await review.innerText(), /Pool matches: 6 added, 6 removed/);
+  assert.equal(journey.read(c.id)!.poolMembership!.source, "AUTOMATIC", "nothing is saved until the change is applied");
+  await Promise.all([page.waitForEvent("load"), review.getByRole("button", { name: "Apply this change" }).click()]);
 
   const saved = journey.read(c.id)!.poolMembership!;
   assert.equal(saved.source, "ORGANISER");
@@ -67,13 +74,20 @@ test("drawing the pools automatically again discards the organiser's placement",
   const assignments = view.pools.flatMap(({ poolId, entrants }) => entrants.map(({ entrantId }) => ({ entrantId, poolId })));
   const [a, b] = [assignments.find(({ entrantId }) => entrantId === "pk.pair.1")!, assignments.find(({ entrantId }) => entrantId === "pk.pair.2")!];
   [a.poolId, b.poolId] = [b.poolId, a.poolId];
-  c = journey.setPoolMembership(c.id, c.draftVersion, { stageId: view.stageId, basisHash: view.basisHash, assignments }, "organiser.author");
+  const request = { kind: "PLACED" as const, stageId: view.stageId, basisHash: view.basisHash, assignments };
+  c = journey.applyPoolMembership(c.id, c.draftVersion, request, journey.previewPoolMembership(c.id, c.draftVersion, request).previewHash, "organiser.author");
   const origin = await hosts.serve(journey);
   const page = await browser.newPage();
   await page.goto(`${origin}/competitions/${encodeURIComponent(c.id)}`);
   await page.getByText("Pools", { exact: true }).click();
   assert.match(await page.locator("#pool-editor").innerText(), /These are your pools/);
-  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Draw automatically again" }).click()]);
-  assert.equal(journey.read(c.id)!.poolMembership!.source, "AUTOMATIC");
+  await page.getByRole("button", { name: "Draw automatically again" }).click();
+  const review = page.getByRole("region", { name: "Review the pool change" });
+  await review.waitFor();
+  assert.match(await review.innerText(), /Your saved placement is discarded/);
+  await Promise.all([page.waitForEvent("load"), review.getByRole("button", { name: "Apply this change" }).click()]);
+  const after = journey.read(c.id)!;
+  assert.equal(after.poolMembership!.source, "AUTOMATIC");
+  assert.deepEqual(after.poolMembershipHistory!.map(({ action }) => action), ["PLACED", "RETURNED_TO_AUTOMATIC"]);
   await page.close();
 });

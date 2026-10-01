@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CompetitionJourney } from "../src/competition-journey.js";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { canonicalHash } from "@tournament-os/tournament-schema";
+import { CompetitionJourney, type PoolPlacementRequest } from "../src/competition-journey.js";
 import { betterSeed, pairs } from "./support/pools-knockout-event.js";
 
 // The organiser places pairs into pools themselves. The placement is stored on the draft, bound to the
@@ -22,6 +26,16 @@ function draft(clock = { now: "2026-11-01T08:00:00.000Z" }) {
   return { journey, c, clock };
 }
 
+type Snapshot = ReturnType<CompetitionJourney["create"]>;
+type Assignments = { entrantId: string; poolId: string }[];
+/** Preview a pool change, then apply exactly that preview, as the Studio does. */
+function change(journey: CompetitionJourney, c: Snapshot, request: PoolPlacementRequest, by = "organiser.author") {
+  const preview = journey.previewPoolMembership(c.id, c.draftVersion, request);
+  return journey.applyPoolMembership(c.id, c.draftVersion, request, preview.previewHash, by);
+}
+const placed = (c: Snapshot, assignments: Assignments): PoolPlacementRequest =>
+  ({ kind: "PLACED", stageId: c.poolMembership!.stageId, basisHash: c.poolMembership!.basisHash, assignments });
+
 /** Pairs 1 and 2 are the top seeds, so the automatic draw always puts them in different pools. */
 function placeTopSeedsTogether(view: NonNullable<ReturnType<CompetitionJourney["read"]>>["poolMembership"]) {
   const assignments = view!.pools.flatMap(({ poolId, entrants }) => entrants.map(({ entrantId }) => ({ entrantId, poolId })));
@@ -40,8 +54,7 @@ test("an organiser's pool placement replaces the automatic draw and is what the 
   const poolOf = (view: typeof automatic, id: string) => view.pools.find(({ entrants }) => entrants.some(({ entrantId }) => entrantId === id))!.poolId;
   assert.notEqual(poolOf(automatic, "pk.pair.1"), poolOf(automatic, "pk.pair.2"), "the automatic draw separates the top seeds");
 
-  let c = journey.setPoolMembership(start.id, start.draftVersion, { stageId: automatic.stageId, basisHash: automatic.basisHash,
-    assignments: placeTopSeedsTogether(automatic) }, "organiser.author");
+  let c = change(journey, start, placed(start, placeTopSeedsTogether(automatic)));
   assert.equal(c.poolMembership!.source, "ORGANISER");
   assert.equal(poolOf(c.poolMembership!, "pk.pair.1"), poolOf(c.poolMembership!, "pk.pair.2"));
   assert.equal(c.status, "DRAFT");
@@ -61,7 +74,7 @@ test("a placement is refused unless it places the exact roster once and fills ev
   const view = c.poolMembership!;
   const all = view.pools.flatMap(({ poolId, entrants }) => entrants.map(({ entrantId }) => ({ entrantId, poolId })));
   const attempt = (assignments: typeof all, basisHash = view.basisHash) =>
-    journey.setPoolMembership(c.id, c.draftVersion, { stageId: view.stageId, basisHash, assignments }, "organiser.author");
+    journey.previewPoolMembership(c.id, c.draftVersion, { kind: "PLACED", stageId: view.stageId, basisHash, assignments });
   assert.throws(() => attempt(all.slice(1)), /pool_membership_invalid/, "an entrant left out");
   assert.throws(() => attempt([...all.slice(1), { ...all[0]!, entrantId: "pk.pair.99" }]), /pool_membership_invalid/, "an unknown entrant");
   assert.throws(() => attempt(all.map((a, i) => i === 0 ? { ...a, poolId: view.pools[1]!.poolId } : a)), /pool_membership_invalid/,
@@ -69,12 +82,12 @@ test("a placement is refused unless it places the exact roster once and fills ev
   assert.throws(() => attempt(all.map((a, i) => i === 0 ? { ...a, poolId: "open.pools.P9" } : a)), /pool_membership_invalid/, "an undeclared pool");
   assert.throws(() => attempt(all, "0".repeat(64)), /pool_membership_stale/, "a placement made for something else");
   assert.equal(journey.read(c.id)!.draftVersion, c.draftVersion, "nothing was saved");
+  assert.equal(journey.read(c.id)!.poolMembershipHistory, undefined);
 });
 
 test("changing the roster after placing the pools blocks the plan until the pools are placed again or cleared", () => {
   const { journey, c: start } = draft();
-  let c = journey.setPoolMembership(start.id, start.draftVersion, { stageId: start.poolMembership!.stageId,
-    basisHash: start.poolMembership!.basisHash, assignments: placeTopSeedsTogether(start.poolMembership) }, "organiser.author");
+  let c = change(journey, start, placed(start, placeTopSeedsTogether(start.poolMembership)));
   // Pair 12 withdraws and pair 13 enters: the saved placement no longer covers the roster.
   c = journey.removeSource(c.id, c.draftVersion, c.workbench.sources.at(-1)!.id);
   c = journey.addSource(c.id, c.draftVersion, { mode: "csv", text: roster([...pairs.slice(0, 11), "pk.pair.13"]) });
@@ -82,7 +95,7 @@ test("changing the roster after placing the pools blocks the plan until the pool
   assert.equal(c.poolMembership!.stale, true);
   assert.equal(c.poolMembership!.source, "AUTOMATIC", "a stale placement is never shown as the pools in force");
   assert.throws(() => journey.compile(c.id, c.draftVersion), /pool_membership_stale/);
-  c = journey.clearPoolMembership(c.id, c.draftVersion);
+  c = change(journey, c, { kind: "AUTOMATIC" });
   assert.equal(c.status, "DRAFT");
   assert.equal(c.poolMembership!.stale, false);
   assert.equal(journey.compile(c.id, c.draftVersion).compiled!.guardStatus, "PASSED");
@@ -103,8 +116,7 @@ function placeTopThreeTogether(view: NonNullable<ReturnType<CompetitionJourney["
 test("the organiser's pools carry into live play and the knockout fills from them", () => {
   const clock = { now: "2026-11-01T08:00:00.000Z" };
   const { journey, c: start } = draft(clock);
-  let c = journey.setPoolMembership(start.id, start.draftVersion, { stageId: start.poolMembership!.stageId,
-    basisHash: start.poolMembership!.basisHash, assignments: placeTopThreeTogether(start.poolMembership) }, "organiser.author");
+  let c = change(journey, start, placed(start, placeTopThreeTogether(start.poolMembership)));
   c = journey.compile(c.id, c.draftVersion);
   c = journey.approve(c.id, c.revision, "organiser.approver", c.compiled!.requiredAcknowledgementCodes);
   c = journey.activateLive(c.id, c.publication!.revision, "operator.lead");
@@ -136,20 +148,81 @@ test("the organiser's pools carry into live play and the knockout fills from the
   // set for the placed pools, which differs from what the automatic pools would have produced.
   const qualifiers = (view: NonNullable<typeof start.poolMembership>) => new Set(view.pools.flatMap(({ entrants }) =>
     entrants.map(({ entrantId }) => entrantId).sort((a, b) => pairs.indexOf(a) - pairs.indexOf(b)).slice(0, 2)));
-  const placed = qualifiers(journey.read(c.id)!.poolMembership!);
-  assert.deepEqual([...knockout].sort(), [...placed].sort(), "the knockout is filled from the placed pools");
-  assert.notDeepEqual([...placed].sort(), [...qualifiers(start.poolMembership!)].sort(), "and not from the automatic draw");
+  const fromPlacedPools = qualifiers(journey.read(c.id)!.poolMembership!);
+  assert.deepEqual([...knockout].sort(), [...fromPlacedPools].sort(), "the knockout is filled from the placed pools");
+  assert.notDeepEqual([...fromPlacedPools].sort(), [...qualifiers(start.poolMembership!)].sort(), "and not from the automatic draw");
 });
 
 test("a placement left over from a format without these pools stays visible so it can be cleared", () => {
   const { journey, c: start } = draft();
-  let c = journey.setPoolMembership(start.id, start.draftVersion, { stageId: start.poolMembership!.stageId,
-    basisHash: start.poolMembership!.basisHash, assignments: placeTopSeedsTogether(start.poolMembership) }, "organiser.author");
+  let c = change(journey, start, placed(start, placeTopSeedsTogether(start.poolMembership)));
   c = journey.revise(c.id, c.draftVersion, { mode: "quick", value: { ...facts, format: "round_robin", minimumMatches: 11 } });
   assert.equal(c.status, "NEEDS_INPUT", "the obsolete placement still blocks the plan");
   assert.deepEqual({ stale: c.poolMembership?.stale, pools: c.poolMembership?.pools.length }, { stale: true, pools: 0 },
     "and the Studio still has it to show, with nothing left to place");
-  c = journey.clearPoolMembership(c.id, c.draftVersion);
+  c = change(journey, c, { kind: "AUTOMATIC" });
   assert.equal(c.poolMembership, undefined);
   assert.equal(c.status, "DRAFT");
+});
+
+test("a pool change is previewed with its consequences and applied only with that exact preview", () => {
+  const { journey, c: start } = draft();
+  let c = journey.compile(start.id, start.draftVersion);
+  const request = placed(c, placeTopSeedsTogether(c.poolMembership));
+  const preview = journey.previewPoolMembership(c.id, c.draftVersion, request);
+  assert.equal(preview.moves.length, 2, "pair 2 and the pair it swaps with change pool");
+  assert.ok(preview.moves.some(({ displayName }) => displayName === "Winter Pair 2"));
+  assert.deepEqual(preview.poolMatches, { added: 6, removed: 6 }, "each moved pair gains three pool opponents and loses three");
+  assert.ok(preview.consequences.some((text) => /plan already created is set aside/.test(text)));
+  assert.equal(journey.read(c.id)!.status, "READY_FOR_APPROVAL", "a preview changes nothing");
+
+  assert.throws(() => journey.applyPoolMembership(c.id, c.draftVersion, request, "0".repeat(64), "organiser.author"),
+    /pool_membership_preview_mismatch/);
+  const other = placed(c, placeTopThreeTogether(c.poolMembership));
+  assert.throws(() => journey.applyPoolMembership(c.id, c.draftVersion, other, preview.previewHash, "organiser.author"),
+    /pool_membership_preview_mismatch/, "a different placement cannot ride on another preview");
+  assert.throws(() => journey.applyPoolMembership(c.id, c.draftVersion, request, preview.previewHash, " "), /pool_membership_requires_actor/);
+
+  c = journey.applyPoolMembership(c.id, c.draftVersion, request, preview.previewHash, "organiser.author");
+  assert.equal(c.status, "DRAFT", "the earlier plan is set aside");
+  c = change(journey, c, { kind: "AUTOMATIC" }, "organiser.second");
+  assert.deepEqual(c.poolMembershipHistory!.map(({ action, decidedBy }) => ({ action, decidedBy })),
+    [{ action: "PLACED", decidedBy: "organiser.author" }, { action: "RETURNED_TO_AUTOMATIC", decidedBy: "organiser.second" }],
+    "every applied pool change is attributed");
+  assert.equal(c.poolMembershipHistory![0]!.previewHash, preview.previewHash);
+  assert.throws(() => journey.previewPoolMembership(c.id, c.draftVersion, { kind: "AUTOMATIC" }), /pool_membership_already_automatic/);
+});
+
+test("a stored placement is verified independently when the store is loaded", () => {
+  const directory = mkdtempSync(join(tmpdir(), "pools-"));
+  try {
+    const storagePath = join(directory, "journeys.json");
+    const options = { organizationId: "org.pk", now: () => "2026-11-01T08:00:00.000Z", storagePath };
+    const journey = new CompetitionJourney(options);
+    let c = journey.create({ mode: "quick", value: facts }, "organiser.author");
+    c = journey.addSource(c.id, c.draftVersion, { mode: "csv", text: roster(pairs) });
+    c = change(journey, c, placed(c, placeTopSeedsTogether(c.poolMembership)));
+    assert.equal(new CompetitionJourney(options).read(c.id)!.poolMembership!.source, "ORGANISER", "an honest store reloads");
+
+    // Forge the stored placement: pool 1 gets five pairs and pool 2 three, under the current fingerprint,
+    // with the history and every hash recomputed so that only the placement's own validity can catch it.
+    const envelope = JSON.parse(readFileSync(storagePath, "utf8"));
+    const record = envelope.records.find(({ id }: { id: string }) => id === c.id);
+    const moved = record.poolMembership.assignments.find(({ poolId }: { poolId: string }) => poolId === "open.pools.P2");
+    moved.poolId = "open.pools.P1";
+    record.poolMembershipHistory.at(-1).assignmentsHash = canonicalHash(record.poolMembership.assignments);
+    const { recordHash: _recordHash, ...body } = record;
+    record.recordHash = canonicalHash(body);
+    envelope.storeHash = canonicalHash(envelope.records);
+    writeFileSync(storagePath, JSON.stringify(envelope));
+    assert.throws(() => new CompetitionJourney(options), /journey_store_integrity_failed/);
+
+    // A placement with no audit entry is refused too.
+    record.poolMembershipHistory = [];
+    const { recordHash: _again, ...unaudited } = record;
+    record.recordHash = canonicalHash(unaudited);
+    envelope.storeHash = canonicalHash(envelope.records);
+    writeFileSync(storagePath, JSON.stringify(envelope));
+    assert.throws(() => new CompetitionJourney(options), /journey_store_integrity_failed/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });

@@ -254,6 +254,8 @@ interface StoredJourneyRecord {
   readonly publicationHistory?: readonly SupersededPublication[];
   /** The organiser's exact pool placement, bound to the roster and pool sizes it was made for. */
   readonly poolMembership?: JourneyPoolMembership;
+  /** Every applied pool change, attributed: each placement saved and each return to the automatic draw. */
+  readonly poolMembershipHistory?: readonly PoolMembershipChangeRecord[];
   readonly recordHash: string;
 }
 
@@ -263,6 +265,32 @@ interface JourneyPoolMembership {
   readonly assignments: readonly { readonly entrantId: string; readonly poolId: string }[];
   readonly decidedBy: string;
   readonly decidedAt: string;
+}
+
+export interface PoolMembershipChangeRecord {
+  readonly action: "PLACED" | "RETURNED_TO_AUTOMATIC";
+  readonly stageId: string;
+  readonly basisHash: string;
+  readonly assignmentsHash: string | null;
+  readonly previewHash: string;
+  readonly decidedBy: string;
+  readonly decidedAt: string;
+}
+
+/** A requested pool change: an exact placement, or a return to the automatic draw. */
+export type PoolPlacementRequest =
+  | { readonly kind: "PLACED"; readonly stageId: string; readonly basisHash: string;
+    readonly assignments: readonly { readonly entrantId: string; readonly poolId: string }[] }
+  | { readonly kind: "AUTOMATIC" };
+
+/** What a pool change would do, shown before it is applied; applying requires this exact preview hash. */
+export interface PoolMembershipPreview {
+  readonly previewHash: string;
+  readonly draftVersion: number;
+  readonly request: PoolPlacementRequest;
+  readonly moves: readonly { readonly entrantId: string; readonly displayName: string; readonly fromPoolId: string; readonly toPoolId: string }[];
+  readonly poolMatches: { readonly added: number; readonly removed: number };
+  readonly consequences: readonly string[];
 }
 
 /** What the Studio shows for a pools stage: the pools in force, and whether they are the organiser's own. */
@@ -308,6 +336,7 @@ export interface CompetitionJourneySnapshot {
   readonly amendment?: { readonly fromRevision: number; readonly requestedBy: string; readonly requestedAt: string };
   readonly publicationHistory?: readonly SupersededPublication[];
   readonly poolMembership?: PoolMembershipView;
+  readonly poolMembershipHistory?: readonly PoolMembershipChangeRecord[];
   readonly sourceMode: CreationSource["mode"];
   readonly blueprint: CompetitionBlueprint;
   readonly understood: readonly string[];
@@ -561,10 +590,55 @@ function poolMembershipBasis(record: StoredJourneyRecord) {
   return { stageId, sizes, entrants, basisHash, poolIds: sizes.map((_, index) => `${stageId}.P${index + 1}`) };
 }
 
+const isIsoInstant = (value: unknown): value is string => typeof value === "string"
+  && Number.isFinite(Date.parse(value)) && new Date(Date.parse(value)).toISOString() === value;
+
+/**
+ * The one check every pool placement must pass: when it is submitted, and independently whenever a record
+ * is loaded or restored. A placement must name the pools stage, place every entrant of the roster exactly
+ * once, use only declared pools, and fill each pool to its declared size.
+ */
+function poolMembershipFindings(basis: NonNullable<ReturnType<typeof poolMembershipBasis>>,
+  stageId: string, assignments: readonly { readonly entrantId: string; readonly poolId: string }[]): string[] {
+  const findings: string[] = [];
+  if (stageId !== basis.stageId) findings.push("POOL_STAGE_MISMATCH");
+  const placed = assignments.map(({ entrantId }) => entrantId);
+  if (placed.length !== basis.entrants.length || new Set(placed).size !== placed.length
+    || basis.entrants.some(({ id: entrantId }) => !placed.includes(entrantId))) findings.push("POOL_ROSTER_MISMATCH");
+  if (assignments.some(({ poolId }) => !basis.poolIds.includes(poolId))) findings.push("POOL_UNDECLARED");
+  if (basis.poolIds.some((poolId, index) => assignments.filter((assignment) => assignment.poolId === poolId).length !== basis.sizes[index]))
+    findings.push("POOL_SIZE_MISMATCH");
+  return findings;
+}
+
+/** Load-time verification of a stored placement, its fingerprint and its audit history. */
+function verifyStoredPoolMembership(record: StoredJourneyRecord): boolean {
+  const membership = record.poolMembership;
+  const history = record.poolMembershipHistory ?? [];
+  if (!history.every((entry) => (entry.action === "PLACED" || entry.action === "RETURNED_TO_AUTOMATIC")
+    && /^[a-f0-9]{64}$/.test(entry.basisHash) && /^[a-f0-9]{64}$/.test(entry.previewHash)
+    && (entry.action === "PLACED" ? typeof entry.assignmentsHash === "string" : entry.assignmentsHash === null)
+    && typeof entry.decidedBy === "string" && entry.decidedBy.trim() !== "" && isIsoInstant(entry.decidedAt))) return false;
+  if (!membership) return history.at(-1)?.action !== "PLACED";
+  if (typeof membership.stageId !== "string" || !/^[a-f0-9]{64}$/.test(membership.basisHash)
+    || !Array.isArray(membership.assignments) || !membership.decidedBy?.trim() || !isIsoInstant(membership.decidedAt)) return false;
+  const last = history.at(-1);
+  if (last?.action !== "PLACED" || last.basisHash !== membership.basisHash
+    || last.assignmentsHash !== canonicalHash(membership.assignments)) return false;
+  // A placement for a roster that has since changed is stale, which is a legitimate, visible state. A
+  // placement that claims the current fingerprint must satisfy it exactly.
+  const basis = poolMembershipBasis(record);
+  if (basis && basis.basisHash === membership.basisHash)
+    return poolMembershipFindings(basis, membership.stageId, membership.assignments).length === 0;
+  return true;
+}
+
 function applicablePoolMembership(record: StoredJourneyRecord): JourneyPoolMembership | null {
   if (!record.poolMembership) return null;
   const basis = poolMembershipBasis(record);
-  return basis && basis.basisHash === record.poolMembership.basisHash ? record.poolMembership : null;
+  return basis && basis.basisHash === record.poolMembership.basisHash
+    && poolMembershipFindings(basis, record.poolMembership.stageId, record.poolMembership.assignments).length === 0
+    ? record.poolMembership : null;
 }
 
 function poolMembershipIsStale(record: StoredJourneyRecord): boolean {
@@ -671,6 +745,7 @@ function verifyRecord(record: StoredJourneyRecord): boolean {
   const { recordHash, ...body } = record;
   if (recordHash !== makeRecordHash(body)) return false;
   if (record.compiled && usesGenericRoster(record.proposal.blueprint) && !genericSourceRoster(record)) return false;
+  if (!verifyStoredPoolMembership(record)) return false;
   if (record.amendment) {
     const { base } = record.amendment;
     if (record.live || record.closure || record.approval || record.publication
@@ -903,6 +978,7 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
       requestedBy: record.amendment.requestedBy, requestedAt: record.amendment.requestedAt } } : {}),
     ...(record.publicationHistory?.length ? { publicationHistory: record.publicationHistory } : {}),
     ...(() => { const view = poolMembershipView(record); return view ? { poolMembership: view } : {}; })(),
+    ...(record.poolMembershipHistory?.length ? { poolMembershipHistory: record.poolMembershipHistory } : {}),
     sourceMode: record.source.mode,
     blueprint: effectiveBlueprint,
     understood: record.proposal.understood,
@@ -1169,6 +1245,7 @@ export class CompetitionJourney {
       ...(current.amendment ? { amendment: current.amendment } : {}),
       ...(current.publicationHistory ? { publicationHistory: current.publicationHistory } : {}),
       ...(current.poolMembership ? { poolMembership: current.poolMembership } : {}),
+      ...(current.poolMembershipHistory ? { poolMembershipHistory: current.poolMembershipHistory } : {}),
     });
     this.records.set(id, revised);
     this.persist();
@@ -1338,46 +1415,79 @@ export class CompetitionJourney {
   }
 
   /**
-   * Saves the organiser's exact pool placement for a draft. It must place every entrant of the current
-   * roster exactly once, fill every pool to its declared size, and carry the fingerprint the Studio was
-   * shown, so a placement can never apply to a roster or pool sizes it was not made for.
+   * Shows what a pool change would do before anything is saved: which entrants move, how many pool
+   * matches are added and removed, and what happens to a plan already created. Applying it requires the
+   * exact preview hash, so what is applied is what was reviewed.
    */
-  public setPoolMembership(id: string, expectedDraftVersion: number, input: { readonly stageId: string;
-    readonly basisHash: string; readonly assignments: readonly { readonly entrantId: string; readonly poolId: string }[] },
-  decidedBy: string): CompetitionJourneySnapshot {
+  public previewPoolMembership(id: string, expectedDraftVersion: number, request: PoolPlacementRequest): PoolMembershipPreview {
     const current = this.require(id);
     if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
     if (current.approval) throw new Error("approved_revision_is_immutable");
-    if (!decidedBy.trim()) throw new Error("pool_membership_requires_actor");
+    const names = authoritativeParticipantNames(current);
     const basis = poolMembershipBasis(current);
-    if (!basis || input.stageId !== basis.stageId) throw new Error("pool_membership_not_applicable");
-    if (input.basisHash !== basis.basisHash) throw new Error("pool_membership_stale");
-    const placed = input.assignments.map(({ entrantId }) => entrantId);
-    if (placed.length !== basis.entrants.length || new Set(placed).size !== placed.length
-      || basis.entrants.some(({ id: entrantId }) => !placed.includes(entrantId))
-      || input.assignments.some(({ poolId }) => !basis.poolIds.includes(poolId))
-      || basis.poolIds.some((poolId, index) => input.assignments.filter((assignment) => assignment.poolId === poolId).length !== basis.sizes[index]))
-      throw new JourneyExplainedError("pool_membership_invalid",
+    const pools = (assignments: readonly { readonly entrantId: string; readonly poolId: string }[]) =>
+      new Map(assignments.map(({ entrantId, poolId }) => [entrantId, poolId]));
+    const automatic = basis ? allocateStagePools({ stageId: basis.stageId, allocation: "snake", sizes: basis.sizes,
+      entrants: basis.entrants, randomisation: { mode: "none" } }).pools
+      .flatMap((pool, index) => pool.map(({ id: entrantId }) => ({ entrantId, poolId: basis.poolIds[index]! }))) : [];
+    const before = applicablePoolMembership(current)?.assignments ?? automatic;
+    let after: readonly { readonly entrantId: string; readonly poolId: string }[];
+    if (request.kind === "AUTOMATIC") {
+      if (!current.poolMembership) throw new Error("pool_membership_already_automatic");
+      after = automatic;
+    } else {
+      if (!basis) throw new Error("pool_membership_not_applicable");
+      if (request.basisHash !== basis.basisHash) throw new Error("pool_membership_stale");
+      const findings = poolMembershipFindings(basis, request.stageId, request.assignments);
+      if (findings.length) throw new JourneyExplainedError("pool_membership_invalid",
         `Place every entrant exactly once, with ${basis.sizes.join(", ")} in the pools.`);
-    const decidedAt = this.canonicalNow();
-    const assignments = basis.entrants.map(({ id: entrantId }) => ({ entrantId,
-      poolId: input.assignments.find((assignment) => assignment.entrantId === entrantId)!.poolId }));
-    const { compiled: _compiled, approval: _approval, publication: _publication, ...draft } = withoutSeal(current);
-    const revised = sealRecord({ ...draft, draftVersion: current.draftVersion + 1, updatedAt: decidedAt,
-      poolMembership: { stageId: basis.stageId, basisHash: basis.basisHash, assignments, decidedBy, decidedAt } });
-    this.records.set(id, revised);
-    this.persist();
-    return snapshotOf(revised);
+      after = basis.entrants.map(({ id: entrantId }) => ({ entrantId,
+        poolId: request.assignments.find((assignment) => assignment.entrantId === entrantId)!.poolId }));
+    }
+    const was = pools(before); const will = pools(after);
+    const moves = [...will].filter(([entrantId, poolId]) => was.get(entrantId) !== poolId && was.has(entrantId))
+      .map(([entrantId, toPoolId]) => ({ entrantId, displayName: names[entrantId] ?? entrantId, fromPoolId: was.get(entrantId)!, toPoolId }));
+    const meetings = (map: ReadonlyMap<string, string>) => {
+      const ids = [...map.keys()].sort(); const result = new Set<string>();
+      for (let i = 0; i < ids.length; i += 1) for (let j = i + 1; j < ids.length; j += 1)
+        if (map.get(ids[i]!) === map.get(ids[j]!)) result.add(`${ids[i]}|${ids[j]}`);
+      return result;
+    };
+    const [beforeMeetings, afterMeetings] = [meetings(was), meetings(will)];
+    const poolMatches = { added: [...afterMeetings].filter((key) => !beforeMeetings.has(key)).length,
+      removed: [...beforeMeetings].filter((key) => !afterMeetings.has(key)).length };
+    const consequences = [
+      ...(current.compiled ? ["The plan already created is set aside. Create and check the plan again before approval."] : []),
+      ...(request.kind === "AUTOMATIC" ? ["Your saved placement is discarded and the pools are drawn from the seeds."] : []),
+      ...(moves.length === 0 && request.kind === "PLACED" ? ["No pair changes pool."] : []),
+    ];
+    const body = { competitionId: current.id, draftVersion: current.draftVersion, recordHash: current.recordHash,
+      request, moves, poolMatches, consequences };
+    return { previewHash: canonicalHash(body), draftVersion: current.draftVersion, request, moves, poolMatches, consequences };
   }
 
-  /** Discards a saved pool placement, so the pools are drawn automatically again. */
-  public clearPoolMembership(id: string, expectedDraftVersion: number): CompetitionJourneySnapshot {
+  /** Applies exactly the pool change that was previewed, attributed to the person who applied it. */
+  public applyPoolMembership(id: string, expectedDraftVersion: number, request: PoolPlacementRequest,
+    expectedPreviewHash: string, decidedBy: string): CompetitionJourneySnapshot {
+    if (!decidedBy.trim()) throw new Error("pool_membership_requires_actor");
+    const preview = this.previewPoolMembership(id, expectedDraftVersion, request);
+    if (preview.previewHash !== expectedPreviewHash) throw new Error("pool_membership_preview_mismatch");
     const current = this.require(id);
-    if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
-    if (current.approval) throw new Error("approved_revision_is_immutable");
-    if (!current.poolMembership) return snapshotOf(current);
-    const { compiled: _compiled, approval: _approval, publication: _publication, poolMembership: _membership, ...draft } = withoutSeal(current);
-    const revised = sealRecord({ ...draft, draftVersion: current.draftVersion + 1, updatedAt: this.canonicalNow() });
+    const decidedAt = this.canonicalNow();
+    const { compiled: _compiled, approval: _approval, publication: _publication, poolMembership: _previous, ...draft } = withoutSeal(current);
+    const basis = poolMembershipBasis(current);
+    const membership = request.kind === "PLACED" ? { stageId: request.stageId, basisHash: request.basisHash,
+      assignments: basis!.entrants.map(({ id: entrantId }) => ({ entrantId,
+        poolId: request.assignments.find((assignment) => assignment.entrantId === entrantId)!.poolId })),
+      decidedBy, decidedAt } : null;
+    const entry: PoolMembershipChangeRecord = { action: membership ? "PLACED" : "RETURNED_TO_AUTOMATIC",
+      stageId: membership?.stageId ?? current.poolMembership!.stageId,
+      basisHash: membership?.basisHash ?? current.poolMembership!.basisHash,
+      assignmentsHash: membership ? canonicalHash(membership.assignments) : null,
+      previewHash: preview.previewHash, decidedBy, decidedAt };
+    const revised = sealRecord({ ...draft, draftVersion: current.draftVersion + 1, updatedAt: decidedAt,
+      ...(membership ? { poolMembership: membership } : {}),
+      poolMembershipHistory: [...(current.poolMembershipHistory ?? []), entry] });
     this.records.set(id, revised);
     this.persist();
     return snapshotOf(revised);
