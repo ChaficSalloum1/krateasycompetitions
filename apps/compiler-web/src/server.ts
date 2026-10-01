@@ -22,7 +22,7 @@ import { creatorHtml } from "./creator-view.js";
 import { productHtml } from "./product-view.js";
 import { createCompetitionProposal, parseCreationProposalPayload } from "./creation-proposal.js";
 import { CompetitionJourney, JourneyExplainedError, parseConnectedLiveCommand, parseCreationSource,
-  type CompetitionJourneyOptions } from "./competition-journey.js";
+  type CompetitionJourneyOptions, type PoolPlacementRequest } from "./competition-journey.js";
 import { renderCompetitionGuardPreflight } from "./guard-preflight-view.js";
 import { renderCompetitionPortfolio, renderCompetitionPortfolioUnavailable } from "./competition-portfolio-view.js";
 import { renderOrganiserStudio } from "./organiser-studio-view.js";
@@ -869,7 +869,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end(html);
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|edit-preview|edit-apply|compile|approve|amend|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|participant-access-rotate|participant-access-revoke|participant-recovery-code|participant-recover|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|pool-membership-preview|pool-membership-apply|edit-preview|edit-apply|compile|approve|amend|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|participant-access-rotate|participant-access-revoke|participant-recovery-code|participant-recover|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
@@ -904,6 +904,18 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
             || !Number.isSafeInteger(command.expectedDraftVersion)) throw new Error("invalid_journey_command");
           json(response, 200, competitionJourney.addSource(competitionId, command.expectedDraftVersion as number,
             parseCreationSource(command.source)));
+          return;
+        }
+        if (operation === "pool-membership-preview" || operation === "pool-membership-apply") {
+          const apply = operation === "pool-membership-apply";
+          if (Object.keys(command).some((key) => !["expectedDraftVersion", "request", ...(apply ? ["expectedPreviewHash"] : [])].includes(key))
+            || !Number.isSafeInteger(command.expectedDraftVersion) || (apply && typeof command.expectedPreviewHash !== "string"))
+            throw new Error("invalid_journey_command");
+          const request = parsePoolPlacementRequest(command.request);
+          json(response, 200, apply
+            ? competitionJourney.applyPoolMembership(competitionId, command.expectedDraftVersion as number, request,
+              command.expectedPreviewHash as string, "local.organiser")
+            : competitionJourney.previewPoolMembership(competitionId, command.expectedDraftVersion as number, request));
           return;
         }
         if (operation === "source-remove") {
@@ -1301,4 +1313,21 @@ if (process.argv[1]?.endsWith("server.ts") || process.argv[1]?.endsWith("server.
   const port = Number(process.env.PORT ?? 4173);
   const host = process.env.HOST ?? "127.0.0.1";
   createCompilerServer().listen(port, host, () => console.log(`TournamentOS Studio: http://${host}:${port}`));
+}
+
+/** A pool change as sent by the Studio: an exact placement, or a return to the automatic draw. */
+function parsePoolPlacementRequest(value: unknown): PoolPlacementRequest {
+  const request = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  if (request?.kind === "AUTOMATIC" && Object.keys(request).length === 1) return { kind: "AUTOMATIC" };
+  const assignments = request?.assignments;
+  if (request?.kind !== "PLACED" || Object.keys(request).some((key) => !["kind", "stageId", "basisHash", "assignments"].includes(key))
+    || typeof request.stageId !== "string" || typeof request.basisHash !== "string"
+    || !Array.isArray(assignments) || assignments.length > 4_096
+    || !assignments.every((assignment) => assignment && typeof assignment === "object" && !Array.isArray(assignment)
+      && Object.keys(assignment).every((key) => key === "entrantId" || key === "poolId")
+      && typeof (assignment as Record<string, unknown>).entrantId === "string"
+      && typeof (assignment as Record<string, unknown>).poolId === "string"))
+    throw new Error("invalid_journey_command");
+  return { kind: "PLACED", stageId: request.stageId, basisHash: request.basisHash,
+    assignments: assignments as { entrantId: string; poolId: string }[] };
 }

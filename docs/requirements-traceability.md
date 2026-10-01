@@ -461,4 +461,25 @@ No authority conflict required product-owner direction. The smallest connected s
       - *Status.* Decided by engineering on the owner's delegation. It is open to the competition-rules owner's approval (pilot gate COMPETITION_RULES_APPROVAL).
     - **Not yet proven: production identity and durability.** The browser golden path runs the in-memory journey on the development server. Real authentication, tenant membership and a durable PostgreSQL-backed acceptance journey on a non-production deployment are still required before the product is called deployed.
 
+57. **Pool placement by the organiser (first capability brought in from the draft stack #6–#17; `previewPoolMembership`, `applyPoolMembership`, `POST …/pool-membership-preview` and `…/pool-membership-apply`, Studio "Pools"):** for pools into a knockout, the Studio shows the pools in force. These are drawn automatically from the seeds, or are the organiser's own placement.
+    - **Editing.** Each pair has a pool choice, and each pool shows its count against its declared size.
+    - **Preview, then apply.** Every pool change is previewed before anything is saved, and that covers placing pools and returning to the automatic draw. The preview shows:
+      - which pairs move, from which pool to which;
+      - how many pool matches are added and removed;
+      - whether a plan already created is set aside.
+      The change is applied only with that preview's exact hash, which binds the record revision and the request, by a named person.
+    - **Audit.** Each applied change is kept in `poolMembershipHistory`: the action, the fingerprint, a hash of the assignments, the preview hash, who decided it and when.
+    - **One validator, independently re-run.** `poolMembershipFindings` checks that a placement covers the exact roster once, uses only declared pools, and fills each pool to its size. It runs when a change is previewed and again whenever a record is loaded or restored (`verifyStoredPoolMembership`, inside `verifyRecord`). Load-time verification also requires the placement to match its latest audit entry. So a forged store, with the record and store hashes recomputed, is refused (`journey_store_integrity_failed`).
+    - **Compiling.** The placement is applied as the engine's existing `manual` pool allocation.
+    - **Live play.** The entrants that live progression rebuilds from carry the same pool assignments.
+    - **Stale placements.** If the roster, pool sizes or format change, the placement is never shown as the pools in force. It stays visible with "Draw automatically again", and compiling is refused with the reason until it is redone or cleared.
+    - **Not brought in yet.** "Keep together" and "keep apart" rules on an automatic draw.
+    - **Tests** (`pool-membership.test.ts`, `browser/pool-editor.test.ts`):
+      - placing seeds 1–3 in one pool changes the knockout, through live play;
+      - every invalid placement saves nothing;
+      - the preview's moves and pool-match counts are checked, a mismatched hash or a different placement is refused, and the history is attributed;
+      - a forged on-disk placement is refused at load, and the test fails if the load-time check is removed;
+      - a placement left over from another format can be cleared;
+      - in a browser on a phone-width screen, an uneven save is refused with the reason, a valid one is reviewed and applied, and a return to the automatic draw is reviewed and recorded.
+
 Broader format/sport connection, non-pilot loser-path/hard-rematch reconstruction and a verified on-device advisory model remain governed follow-ons rather than St Albans deployment blockers. The remaining pilot gates require external authority or deployment inputs: provider/fallback selection and credentials, authorised emergency details, named-assistive-technology/outdoor accessibility acceptance, full staff/manual recovery rehearsal, production persistence/restore evidence, support assignment and final role approvals. The emergency pack cannot be declared ready until the venue/pilot safety owner supplies and approves the named responders, contacts, venue/access and evacuation facts; until then the explicit fallback is the venue's separately controlled printed safety plan. External delivery remains fail closed until the pilot owner selects credentials, a provider and its declared fallback. The executable release manifest lists every remaining gate, accountable role and fixed fallback against the exact closed rehearsal scope; no missing external fact is represented as passed.
