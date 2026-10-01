@@ -64,7 +64,7 @@ import {
 import { definitionFromProductionLock, entrantsFromProductionLock, isProductionLockWorkbench, participantNamesFromProductionLock,
   verifiedScheduleFromProductionLock } from "./production-lock-definition.js";
 import { connectedBlueprintFindings, connectedBlueprintFromWorkbench,
-  definitionFromConnectedBlueprint, evenPoolSizes, eventLocalTime } from "./generic-blueprint-definition.js";
+  definitionFromConnectedBlueprint, evenPoolSizes, eventLocalTime, eventTimeInstant } from "./generic-blueprint-definition.js";
 import { applyScheduleControls as withScheduleControls, contestLabelFromId, controllableRounds, hasScheduleControls, parseScheduleControls,
   protectionGraphFindings, scheduleControlFindings, type ScheduleControlRound, type ScheduleControls } from "./schedule-controls.js";
 import {
@@ -799,7 +799,7 @@ function scheduleControlsExplanation(findings: readonly string[], blueprint: Com
   const hours = `${eventLocalTime(blueprint.startsAt!, blueprint.timezone!)}–${eventLocalTime(blueprint.endsAt!, blueprint.timezone!)}`;
   const messages: Record<string, string> = {
     COURT_HOURS_COURT: `Choose courts from 1 to ${blueprint.resourceCount ?? 0}, each once.`,
-    COURT_HOURS_TIME: `A court must open before it closes, within the event's hours (${hours}).`,
+    COURT_HOURS_TIME: `A court must open before it closes, at times that exist within the event's hours (${hours}).`,
     DURATION_STAGE: "A match length names a stage this event does not have.",
     DURATION_ROUND: "A match length names a round this stage does not have.",
     DURATION_MINUTES: "Match lengths must be from 5 to 240 minutes.",
@@ -807,7 +807,7 @@ function scheduleControlsExplanation(findings: readonly string[], blueprint: Com
     PROTECTION_EMPTY: "A protected match needs a start time, a court, or both.",
     PROTECTION_DUPLICATE: "Protect each match once.",
     PROTECTION_COURT: `A protected match must use a court from 1 to ${blueprint.resourceCount ?? 0}.`,
-    PROTECTION_TIME: `A protected start must be within the event's hours (${hours}).`,
+    PROTECTION_TIME: `A protected start must be a time that exists within the event's hours (${hours}); a time skipped when the clocks go forward does not.`,
     PROTECTION_OUTSIDE_COURT_HOURS: "A protected start must be within its court's opening hours.",
     EVENT_HOURS_UNKNOWN: "Set the event's date, times and timezone first.",
   };
@@ -1790,11 +1790,10 @@ export class CompetitionJourney {
       else if (was && !will) changes.push(`${label(contestId)} is no longer protected.`);
     }
     const courtMinutes = (subject: ScheduleControls) => {
-      const opens = Date.parse(blueprint.startsAt!); const closes = Date.parse(blueprint.endsAt!);
-      const minutes = (from: string, to: string) => Number(to.slice(0, 2)) * 60 + Number(to.slice(3)) - Number(from.slice(0, 2)) * 60 - Number(from.slice(3));
+      const at = (time: string) => Date.parse(eventTimeInstant(blueprint.startsAt!, blueprint.endsAt!, blueprint.timezone!, time)!);
       return Array.from({ length: blueprint.resourceCount ?? 0 }, (_, index) => {
         const hours = subject.courtHours.find(({ court }) => court === index + 1);
-        return hours ? minutes(hours.opens, hours.closes) : (closes - opens) / 60_000;
+        return ((hours ? at(hours.closes) - at(hours.opens) : Date.parse(blueprint.endsAt!) - Date.parse(blueprint.startsAt!)) / 60_000);
       }).reduce((sum, value) => sum + value, 0);
     };
     const consequences: string[] = [];

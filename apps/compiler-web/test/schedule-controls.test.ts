@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { canonicalHash } from "@tournament-os/tournament-schema";
 import { CompetitionJourney } from "../src/competition-journey.js";
-import type { ScheduleControls } from "../src/schedule-controls.js";
+import { eventTimeInstant } from "../src/generic-blueprint-definition.js";
+import { scheduleControlFindings, type ScheduleControls } from "../src/schedule-controls.js";
+import type { CompetitionBlueprint } from "../src/creation-proposal.js";
 import { pairs } from "./support/pools-knockout-event.js";
 
 // Scheduling controls on a connected event: court opening hours, match lengths per stage and round, and
@@ -177,4 +179,22 @@ test("a protected final keeps its time and court through live play, as the plan 
   }
   assert.ok(read().controlContests.every(({ status }) => status === "COMPLETED"), "every match, pools to final, was played");
   assert.deepEqual(finalSeen, { scheduledStart: "2026-11-07T17:00:00.000Z", courtId: "venue.courts.1" });
+});
+
+test("a wall time skipped when the clocks go forward is refused, never shifted", () => {
+  // Europe/London springs forward at 01:00 GMT on 29 March 2026: 01:30 local does not exist that day.
+  const [starts, ends] = ["2026-03-29T00:00:00.000Z", "2026-03-29T12:00:00.000Z"];
+  assert.equal(eventTimeInstant(starts, ends, "Europe/London", "01:30"), null);
+  assert.equal(eventTimeInstant(starts, ends, "Europe/London", "02:30"), "2026-03-29T01:30:00.000Z");
+});
+
+test("an event that runs past midnight resolves its controls onto the next day", () => {
+  const [startsAt, endsAt] = ["2026-11-07T18:00:00.000Z", "2026-11-08T02:00:00.000Z"];
+  assert.equal(eventTimeInstant(startsAt, endsAt, "Europe/London", "01:00"), "2026-11-08T01:00:00.000Z");
+  const blueprint = { resourceCount: 3, timezone: "Europe/London", startsAt, endsAt } as CompetitionBlueprint;
+  const definition = { stages: [] } as never;
+  assert.deepEqual(scheduleControlFindings({ courtHours: [{ court: 1, opens: "22:00", closes: "01:30" }], durations: [],
+    protections: [{ contestId: "x", start: "00:30", court: 1 }] }, blueprint, definition), []);
+  assert.deepEqual(scheduleControlFindings({ courtHours: [{ court: 1, opens: "01:30", closes: "22:00" }], durations: [], protections: [] },
+    blueprint, definition), ["COURT_HOURS_TIME"], "closing before opening, across midnight, is refused");
 });

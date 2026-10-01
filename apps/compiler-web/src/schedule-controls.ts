@@ -1,7 +1,7 @@
 import type { TournamentDefinition } from "@tournament-os/tournament-schema";
 import { PROTECTED_ASSIGNMENT_RULE, type CompetitionGraph } from "@tournament-os/competition-engine";
 import type { CompetitionBlueprint } from "./creation-proposal.js";
-import { eventDayInstant } from "./generic-blueprint-definition.js";
+import { eventTimeInstant } from "./generic-blueprint-definition.js";
 
 /**
  * The organiser's scheduling controls for a connected event. Times are wall-clock "HH:MM" on the event
@@ -24,7 +24,6 @@ export function hasScheduleControls(controls: ScheduleControls | undefined): con
   return Boolean(controls && (controls.courtHours.length || controls.durations.length || controls.protections.length));
 }
 
-const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const onlyKeys = (value: Record<string, unknown>, keys: readonly string[]) => Object.keys(value).every((key) => keys.includes(key));
 
@@ -104,8 +103,6 @@ export function contestLabelFromId(contestId: string, definition: Pick<Tournamen
   return `${stage.label}: round ${round}, match ${knockout[3]}`;
 }
 
-const minutesOf = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
-
 /**
  * What is wrong with these controls for this event, as stable codes; empty when they can be applied.
  * Every check here depends only on the event's facts, so a change to those facts can make saved
@@ -117,13 +114,14 @@ export function scheduleControlFindings(controls: ScheduleControls, blueprint: C
   const courts = blueprint.resourceCount ?? 0;
   const timeZone = blueprint.timezone; const startsAt = blueprint.startsAt; const endsAt = blueprint.endsAt;
   if (!timeZone || !startsAt || !endsAt) return ["EVENT_HOURS_UNKNOWN"];
-  const instant = (time: string) => TIME.test(time) ? eventDayInstant(startsAt, timeZone, time) : null;
-  const within = (time: string) => { const value = instant(time); return value !== null && Date.parse(value) >= Date.parse(startsAt) && Date.parse(value) <= Date.parse(endsAt); };
+  // Times resolve to the instant they name within the event, so an event past midnight can use 00:30.
+  const at = (time: string) => { const value = eventTimeInstant(startsAt, endsAt, timeZone, time); return value === null ? null : Date.parse(value); };
+  const within = (time: string) => at(time) !== null;
   const seenCourts = new Set<number>();
   for (const { court, opens, closes } of controls.courtHours) {
     if (court < 1 || court > courts || seenCourts.has(court)) findings.add("COURT_HOURS_COURT");
     seenCourts.add(court);
-    if (!within(opens) || !within(closes) || minutesOf(opens) >= minutesOf(closes)) findings.add("COURT_HOURS_TIME");
+    if (!within(opens) || !within(closes) || at(opens)! >= at(closes)!) findings.add("COURT_HOURS_TIME");
   }
   const seenLengths = new Set<string>();
   for (const { stageId, round, minutes } of controls.durations) {
@@ -143,8 +141,8 @@ export function scheduleControlFindings(controls: ScheduleControls, blueprint: C
     if (court !== undefined && (court < 1 || court > courts)) findings.add("PROTECTION_COURT");
     if (start !== undefined && !within(start)) findings.add("PROTECTION_TIME");
     const hours = court === undefined ? undefined : controls.courtHours.find((entry) => entry.court === court);
-    if (start !== undefined && hours && TIME.test(start) && (minutesOf(start) < minutesOf(hours.opens) || minutesOf(start) >= minutesOf(hours.closes)))
-      findings.add("PROTECTION_OUTSIDE_COURT_HOURS");
+    if (start !== undefined && hours && within(start) && within(hours.opens) && within(hours.closes)
+      && (at(start)! < at(hours.opens)! || at(start)! >= at(hours.closes)!)) findings.add("PROTECTION_OUTSIDE_COURT_HOURS");
   }
   return [...findings].sort();
 }
@@ -159,8 +157,7 @@ export function protectionGraphFindings(controls: ScheduleControls, graph: Compe
 export function applyScheduleControls(definition: TournamentDefinition, blueprint: CompetitionBlueprint,
   controls: ScheduleControls): TournamentDefinition {
   if (!hasScheduleControls(controls)) return definition;
-  const timeZone = blueprint.timezone!; const startsAt = blueprint.startsAt!;
-  const instant = (time: string) => eventDayInstant(startsAt, timeZone, time)!;
+  const instant = (time: string) => eventTimeInstant(blueprint.startsAt!, blueprint.endsAt!, blueprint.timezone!, time)!;
   const courts = definition.resources[0]!;
   const unitAvailability = controls.courtHours.map(({ court, opens, closes }) =>
     ({ unit: court, availability: [{ start: instant(opens), end: instant(closes) }] }));

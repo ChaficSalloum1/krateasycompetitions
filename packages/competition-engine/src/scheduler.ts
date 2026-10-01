@@ -138,7 +138,8 @@ function requiredResourceConstraintFindings(spec: TournamentSpec, graph: Competi
 function enforceRequiredResources(spec: TournamentSpec, graph: CompetitionGraph, scheduled: ScheduledContest[],
   resources: readonly ResourceUnit[]): void {
   const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
-  const protectedIds = new Set(protectedAssignments(spec).keys());
+  // Only a protection that pins a court forbids moving a contest to another court; a protected start does not.
+  const protectedIds = new Set(pinnedResources(spec).keys());
   for (const entry of [...scheduled].sort((left, right) => left.contestId.localeCompare(right.contestId))) {
     const node = nodes.get(entry.contestId); if (!node || protectedIds.has(node.id)) continue;
     const requiredId = requiredResourceId(spec, node); if (!requiredId || entry.resourceId === requiredId) continue;
@@ -215,6 +216,30 @@ export function solveSchedule(spec: TournamentSpec, graph: CompetitionGraph): Sc
   const locks = lockedStarts(spec);
   const pinned = pinnedResources(spec);
   const scheduled: ScheduledContest[] = [];
+  // Protected starts are reserved before greedy placement: an ordinary contest may not take a pinned
+  // court at a protected time, nor leave too few courts of the type for the time-only protections then.
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const reservations = [...locks].flatMap(([contestId, start]) => {
+    const node = nodeById.get(contestId);
+    return node?.kind === "contest" && Number.isFinite(start) ? [{ contestId, start, end: start + minutes(durationFor(node, spec.scheduling)),
+      type: node.requiredResourceType, resourceId: pinned.get(contestId) }] : [];
+  });
+  const placedIds = new Set<string>();
+  const respectsReservations = (contestId: string, resource: ResourceUnit, start: number, end: number) => {
+    const open = reservations.filter((entry) => entry.contestId !== contestId && !placedIds.has(entry.contestId));
+    for (const reservation of open) {
+      if (start >= reservation.end || end <= reservation.start) continue;
+      if (reservation.resourceId === resource.id) return false;
+      if (reservation.resourceId !== undefined || reservation.type !== resource.type) continue;
+      const contenders = open.filter((other) => other.resourceId === undefined && other.type === reservation.type
+        && other.start < reservation.end && other.end > reservation.start).length;
+      const free = resourceUnits.filter((unit) => unit.type === reservation.type && unit.id !== resource.id
+        && !open.some((other) => other.resourceId === unit.id && other.start < reservation.end && other.end > reservation.start)
+        && fits(reservation.start, reservation.end, unit, scheduled)).length;
+      if (free < contenders) return false;
+    }
+    return true;
+  };
   const startFloor = Date.parse(spec.scheduling.start);
   const minimumRest = Number(spec.scheduling.constraints.find(({ rule, strength }) => rule === "minimum_rest" && strength === "HARD")?.value ?? 0);
   // Any feeder entrant can qualify into a contest reached by a `complete` edge, so hard rest must also
@@ -239,8 +264,10 @@ export function solveSchedule(spec: TournamentSpec, graph: CompetitionGraph): Sc
       continue;
     }
     while (cursor + duration <= hardLimit) {
+      const requiredId = requiredResourceId(spec, node);
       chosen = resourceUnits.filter(({ type, id }) => type === node.requiredResourceType && (!pinned.has(node.id) || pinned.get(node.id) === id))
-        .find((resource) => fits(cursor, cursor + duration, resource, scheduled));
+        .sort((left, right) => Number(right.id === requiredId) - Number(left.id === requiredId))
+        .find((resource) => fits(cursor, cursor + duration, resource, scheduled) && respectsReservations(node.id, resource, cursor, cursor + duration));
       if (chosen || lockedStart !== undefined) break;
       cursor += minutes(5);
     }
@@ -251,7 +278,7 @@ export function solveSchedule(spec: TournamentSpec, graph: CompetitionGraph): Sc
       continue;
     }
     const entry: ScheduledContest = { contestId: node.id, resourceId: chosen.id, start: iso(cursor), end: iso(cursor + duration), possibleEntrantIds: [...(potentials.get(node.id) ?? [])].sort() };
-    scheduled.push(entry); readyEnd.set(node.id, cursor + duration);
+    scheduled.push(entry); placedIds.add(node.id); readyEnd.set(node.id, cursor + duration);
     for (const id of entry.possibleEntrantIds) participantLastEnd.set(id, cursor + duration);
   }
   alignHeadlineFinals(spec, graph, scheduled, resourceUnits, dependencies);

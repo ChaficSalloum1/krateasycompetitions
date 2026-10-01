@@ -12,7 +12,7 @@ const at = (minute: number) => new Date(Date.parse("2026-09-06T09:00:00Z") + min
 type Constraint = TournamentDefinition["scheduling"]["constraints"][number];
 type Resource = TournamentDefinition["resources"][number];
 
-function spec(options: { constraints?: Constraint[]; unitAvailability?: Resource["unitAvailability"] } = {}): TournamentSpec {
+function spec(options: { constraints?: Constraint[]; unitAvailability?: Resource["unitAvailability"]; courts?: number } = {}): TournamentSpec {
   const definition: TournamentDefinition = {
     sport: { id: "test", adapterVersion: "1.0.0", participantUnit: "individual", contest: { kind: "head_to_head", sides: 2 },
       scoringCapabilities: ["win"], defaultResourceType: "court" }, participants: { count: 4, shape: "individual" },
@@ -23,7 +23,7 @@ function spec(options: { constraints?: Constraint[]; unitAvailability?: Resource
     qualificationPolicies: [], competitionStructures: [], drawPolicies: [], progressionPolicies: [],
     scheduling: { timezone: "UTC", start: at(0), constraints: options.constraints ?? [],
       durations: [{ stageId: "open.main", contestMinutes: 10, turnaroundMinutes: 0 }], objective: "earliest_finish" },
-    resources: [{ id: "courts", type: "court", quantity: 2, availability: [{ start: at(0), end: at(120) }],
+    resources: [{ id: "courts", type: "court", quantity: options.courts ?? 2, availability: [{ start: at(0), end: at(120) }],
       ...(options.unitAvailability ? { unitAvailability: options.unitAvailability } : {}) }],
     operationalPolicies: [], randomisation: { mode: "none" }, assumptions: [], requirements: [],
   };
@@ -111,4 +111,25 @@ test("malformed protections and court hours outside the venue's are refused", ()
   assert.ok(validateSchedule(outside, graph(), solveSchedule(spec(), graph())).some(({ code }) => code === "TSV415"));
   const unknownUnit = spec({ unitAvailability: [{ unit: 3, availability: [{ start: at(0), end: at(60) }] }] });
   assert.ok(validateSchedule(unknownUnit, graph(), solveSchedule(spec(), graph())).some(({ code }) => code === "TSV415"));
+});
+
+test("list scheduler: a time-only protection still goes to its round's required court", () => {
+  const subject = spec({ constraints: [protect("final", { start: at(60) }), { id: "final.court", rule: "required_resource", strength: "HARD",
+    value: JSON.stringify({ stageId: "open.main", round: "final", resourceId: "courts.2" }) }] });
+  const solution = solveSchedule(subject, graph());
+  assert.deepEqual(validateSchedule(subject, graph(), solution).filter(({ severity }) => severity === "ERROR"), []);
+  assert.deepEqual([placed(solution, "final").start, placed(solution, "final").resourceId], [at(60), "courts.2"]);
+});
+
+test("list scheduler: a protected start is reserved before earlier contests are placed greedily", () => {
+  // One court, two independent semi-finals: protecting the second at the start must not be defeated by
+  // the first taking the court then.
+  const semis: CompetitionGraph = { ...graph(), nodes: graph().nodes.filter(({ id }) => id !== "final"), edges: [],
+    expectedActualContestCount: 2, generatedActualContestCount: 2 };
+  const subject = spec({ courts: 1, constraints: [protect("semi-b", { start: at(0) })] });
+  const solution = solveSchedule(subject, semis);
+  assert.deepEqual(solution.findings.filter(({ severity }) => severity === "ERROR"), []);
+  assert.deepEqual(validateSchedule(subject, semis, solution).filter(({ severity }) => severity === "ERROR"), []);
+  assert.equal(placed(solution, "semi-b").start, at(0));
+  assert.equal(placed(solution, "semi-a").start, at(10));
 });
