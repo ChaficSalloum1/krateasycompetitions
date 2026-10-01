@@ -41,15 +41,10 @@ Their creator is a client-side prototype, separate from the persisted, server-ow
 The shortest honest route to a hosted pilot is these slices, in order.
 
 1. ~~Merge PR #5 once CI is green.~~ Merged.
-2. **Finish PR #18 (pool placement).** It adds:
-   - one validator, re-run when a record is loaded or restored;
-   - forged-record tests;
-   - preview, then apply with the exact hash, for every pool change;
-   - an attributed return to the automatic draw.
-   It is not merged yet.
+2. ~~Finish PR #18 (pool placement).~~ Merged (traceability item 57).
 3. **Pilot-critical creation correctness**, brought in from the draft stack and reimplemented on `main`:
    - "keep together" and "keep apart" pool rules;
-   - protection of the top seeds in the knockout draw (the prototype found that seeds 1 and 2 can meet before the final);
+   - ~~knockout draws that do what their policy declares, with hierarchical top-seed protection~~ (item 58);
    - roster replacement with stale pool, seed and assignment detection.
 4. **Pilot scheduling controls**, with PRs #13–#16 as reference material:
    - per-court availability windows;
@@ -72,7 +67,7 @@ The shortest honest route to a hosted pilot is these slices, in order.
    - loading, permission-denied and stale states.
 7. **Operational pilot evidence (E4).** The eleven gates in `pilot-release-readiness.ts`, then the pilot.
 
-Deferred until after the pilot: universal PDF, ZIP and image ingestion; Scenario Lab; more sports; and wider format claims.
+After the pilot, the platform programmes are in `ROADMAP.md`. Deferred until then: universal PDF, ZIP and image ingestion; Scenario Lab; more sports; and wider format claims.
 
 ## How the other branches are used
 

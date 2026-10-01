@@ -20,6 +20,11 @@ export interface ConstraintDrawInput {
   priorMeetings: readonly (readonly [string, string])[];
   constraints?: Partial<Record<Exclude<DrawConstraintName, "structural_validity">, DrawConstraintOverride>>;
   protectedSeedCount?: number;
+  /**
+   * Keep every bye where the standard seeded bracket puts it. The bracket's shape (which first-round
+   * matches are byes) then never depends on who qualified, so a plan and its live replay agree on it.
+   */
+  fixedByeSlots?: boolean;
   candidateLimit?: number;
   alternativeLimit?: number;
 }
@@ -64,6 +69,8 @@ interface Evaluation {
   counts: Map<DrawConstraintName, number>;
   hardViolationCount: number;
   key: string;
+  /** Slots that differ from the standard seeded bracket. Among equally good draws, the fewest moves wins. */
+  displacement: number;
 }
 
 const defaults: readonly ResolvedConstraint[] = [
@@ -146,7 +153,7 @@ function exhaustiveCandidates(values: readonly (string | null)[]): Array<Array<s
   return candidates;
 }
 
-function boundedCandidates(baseline: readonly (string | null)[], limit: number): Array<Array<string | null>> {
+function boundedCandidates(baseline: readonly (string | null)[], limit: number, fixedByes = false): Array<Array<string | null>> {
   const result: Array<Array<string | null>> = [[...baseline]];
   const seen = new Set([baseline.map((value) => value ?? "-").join("|")]);
   for (let cursor = 0; cursor < result.length && result.length < limit; cursor += 1) {
@@ -154,6 +161,7 @@ function boundedCandidates(baseline: readonly (string | null)[], limit: number):
     for (let left = 0; left < current.length && result.length < limit; left += 1) {
       for (let right = left + 1; right < current.length && result.length < limit; right += 1) {
         if (current[left] === current[right]) continue;
+        if (fixedByes && (current[left] === null || current[right] === null)) continue;
         const next = [...current];
         [next[left], next[right]] = [next[right]!, next[left]!];
         const key = next.map((value) => value ?? "-").join("|");
@@ -172,6 +180,7 @@ function evaluate(
   constraints: readonly ResolvedConstraint[],
   protectedSeedCount: number,
   priorMeetings: ReadonlySet<string>,
+  baseline: readonly (string | null)[] = slots,
 ): Evaluation {
   const violations: DrawConstraintViolation[] = [];
   const byId = new Map(entrants.map((entrant) => [entrant.id, entrant]));
@@ -199,6 +208,21 @@ function evaluate(
     }
   }
 
+  // Protection is hierarchical: four seeds in distinct quarters can still put seeds 1 and 2 in the same
+  // half. Each tier (top 2 in halves, top 4 in quarters, …) is checked on its own.
+  for (let tier = 2; tier < protectedSeedCount; tier *= 2) {
+    const sections = new Map<number, string[]>();
+    for (const entrant of seeded.slice(0, tier)) {
+      const index = slots.indexOf(entrant.id);
+      if (index < 0) continue;
+      const section = Math.floor(index / (slots.length / tier));
+      sections.set(section, [...(sections.get(section) ?? []), entrant.id]);
+    }
+    for (const ids of sections.values()) if (ids.length > 1) {
+      add("protected_seed_separation", [...ids].sort(), ids.map((id) => slots.indexOf(id)).sort((left, right) => left - right),
+        `The top ${tier} seeds share a protected section.`);
+    }
+  }
   const protectedSeeds = seeded.slice(0, protectedSeedCount);
   const sectionSize = slots.length / Math.max(1, protectedSeeds.length);
   const occupantsBySection = new Map<number, string[]>();
@@ -220,6 +244,23 @@ function evaluate(
     }
   }
 
+  // An entrant with a bye opens against whoever wins the neighbouring first-round match, so both of
+  // those entrants are its possible opening opponents.
+  for (let index = 0; index < slots.length; index += 2) {
+    const [byeHolder, other] = slots[index] === null ? [slots[index + 1], null] : slots[index + 1] === null ? [slots[index], null] : [null, null];
+    if (!byeHolder || other !== null) continue;
+    const neighbour = index % 4 === 0 ? index + 2 : index - 2;
+    for (const opponentIndex of [neighbour, neighbour + 1]) {
+      const opponentId = slots[opponentIndex];
+      if (!opponentId) continue;
+      const holder = byId.get(byeHolder)!; const opponent = byId.get(opponentId)!;
+      if (holder.poolId && holder.poolId === opponent.poolId) {
+        const ids = [byeHolder, opponentId].sort();
+        add("avoid_same_pool_rematch", ids, [slots.indexOf(byeHolder), opponentIndex].sort((a, b) => a - b),
+          `'${ids.join("' and '")}' came from the same pool and can meet in the bye-holder's opening match.`);
+      }
+    }
+  }
   for (let index = 0; index < slots.length; index += 2) {
     const leftId = slots[index];
     const rightId = slots[index + 1];
@@ -246,6 +287,7 @@ function evaluate(
     counts,
     hardViolationCount: violations.filter(({ strength }) => strength === "HARD").length,
     key: slots.map((value) => value ?? "-").join("|"),
+    displacement: slots.filter((value, index) => value !== baseline[index]).length,
   };
 }
 
@@ -255,6 +297,7 @@ function compareEvaluations(left: Evaluation, right: Evaluation, constraints: re
     const difference = (left.counts.get(constraint.name) ?? 0) - (right.counts.get(constraint.name) ?? 0);
     if (difference !== 0) return difference;
   }
+  if (left.displacement !== right.displacement) return left.displacement - right.displacement;
   return left.key.localeCompare(right.key);
 }
 
@@ -295,13 +338,16 @@ export function placeConstraintDraw(input: ConstraintDrawInput): ConstraintDrawR
   const baseline = canonicalSlots(input.entrants, bracketSize);
   const searchComplete = bracketSize <= 8;
   const candidateLimit = Math.max(1, input.candidateLimit ?? 4096);
-  const candidates = searchComplete ? exhaustiveCandidates(baseline) : boundedCandidates(baseline, candidateLimit);
+  const keepsByes = (slots: readonly (string | null)[]) => !input.fixedByeSlots
+    || slots.every((value, index) => (value === null) === (baseline[index] === null));
+  const candidates = (searchComplete ? exhaustiveCandidates(baseline) : boundedCandidates(baseline, candidateLimit, Boolean(input.fixedByeSlots)))
+    .filter(keepsByes);
   const protectedSeedCount = Math.min(
     input.protectedSeedCount ?? highestPowerOfTwoAtMost(Math.min(4, input.entrants.length)),
     input.entrants.length,
   );
   const priorMeetings = new Set(input.priorMeetings.map(([left, right]) => pairKey(left, right)));
-  const evaluations = candidates.map((slots) => evaluate(slots, input.entrants, constraints, protectedSeedCount, priorMeetings))
+  const evaluations = candidates.map((slots) => evaluate(slots, input.entrants, constraints, protectedSeedCount, priorMeetings, baseline))
     .sort((left, right) => compareEvaluations(left, right, constraints));
   const best = evaluations[0]!;
   const feasible = evaluations.filter(({ hardViolationCount }) => hardViolationCount === 0);

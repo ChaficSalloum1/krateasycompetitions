@@ -173,10 +173,12 @@ export function definitionFromProductionLock(workbench: CompetitionWorkbenchProj
       tieFallback: "manual_decision" as const })),
     qualificationPolicies: qualifications,
     competitionStructures: structures,
-    drawPolicies: structures.map((structure) => ({ id: `${structure.id}.draw`, structureId: structure.id, placement: "optimised" as const,
+    // The production lock's source pairs every knockout match by seed ("Tower seed 14 vs seed 19"), so the
+    // draw is the seeded bracket. Declaring an optimised, rematch-avoiding draw here would promise
+    // something the organiser's published schedule does not do.
+    drawPolicies: structures.map((structure) => ({ id: `${structure.id}.draw`, structureId: structure.id, placement: "seeded" as const,
       priorities: [{ rule: "structural_validity", strength: "HARD" as const, priority: 1 },
-        { rule: "protected_byes", strength: "HARD" as const, priority: 2 },
-        { rule: "avoid_opening_round_pool_rematch", strength: "SOFT" as const, priority: 3, weight: 60 }] })),
+        { rule: "protected_byes", strength: "HARD" as const, priority: 2 }] })),
     progressionPolicies: [],
     scheduling: { timezone: timeZone, start: isoOn(date, "11:00", timeZone), finishBy: isoOn(date, String(rules.hardStop), timeZone),
       constraints: [{ id: "no.participant.overlap", rule: "participant_cannot_play_two_contests_simultaneously",

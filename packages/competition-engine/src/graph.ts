@@ -2,6 +2,7 @@ import { canonicalHash, type StageDefinition, type TournamentSpec, type Validati
 import type { CompetitionGraph, ContestNode, Entrant, ProgressionEdge, SlotSource } from "./types.js";
 import { compileNativeStaticFormat } from "./native-static-format-adapter.js";
 import { allocateStagePools } from "./pool-allocation.js";
+import { placeConstraintDraw, type ConstraintDrawInput } from "./draw-constraints.js";
 
 const makeFinding = (code: string, message: string, evidence?: Record<string, unknown>): ValidationFinding => ({
   code, severity: "ERROR", path: "/competitionGraph", message, ...(evidence ? { evidence } : {}),
@@ -41,13 +42,46 @@ function roundRobin(stage: StageDefinition, entrants: readonly Entrant[], resour
   return nodes;
 }
 
-function elimination(stage: StageDefinition, entrants: readonly Entrant[], resourceType: string): { nodes: ContestNode[]; edges: ProgressionEdge[] } {
+/** Declared draw rules, mapped to the draw engine's constraints. Anything a policy does not declare keeps its default. */
+function drawConstraintsFor(priorities: TournamentSpec["drawPolicies"][number]["priorities"]): NonNullable<ConstraintDrawInput["constraints"]> {
+  const declared = new Map(priorities.map(({ rule, strength, priority }) => [rule, { strength, priority }]));
+  const rematch = declared.get("avoid_opening_round_pool_rematch") ?? declared.get("avoid_same_pool_rematch");
+  return {
+    ...(declared.get("protected_byes") ? { protected_byes: { enabled: true, ...declared.get("protected_byes")! } } : {}),
+    avoid_same_pool_rematch: rematch ? { enabled: true, ...rematch } : { enabled: false },
+    avoid_any_rematch: { enabled: false },
+  };
+}
+
+/**
+ * Where entrants sit in a knockout. A structure whose draw policy is "optimised" is placed by the draw
+ * engine under its declared rules, with byes held where the seeded bracket puts them; otherwise the
+ * standard seeded order is used. The same placement runs for the plan and for every live replay.
+ */
+function knockoutPlacement(spec: TournamentSpec, stage: StageDefinition, ordered: readonly Entrant[], bracketSize: number,
+  findings: ValidationFinding[]): Array<string | null> {
+  const seeded = seedOrder(bracketSize).map((seed) => seed <= ordered.length ? ordered[seed - 1]!.id : null);
+  const structure = spec.competitionStructures.find(({ stageIds }) => stageIds.includes(stage.id));
+  const policy = structure ? spec.drawPolicies.find(({ structureId }) => structureId === structure.id) : undefined;
+  if (policy?.placement !== "optimised" || ordered.length < 2) return seeded;
+  const draw = placeConstraintDraw({ structureId: structure!.id, entrants: ordered, priorMeetings: [],
+    constraints: drawConstraintsFor(policy.priorities), fixedByeSlots: true });
+  if (draw.status !== "PLACED" || draw.orderedSlotIds.length !== bracketSize) {
+    findings.push(makeFinding("TSC511", "The declared knockout draw rules cannot all be met for these entrants.",
+      { structureId: structure!.id, violations: draw.unavoidableViolations.map(({ rule, message }) => ({ rule, message })) }));
+    return seeded;
+  }
+  return draw.orderedSlotIds;
+}
+
+function elimination(spec: TournamentSpec, stage: StageDefinition, entrants: readonly Entrant[], resourceType: string,
+  findings: ValidationFinding[]): { nodes: ContestNode[]; edges: ProgressionEdge[] } {
   const count = stage.bracket?.entrantCount ?? stage.expectedEntrants ?? entrants.length;
   const bracketSize = 2 ** Math.ceil(Math.log2(Math.max(2, count)));
   const ordered = [...entrants].sort((a, b) => (a.seed ?? Number.MAX_SAFE_INTEGER) - (b.seed ?? Number.MAX_SAFE_INTEGER) || a.id.localeCompare(b.id));
   while (ordered.length < count) ordered.push({ id: `${stage.id}.slot.${ordered.length + 1}`, divisionId: stage.divisionId, memberIds: [] });
-  const positions = seedOrder(bracketSize).map((seed): SlotSource => seed <= ordered.length
-    ? { type: "entrant", entrantId: ordered[seed - 1]!.id }
+  const positions = knockoutPlacement(spec, stage, ordered, bracketSize, findings).map((entrantId): SlotSource => entrantId
+    ? { type: "entrant", entrantId }
     : { type: "bye" });
   const nodes: ContestNode[] = [];
   const edges: ProgressionEdge[] = [];
@@ -140,7 +174,7 @@ export function buildCompetitionGraph(
         }));
       }
     } else if (stage.bracket && ["single_elimination", "consolation"].includes(stage.primitive)) {
-      const generated = elimination(stage, entrants, spec.sport.defaultResourceType);
+      const generated = elimination(spec, stage, entrants, spec.sport.defaultResourceType, findings);
       nodes.push(...generated.nodes); edges.push(...generated.edges);
     } else if (stage.pool || stage.bracket) {
       findings.push({
