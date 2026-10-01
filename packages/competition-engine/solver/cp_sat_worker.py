@@ -93,6 +93,10 @@ def solve(payload: dict[str, Any]) -> dict[str, Any]:
             starts[task_id] = model.new_int_var(0, horizon, f"start:{task_id}")
             ends[task_id] = model.new_int_var(0, horizon, f"end:{task_id}")
             model.add(ends[task_id] == starts[task_id] + duration)
+            fixed_start = task.get("fixedStartMinute")
+            if fixed_start is not None:
+                # A protected start on whichever eligible resource can take it.
+                model.add(starts[task_id] == int(fixed_start))
             alternatives: list[Any] = []
             for resource_id in sorted(set(task["eligibleResourceIds"])):
                 resource = resource_by_id.get(resource_id)

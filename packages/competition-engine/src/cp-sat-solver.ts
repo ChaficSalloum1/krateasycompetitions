@@ -205,6 +205,7 @@ function independentlyValidate(problem: SchedulingProblem, assignments: readonly
       errors.push(`Invalid timing for ${assignment.taskId}.`);
       continue;
     }
+    if (task.fixedStartMinute !== undefined && assignment.startMinute !== task.fixedStartMinute) errors.push(`Fixed start violation for ${assignment.taskId}.`);
     const insideCalendar = resource.calendars.some((window) =>
       assignment.startMinute >= window.startMinute && assignment.endMinute <= window.endMinute);
     const outsideClosures = resource.closures.every((closure) =>
@@ -257,6 +258,8 @@ function preflightProblem(problem: SchedulingProblem): string[] {
     tasks.set(task.id, task);
     if (!Number.isInteger(task.durationMinutes) || task.durationMinutes <= 0) errors.push(`Task duration is invalid: ${task.id}.`);
     if (task.eligibleResourceIds.length === 0) errors.push(`Task has no eligible resource: ${task.id}.`);
+    if (task.fixedStartMinute !== undefined && (!Number.isInteger(task.fixedStartMinute) || task.fixedStartMinute < 0))
+      errors.push(`Task fixed start is invalid: ${task.id}.`);
   }
   const resources = new Map<string, SchedulingProblem["resources"][number]>();
   for (const resource of problem.resources) {

@@ -1,7 +1,8 @@
 import { canonicalHash, deepFreeze, type TournamentSpec, type ValidationFinding } from "@tournament-os/tournament-schema";
 import { cpSatProblemContentHash, createCpSatSolver, type CpSatHint, type CpSatResult, type CpSatSolver } from "./cp-sat-solver.js";
 import { calculateSchedulingLowerBounds } from "./lower-bounds.js";
-import { possibleEntrants, validateSchedule } from "./scheduler.js";
+import { possibleEntrants, requiredResourceId, validateSchedule } from "./scheduler.js";
+import { protectedAssignments, resourceUnitDefinitions } from "./schedule-controls.js";
 import type { SchedulingProblem } from "./schedule-solver.js";
 import type { CompetitionGraph, ContestNode, ScheduleSolution, ScheduledContest } from "./types.js";
 
@@ -54,10 +55,9 @@ function durationMinutes(spec: TournamentSpec, node: ContestNode): number {
   return selected.contestMinutes + selected.turnaroundMinutes;
 }
 function resourceUnits(spec: TournamentSpec) {
-  return spec.resources.flatMap((resource) => Array.from({ length: resource.quantity }, (_, index) => ({
-    id: `${resource.id}.${index + 1}`, type: resource.type,
-    availability: resource.availability.map(({ start, end }) => ({ start: Date.parse(start), end: Date.parse(end) })),
-  })));
+  return resourceUnitDefinitions(spec).map(({ id, type, availability }) => ({
+    id, type, availability: availability.map(({ start, end }) => ({ start: Date.parse(start), end: Date.parse(end) })),
+  }));
 }
 function dependencies(graph: CompetitionGraph): Map<string, string[]> {
   const result = new Map(graph.nodes.map(({ id }) => [id, [] as string[]]));
@@ -238,8 +238,14 @@ export function compileGraphSchedulingProblem(spec: TournamentSpec, graph: Compe
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || (end - start) % 60_000 !== 0) findings.push(error(
     "TSQ101", "/scheduling", "CP-SAT scheduling requires a positive whole-minute horizon.",
   ));
-  const locked = spec.scheduling.constraints.filter(({ rule, strength }) => rule === "locked_match_start" && strength === "HARD");
-  if (locked.length) findings.push(error("TSQ102", "/scheduling/constraints", "Graph-to-CP-SAT adapter does not infer a resource for legacy time-only locks."));
+  // Protected assignments: a pinned court narrows the contest to that court, a pinned start fixes its
+  // start, and both together are a CP-SAT lock. A stage/round's required court narrows the same way.
+  const protections = protectedAssignments(spec);
+  const startMinuteOf = (instant: number) => (instant - start) / 60_000;
+  for (const { contestId, start: pinnedStart } of protections.values()) if (pinnedStart !== undefined
+    && (!Number.isInteger(startMinuteOf(pinnedStart)) || startMinuteOf(pinnedStart) < 0)) findings.push(error(
+    "TSQ102", `/scheduling/constraints/protect.${contestId}`, "A protected start must be a whole minute at or after the schedule start.",
+  ));
   const minimumRestMinutes = Number(spec.scheduling.constraints.find(({ rule, strength }) => rule === "minimum_rest" && strength === "HARD")?.value ?? 0);
   // Any feeder entrant can qualify through a `complete` edge, so with hard rest each such feeder and its
   // qualification-fed contest share a synthetic participant: CP-SAT then keeps the rest gap between them
@@ -250,17 +256,27 @@ export function compileGraphSchedulingProblem(spec: TournamentSpec, graph: Compe
     const token = `qualification-rest:${edge.fromContestId}>${edge.toContestId}`;
     for (const id of [edge.fromContestId, edge.toContestId]) qualificationRestTokens.set(id, [...(qualificationRestTokens.get(id) ?? []), token]);
   }
-  const tasks = graph.nodes.filter(({ kind }) => kind === "contest").map((node) => ({ id: node.id, durationMinutes: durationMinutes(spec, node),
-    eligibleResourceIds: units.filter(({ type }) => type === node.requiredResourceType).map(({ id }) => id).sort(),
+  const tasks = graph.nodes.filter(({ kind }) => kind === "contest").map((node) => {
+    const protection = protections.get(node.id);
+    const pinnedIds = [protection?.resourceId, requiredResourceId(spec, node)].filter((id): id is string => id !== undefined);
+    const fixedStart = protection?.start !== undefined && protection.resourceId === undefined ? startMinuteOf(protection.start) : undefined;
+    return { id: node.id, durationMinutes: durationMinutes(spec, node),
+    eligibleResourceIds: units.filter(({ type, id }) => type === node.requiredResourceType && pinnedIds.every((pinned) => pinned === id))
+      .map(({ id }) => id).sort(),
+    ...(fixedStart === undefined ? {} : { fixedStartMinute: fixedStart }),
     dependencyIds: [...new Set(incoming.get(node.id) ?? [])].filter((id) => nodeById.get(id)?.kind === "contest").sort(),
-    participantIds: [...new Set([...(potential.get(node.id) ?? []), ...(qualificationRestTokens.get(node.id) ?? [])])].sort() }));
+    participantIds: [...new Set([...(potential.get(node.id) ?? []), ...(qualificationRestTokens.get(node.id) ?? [])])].sort() };
+  });
   const resources = units.map((unit) => ({ id: unit.id, calendars: unit.availability.map((window) => ({
     startMinute: Math.max(0, (window.start - start) / 60_000), endMinute: Math.min((end - start) / 60_000, (window.end - start) / 60_000),
   })).filter(({ startMinute, endMinute }) => Number.isInteger(startMinute) && Number.isInteger(endMinute) && startMinute < endMinute), closures: [] }));
   if (tasks.some(({ eligibleResourceIds }) => eligibleResourceIds.length === 0)) findings.push(error(
     "TSQ103", "/resources", "At least one contest has no compatible concrete resource unit.",
   ));
-  const problem: SchedulingProblem = { id: `graph:${spec.metadata.compiledSpecHash}`, tasks, resources, locks: [], minimumRestMinutes };
+  const locks = [...protections.values()].flatMap(({ contestId, start: pinnedStart, resourceId }) =>
+    pinnedStart !== undefined && resourceId !== undefined && nodeById.get(contestId)?.kind === "contest"
+      ? [{ taskId: contestId, resourceId, startMinute: startMinuteOf(pinnedStart) }] : []).sort((left, right) => left.taskId.localeCompare(right.taskId));
+  const problem: SchedulingProblem = { id: `graph:${spec.metadata.compiledSpecHash}`, tasks, resources, locks, minimumRestMinutes };
   const body = { status: findings.length ? "REJECTED" as const : "COMPILED" as const, problem: findings.length ? null : problem,
     horizonStart: iso(start), findings };
   return deepFreeze({ ...body, proofHash: canonicalHash(body) });
