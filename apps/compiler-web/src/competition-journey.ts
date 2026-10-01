@@ -19,6 +19,7 @@ import {
   runScenario,
   solveGraphWithCpSat,
   presolveGraphWithCpSat,
+  compileGraphSchedulingProblem,
   createPresolvedCpSatSolver,
   createCpSatSolver,
   submitLiveOperationsCommand,
@@ -37,6 +38,8 @@ import {
   deriveLiveControlRoom,
 } from "@tournament-os/competition-engine";
 import {
+  isStAlbansMilestoneTemplate,
+  usesGenericRoster,
   createCompetitionProposal,
   type CompetitionBlueprint,
   type CreationProposal,
@@ -85,9 +88,10 @@ import {
   type ParticipantRecoveryGrant,
   type ParticipantNextProjection,
   type OrganiserLiveProjection,
+  type PublicLiveContestProjection,
   type PublicLiveProjection,
 } from "./participant-information.js";
-import { advanceLiveProgression, verifyLiveProgression } from "./live-progression.js";
+import { advanceLiveProgression, openStandingsTies, verifyLiveProgression } from "./live-progression.js";
 import {
   approveCourtOutageProposal,
   authoritativeOperationalAssignments,
@@ -243,7 +247,26 @@ interface StoredJourneyRecord {
   readonly participantAccessEvents?: readonly ParticipantAccessControlEvent[];
   readonly closure?: CompetitionClosure;
   readonly duplication?: JourneyDuplication;
+  /** A published revision reopened for a change before play; it stays on record until the change is approved. */
+  readonly amendment?: JourneyAmendment;
+  /** Published revisions a later approval has replaced before play. */
+  readonly publicationHistory?: readonly SupersededPublication[];
   readonly recordHash: string;
+}
+
+interface JourneyAmendment {
+  readonly requestedBy: string;
+  readonly requestedAt: string;
+  readonly base: { readonly compiled: CompiledJourneyRevision; readonly approval: JourneyApproval; readonly publication: JourneyPublication };
+}
+
+export interface SupersededPublication {
+  readonly revision: number;
+  readonly certificateHash: string;
+  readonly approvalHash: string;
+  readonly publishedAt: string;
+  readonly amendmentRequestedBy: string;
+  readonly supersededAt: string;
 }
 
 interface StoredJourneyEnvelope {
@@ -259,6 +282,9 @@ export interface CompetitionJourneySnapshot {
   readonly draftVersion: number;
   readonly revision: number;
   readonly status: CompetitionJourneyStatus;
+  /** Set while a published revision is being changed before play. */
+  readonly amendment?: { readonly fromRevision: number; readonly requestedBy: string; readonly requestedAt: string };
+  readonly publicationHistory?: readonly SupersededPublication[];
   readonly sourceMode: CreationSource["mode"];
   readonly blueprint: CompetitionBlueprint;
   readonly understood: readonly string[];
@@ -316,6 +342,29 @@ export interface CompetitionJourneySnapshot {
   readonly webPath: string;
 }
 
+/**
+ * The read-only court timeline: each court's fixtures in time order at one operational revision.
+ * Names and statuses come from the public live projection; times and courts come from the live state
+ * and operational assignments. It carries no command capability, and courts are identities: the view names them.
+ */
+export interface CourtTimelineProjection {
+  readonly competition: { readonly id: string; readonly name: string };
+  readonly publishedRevision: number;
+  readonly operationalRevision: number;
+  readonly courts: readonly {
+    readonly courtId: string;
+    readonly contests: readonly {
+      readonly contestId: string;
+      readonly startsAt: string;
+      readonly endsAt: string | null;
+      readonly participantNames: readonly string[];
+      /** Whether both sides are known; incidents about a fixture need its sides. */
+      readonly sidesResolved: boolean;
+      readonly status: PublicLiveContestProjection["status"];
+    }[];
+  }[];
+}
+
 export interface CompetitionStructureMap {
   readonly definitionAvailable: boolean;
   readonly nodes: readonly {
@@ -371,25 +420,21 @@ interface ParticipantAccessControlEvent {
 const exactAcknowledgements = (left: readonly string[], right: readonly string[]): boolean =>
   canonicalHash([...new Set(left)].sort()) === canonicalHash([...new Set(right)].sort());
 
-function supportedMilestoneFindings(blueprint: CompetitionBlueprint): string[] {
-  const findings: string[] = [];
-  if (blueprint.sport !== "padel") findings.push("This milestone compiles the validated Play & Konnect padel envelope only.");
-  if (blueprint.participantUnit !== "pairs" || blueprint.participantCount !== 47)
-    findings.push("This milestone requires exactly 47 pairs split by the approved 11/17/19 division template.");
-  if (blueprint.resourceCount !== 7 || !["court", "courts"].includes(blueprint.resourceLabel ?? "courts"))
-    findings.push("This milestone requires seven courts.");
-  if (blueprint.format !== "pools_to_knockout" || blueprint.poolSize !== 4 || blueprint.qualifiersPerPool !== 1)
-    findings.push("This milestone requires the approved mixed 3/4-pair pools-to-knockout template, entered as pool size 4 and one qualifier per pool.");
-  if (blueprint.minimumRestMinutes !== 0)
-    findings.push("This milestone has no mandatory rest; preferred recovery remains an explicit soft rule in the compiled specification.");
-  if (blueprint.matchDurationMinutes !== 30)
-    findings.push("This milestone requires the approved 30-minute standard slot; featured semi-finals and finals retain their explicit longer durations.");
-  return [...new Set(findings)].sort();
+/** The organiser's own description or quick facts, as opposed to an imported roster or a structured decision. */
+function isOrganiserFacts(source: CreationSource): boolean {
+  if (source.mode === "language") return true;
+  if (source.mode !== "quick") return false;
+  const value = source.value as { kind?: unknown } | null;
+  return !(value && typeof value === "object" && value.kind === "structured-organiser-edit");
+}
+
+/** The St Albans pools-to-knockout template keeps its approved definition (two cups, featured durations). */
+function isStAlbansTemplate(blueprint: CompetitionBlueprint): boolean {
+  return isStAlbansMilestoneTemplate(blueprint);
 }
 
 function connectedJourneyFindings(blueprint: CompetitionBlueprint): string[] {
-  return blueprint.format === "pools_to_knockout"
-    ? supportedMilestoneFindings(blueprint) : [...connectedBlueprintFindings(blueprint)];
+  return isStAlbansTemplate(blueprint) ? [] : [...connectedBlueprintFindings(blueprint)];
 }
 
 function findingsForWorkbench(workbench: CompetitionWorkbenchProjection, blueprint: CompetitionBlueprint): string[] {
@@ -468,8 +513,7 @@ function authoritativeEntrants(record: StoredJourneyRecord): Record<string, Retu
   if (!record.compiled) return null;
   const productionLock = record.workbench ? entrantsFromProductionLock(record.workbench) : null;
   if (productionLock) return productionLock;
-  if (record.proposal.blueprint.format === "round_robin" || record.proposal.blueprint.format === "single_elimination")
-    return genericRosterEntrants(record);
+  if (usesGenericRoster(record.proposal.blueprint)) return genericRosterEntrants(record);
   return createEntrants(record.compiled.spec);
 }
 
@@ -546,8 +590,13 @@ function nextParticipantAccessEvent(events: readonly ParticipantAccessControlEve
 function verifyRecord(record: StoredJourneyRecord): boolean {
   const { recordHash, ...body } = record;
   if (recordHash !== makeRecordHash(body)) return false;
-  if (record.compiled && (record.proposal.blueprint.format === "round_robin"
-    || record.proposal.blueprint.format === "single_elimination") && !genericSourceRoster(record)) return false;
+  if (record.compiled && usesGenericRoster(record.proposal.blueprint) && !genericSourceRoster(record)) return false;
+  if (record.amendment) {
+    const { base } = record.amendment;
+    if (record.live || record.closure || record.approval || record.publication
+      || base.publication.revision !== base.compiled.revision || base.approval.revision !== base.compiled.revision
+      || (record.compiled && record.compiled.revision !== base.compiled.revision + 1)) return false;
+  }
   if (record.duplication) {
     const memory = { sourceCompetitionId: record.duplication.sourceCompetitionId,
       sourceClosureHash: record.duplication.sourceClosureHash,
@@ -721,7 +770,7 @@ function canonicalDesignFor(blueprint: CompetitionBlueprint, workbench: Competit
     matchDurationMinutes: 30,
   } : connectedBlueprintFromWorkbench(blueprint, workbench);
   const definition = definitionFromProductionLock(workbench)
-    ?? definitionFromConnectedBlueprint(effectiveBlueprint, sources)
+    ?? (isStAlbansTemplate(effectiveBlueprint) ? null : definitionFromConnectedBlueprint(effectiveBlueprint, sources))
     ?? (supportFindings.length === 0 && workbench.missingDecisions.length === 0
       && workbench.conflicts.length === 0 && !workbench.unsupportedSemantics.some(({ blocking }) => blocking)
       ? playAndKonnectDefinition : null);
@@ -767,8 +816,11 @@ function snapshotOf(record: StoredJourneyRecord): CompetitionJourneySnapshot {
     id: record.id,
     name: recognisedCompetitionName(workbench) ?? record.proposal.blueprint.name ?? "Untitled competition",
     draftVersion: record.draftVersion,
-    revision: compiled?.revision ?? 0,
+    revision: compiled?.revision ?? record.amendment?.base.compiled.revision ?? 0,
     status: statusOf(record),
+    ...(record.amendment ? { amendment: { fromRevision: record.amendment.base.publication.revision,
+      requestedBy: record.amendment.requestedBy, requestedAt: record.amendment.requestedAt } } : {}),
+    ...(record.publicationHistory?.length ? { publicationHistory: record.publicationHistory } : {}),
     sourceMode: record.source.mode,
     blueprint: effectiveBlueprint,
     understood: record.proposal.understood,
@@ -819,7 +871,7 @@ export interface PreparedCompilation {
   readonly presolved: Awaited<ReturnType<typeof presolveGraphWithCpSat>>;
 }
 
-const JOURNEY_SOLVE_SECONDS = 30;
+const JOURNEY_SOLVE_SECONDS = 0.5;
 
 /** Everything a compilation derives before scheduling: identical for the prepare and compile steps. */
 function referenceCompilationInputs(record: StoredJourneyRecord, compiledAt: string) {
@@ -836,7 +888,7 @@ function referenceCompilationInputs(record: StoredJourneyRecord, compiledAt: str
       quantity: blueprint.resourceCount ?? resource.quantity,
       availability: [{ start: blueprint.startsAt!, end: blueprint.endsAt! }] } : resource),
   };
-  const revision = (record.compiled?.revision ?? 0) + 1;
+  const revision = ((record.compiled ?? record.amendment?.base.compiled)?.revision ?? 0) + 1;
   const spec = compileDefinition(definition, {
     specId: record.id,
     revision,
@@ -853,12 +905,40 @@ function referenceCompilationInputs(record: StoredJourneyRecord, compiledAt: str
   return { spec, scenario, revision, productionLockDefinition, connectedBlueprintDefinition };
 }
 
+/** A refused command with a plain-language reason the organiser can act on. */
+export class JourneyExplainedError extends Error {
+  constructor(code: string, readonly explanation: string) { super(code); }
+}
+
+/**
+ * Why no plan could be produced, in the organiser's terms. A plain capacity shortfall is named with its
+ * numbers; otherwise the rules that clash are named, with what the organiser can change.
+ */
+function explainedSolverFailure(status: string, spec: TournamentSpec, graph: CompetitionGraph): JourneyExplainedError {
+  const code = `journey_solver_${status.toLowerCase()}`;
+  const compiled = compileGraphSchedulingProblem(spec, graph).problem;
+  if (compiled) {
+    const needed = compiled.tasks.reduce((sum, task) => sum + task.durationMinutes, 0);
+    const available = compiled.resources.reduce((sum, resource) => sum
+      + resource.calendars.reduce((open, window) => open + window.endMinute - window.startMinute, 0)
+      - resource.closures.reduce((closed, closure) => closed + closure.endMinute - closure.startMinute, 0), 0);
+    if (needed > available) return new JourneyExplainedError("journey_capacity_insufficient",
+      `These matches need ${needed.toLocaleString("en-GB")} court-minutes (${compiled.tasks.length} matches), but the courts and hours give ${available.toLocaleString("en-GB")}. Add courts, shorten matches or extend the day.`);
+  }
+  if (status === "INFEASIBLE") return new JourneyExplainedError(code,
+    "No schedule fits every rule together: courts, hours, match order and minimum rest. Add courts, extend the day, shorten matches or reduce the minimum rest.");
+  if (status === "UNKNOWN") return new JourneyExplainedError(code,
+    "No schedule was found in the time allowed. Try again, or give the event more courts or a longer day.");
+  return new JourneyExplainedError(code, "The planner's answer failed its own validation, so it was not used. Nothing changed.");
+}
+
 /** Solves a draft's CP-SAT problem without blocking the event loop; null when the draft needs no solver. */
 async function prepareReferenceCompilation(record: StoredJourneyRecord, compiledAt: string,
   solverPythonExecutable?: string): Promise<PreparedCompilation> {
   const { spec, scenario, connectedBlueprintDefinition } = referenceCompilationInputs(record, compiledAt);
+  // The list scheduler's plan starts the search, so CP-SAT begins from a legal plan and improves on it.
   const presolved = connectedBlueprintDefinition ? await presolveGraphWithCpSat(spec, scenario.graph,
-    { maxTimeSeconds: JOURNEY_SOLVE_SECONDS, ...(solverPythonExecutable ? { pythonExecutable: solverPythonExecutable } : {}) }) : null;
+    { maxTimeSeconds: JOURNEY_SOLVE_SECONDS, hint: scenario.schedule, ...(solverPythonExecutable ? { pythonExecutable: solverPythonExecutable } : {}) }) : null;
   return { competitionId: record.id, draftVersion: record.draftVersion, presolved };
 }
 
@@ -870,11 +950,11 @@ function compileReferenceRevision(record: StoredJourneyRecord, compiledAt: strin
   const presolved = prepared && prepared.competitionId === record.id && prepared.draftVersion === record.draftVersion
     ? prepared.presolved : null;
   const genericSolve = connectedBlueprintDefinition ? solveGraphWithCpSat(spec, scenario.graph, { maxTimeSeconds: JOURNEY_SOLVE_SECONDS,
-    ...pythonOption, ...(presolved ? { solver: createPresolvedCpSatSolver(presolved, createCpSatSolver(pythonOption)) } : {}) }) : null;
+    hint: scenario.schedule, ...pythonOption, ...(presolved ? { solver: createPresolvedCpSatSolver(presolved, createCpSatSolver(pythonOption)) } : {}) }) : null;
   // A solver answer that failed its own independent validation is not a candidate plan, even though
   // the Guard would block it later: stop here instead of storing it labelled with the solver's status.
   if (genericSolve && (!genericSolve.solution || genericSolve.status === "REJECTED"))
-    throw new Error(`journey_solver_${genericSolve.status.toLowerCase()}`);
+    throw explainedSolverFailure(genericSolve.status, spec, scenario.graph);
   const schedule = productionLockDefinition
     ? (verifiedScheduleFromProductionLock(record.workbench!, spec, scenario.graph) ?? scenario.schedule)
     : genericSolve?.solution ?? scenario.schedule;
@@ -885,7 +965,8 @@ function compileReferenceRevision(record: StoredJourneyRecord, compiledAt: strin
     schedule,
     ...(scenario.simulation ? { simulation: scenario.simulation } : {}),
   });
-  const previous = record.compiled;
+  // An amendment is compared with the revision it changes, so the change set shows exactly what moved.
+  const previous = record.compiled ?? record.amendment?.base.compiled;
   const pendingImpact = record.workbench?.pendingImpact;
   const changeSet = createPublicationChangeSet({ fromRevision: previous?.revision ?? null, toRevision: revision,
     ...(previous ? { previousDefinition: previous.spec, previousSchedule: previous.schedule } : {}),
@@ -971,13 +1052,20 @@ export class CompetitionJourney {
     return snapshotOf(record);
   }
 
+  /**
+   * Revises the organiser's own facts before approval (courts, timings, entrant count, format and so on).
+   * The revised facts supersede the earlier organiser facts instead of sitting beside them as a
+   * disagreeing source; imported rosters and structured decisions are kept. Nothing compiled survives.
+   */
   public revise(id: string, expectedDraftVersion: number, source: CreationSource): CompetitionJourneySnapshot {
     const current = this.require(id);
     if (current.draftVersion !== expectedDraftVersion) throw new Error("journey_version_conflict");
     if (current.approval) throw new Error("approved_revision_is_immutable");
+    if (!isOrganiserFacts(source)) throw new Error("journey_revision_requires_organiser_facts");
     const proposal = createCompetitionProposal(source);
     const updatedAt = this.canonicalNow();
-    const sources = [...(current.sources ?? [current.source]), source];
+    const kept = (current.sources ?? [current.source]).filter((earlier) => !isOrganiserFacts(earlier));
+    const sources = [source, ...kept];
     const workbench = analyseCompetitionSources(sources, updatedAt);
     const revised = sealRecord({
       id: current.id,
@@ -991,6 +1079,8 @@ export class CompetitionJourney {
       proposal,
       workbench,
       supportFindings: findingsForWorkbench(workbench, proposal.blueprint),
+      ...(current.amendment ? { amendment: current.amendment } : {}),
+      ...(current.publicationHistory ? { publicationHistory: current.publicationHistory } : {}),
     });
     this.records.set(id, revised);
     this.persist();
@@ -1122,7 +1212,36 @@ export class CompetitionJourney {
       topic: "competition.publication.v1", key: `${current.id}:v${compiled.revision}`,
       payload: { competitionId: current.id, ...publicationBody },
     }] };
-    const revised = sealRecord({ ...withoutSeal(current), updatedAt: approvedAt, approval, publication });
+    const { amendment, ...unamended } = withoutSeal(current);
+    const publicationHistory = amendment ? [...(current.publicationHistory ?? []), {
+      revision: amendment.base.publication.revision, certificateHash: amendment.base.publication.certificateHash,
+      approvalHash: amendment.base.approval.approvalHash, publishedAt: amendment.base.publication.publishedAt,
+      amendmentRequestedBy: amendment.requestedBy, supersededAt: approvedAt }] : current.publicationHistory;
+    const revised = sealRecord({ ...unamended, updatedAt: approvedAt, approval, publication,
+      ...(publicationHistory ? { publicationHistory } : {}) });
+    this.records.set(id, revised);
+    this.persist();
+    return snapshotOf(revised);
+  }
+
+  /**
+   * Reopens a published revision for a change before play: a withdrawal, a late entry, another court or
+   * new times. The published revision stays on record; the change is edited as a draft, compiled as the
+   * next revision with a change set against the published one, and replaces it only when approved. Once
+   * live play is active, changes go through the guarded live repairs instead.
+   */
+  public amend(id: string, expectedPublishedRevision: number, requestedBy: string): CompetitionJourneySnapshot {
+    const current = this.require(id);
+    if (current.closure) throw new Error("competition_is_closed");
+    if (current.live) throw new Error("amendment_requires_no_live_play");
+    const { compiled, approval, publication } = current;
+    if (!compiled || !approval || !publication || publication.revision !== expectedPublishedRevision
+      || compiled.revision !== expectedPublishedRevision) throw new Error("journey_revision_conflict");
+    if (!requestedBy.trim()) throw new Error("amendment_requires_actor");
+    const requestedAt = this.canonicalNow();
+    const { compiled: _compiled, approval: _approval, publication: _publication, ...draft } = withoutSeal(current);
+    const revised = sealRecord({ ...draft, draftVersion: current.draftVersion + 1, updatedAt: requestedAt,
+      amendment: { requestedBy, requestedAt, base: { compiled, approval, publication } } });
     this.records.set(id, revised);
     this.persist();
     return snapshotOf(revised);
@@ -1159,6 +1278,12 @@ export class CompetitionJourney {
       && ["CALL_CONTEST", "START_CONTEST"].includes(command.kind))
       throw new Error("operational_mode_blocks_live_command");
     if (command.kind === "RESOLVE_CONTEST_ENTRANTS") throw new Error("live_command_is_server_owned");
+    // A tie decision must order exactly a tie the standings policy leaves open now; it cannot rerank
+    // entrants the registered tiebreaks already separate.
+    if (command.kind === "DECIDE_STANDINGS_TIE" && !openStandingsTies(current.compiled!.spec, current.compiled!.graph, live.state)
+      .some(({ standingsPolicyId, poolId, entrantIds }) => standingsPolicyId === command.standingsPolicyId && poolId === command.poolId
+        && canonicalHash(entrantIds) === canonicalHash([...command.orderedEntrantIds].sort())))
+      throw new Error("standings_tie_not_open");
     const result = submitLiveOperationsCommand(live.state, command);
     if (!result.accepted) throw new Error(`live_command_rejected:${result.findings.map(({ code }) => code).join(",")}`);
     if (result.idempotentReplay) return snapshotOf(current);
@@ -1897,6 +2022,35 @@ export class CompetitionJourney {
       operation: live.operations.publicStatus });
   }
 
+  public readCourtTimeline(input: { readonly organizationId: string; readonly competitionId: string;
+    readonly expectedOperationalRevision: number }): CourtTimelineProjection {
+    const current = this.requireScoped(input.organizationId, input.competitionId);
+    const live = this.requireProjectedLive(current, input.expectedOperationalRevision);
+    const publicProjection = this.readPublicLive(input);
+    const publicContests = new Map(publicProjection.contests.map((contest) => [contest.contestId, contest]));
+    const assignments = new Map((live.publication?.operationalAssignments ?? current.compiled!.schedule.contests)
+      .map((assignment) => [assignment.contestId, assignment]));
+    const courts = new Map<string, { courtId: string; contests: CourtTimelineProjection["courts"][number]["contests"][number][] }>();
+    for (const contest of live.state.definition.contests) {
+      const publicContest = publicContests.get(contest.contestId);
+      if (!publicContest) throw new Error("court_timeline_contest_missing_public_projection");
+      const courtId = live.state.contests[contest.contestId]?.actualCourtId
+        ?? assignments.get(contest.contestId)?.resourceId ?? contest.courtId;
+      const court = courts.get(courtId) ?? { courtId, contests: [] };
+      court.contests.push({ contestId: contest.contestId, startsAt: publicContest.startsAt,
+        endsAt: assignments.get(contest.contestId)?.end ?? null,
+        participantNames: publicContest.participantNames,
+        sidesResolved: (live.state.resolvedEntrants[contest.contestId] ?? []).length === 2, status: publicContest.status });
+      courts.set(courtId, court);
+    }
+    const byStart = (a: { startsAt: string; contestId: string }, b: { startsAt: string; contestId: string }) =>
+      Date.parse(a.startsAt) - Date.parse(b.startsAt) || a.contestId.localeCompare(b.contestId);
+    return { competition: publicProjection.competition, publishedRevision: publicProjection.publishedRevision,
+      operationalRevision: publicProjection.operationalRevision,
+      courts: [...courts.values()].map((court) => ({ ...court, contests: court.contests.sort(byStart) }))
+        .sort((a, b) => a.courtId.localeCompare(b.courtId, "en", { numeric: true })) };
+  }
+
   public readOrganiserLive(input: { readonly organizationId: string; readonly competitionId: string;
     readonly expectedOperationalRevision: number; readonly at: string }): OrganiserLiveProjection {
     const current = this.requireScoped(input.organizationId, input.competitionId);
@@ -1918,19 +2072,23 @@ export class CompetitionJourney {
     });
     const publicProjection = this.readPublicLive(input);
     const publicContests = new Map(publicProjection.contests.map((contest) => [contest.contestId, contest]));
+    // A contest's court is where it started, else where the plan in force puts it: an approved repair
+    // moves assignments without rewriting the live definition, so the definition's court can be stale.
+    const planInForce = new Map(assignments.map((assignment) => [assignment.contestId, assignment]));
     const controlContests = live.state.definition.contests.map((contest) => {
       const publicContest = publicContests.get(contest.contestId);
       if (!publicContest) throw new Error("organiser_control_contest_missing_public_projection");
       const resolved = live.state.resolvedEntrants[contest.contestId] ?? [];
       return { contestId: contest.contestId,
-        courtId: live.state.contests[contest.contestId]?.actualCourtId ?? contest.courtId,
-        scheduledStart: contest.scheduledStart,
+        courtId: live.state.contests[contest.contestId]?.actualCourtId ?? planInForce.get(contest.contestId)?.resourceId ?? contest.courtId,
+        scheduledStart: planInForce.get(contest.contestId)?.start ?? contest.scheduledStart,
         status: publicContest.status,
         sidesResolved: resolved.length === 2,
         sides: resolved.map((entrantId) => ({ entrantId,
           displayName: participantNames[entrantId] ?? entrantId })) };
     }).filter(({ sidesResolved }) => sidesResolved);
-    const controlRoom = deriveLiveControlRoom(live.state, input.at);
+    const controlRoom = deriveLiveControlRoom(live.state, input.at,
+      assignments.map(({ contestId, resourceId, start }) => ({ contestId, courtId: resourceId, scheduledStart: start })));
     const attention = [
       ...controlRoom.now.map((row) => ({ kind: "NOW" as const, ...row, reasons: [] })),
       ...controlRoom.next.map((row) => ({ kind: "NEXT" as const, ...row, reasons: [] })),
@@ -1954,8 +2112,10 @@ export class CompetitionJourney {
       affectedCredentialCount: event.affectedCredentialHashes.length,
       replacementIssued: event.resultCredentialHash !== undefined,
     }));
+    const openTies = openStandingsTies(current.compiled!.spec, current.compiled!.graph, live.state).map((tie) => ({
+      ...tie, entrants: tie.entrantIds.map((entrantId) => ({ entrantId, displayName: participantNames[entrantId] ?? entrantId })) }));
     const body = { apiVersion: "1.0" as const, organizationId: input.organizationId,
-      public: publicProjection, liveVersion: live.state.version, stateProofHash: live.state.proofHash,
+      public: publicProjection, liveVersion: live.state.version, stateProofHash: live.state.proofHash, openTies,
       authorityAssignments: live.operations.authorityAssignments, incidents: live.operations.incidents,
       restartClearances: live.operations.restartClearances, participants, controlContests, attention,
       deliveryEvidence, accessEvidence };
@@ -2173,6 +2333,12 @@ export function parseConnectedLiveCommand(value: unknown, actorId: string, occur
     && typeof command.source === "string"
     && exact(["kind", "commandId", "expectedVersion", "contestId", "source"]))
     return { ...audit, kind: "RECORD_RESULT_RECEIPT", contestId: command.contestId, source: command.source };
+  if (command.kind === "DECIDE_STANDINGS_TIE" && typeof command.standingsPolicyId === "string"
+    && typeof command.poolId === "string" && typeof command.reason === "string"
+    && Array.isArray(command.orderedEntrantIds) && command.orderedEntrantIds.every((id) => typeof id === "string")
+    && exact(["kind", "commandId", "expectedVersion", "standingsPolicyId", "poolId", "orderedEntrantIds", "reason"]))
+    return { ...audit, kind: "DECIDE_STANDINGS_TIE", standingsPolicyId: command.standingsPolicyId, poolId: command.poolId,
+      orderedEntrantIds: command.orderedEntrantIds as string[], reason: command.reason };
   if (command.kind === "AWARD_WALKOVER" && typeof command.contestId === "string"
     && typeof command.winnerEntrantId === "string" && typeof command.absentEntrantId === "string"
     && typeof command.reason === "string" && exact(["kind", "commandId", "expectedVersion", "contestId",

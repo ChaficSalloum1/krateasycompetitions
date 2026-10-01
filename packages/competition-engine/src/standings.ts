@@ -27,7 +27,11 @@ export function calculateStandings(
   nodes: readonly ContestNode[],
   results: readonly ContestResult[],
   policy: StandingsPolicy,
-  options: { randomSeed?: string } = {},
+  options: {
+    randomSeed?: string;
+    /** The organiser's recorded orders for ties, by pool ("all" when unpooled). Each applies only to exactly the group it orders. */
+    manualOrder?: Readonly<Record<string, readonly (readonly string[])[]>>;
+  } = {},
 ): StandingsResult {
   const unsupportedMetricIndex = policy.metricOrder.findIndex(({ metric: name }) => !REGISTERED_METRICS.has(name));
   if (unsupportedMetricIndex >= 0) {
@@ -74,6 +78,8 @@ export function calculateStandings(
   for (const row of rows.values()) pools.set(row.poolId ?? "all", [...(pools.get(row.poolId ?? "all") ?? []), row]);
   const findings: ValidationFinding[] = [];
   const ordered: Standing[] = [];
+  const decisionFor = (group: readonly Standing[], poolId: string): readonly string[] | undefined =>
+    options.manualOrder?.[poolId]?.find((order) => order.length === group.length && group.every(({ entrantId }) => order.includes(entrantId)));
   const resolve = (group: Standing[], criterionIndex: number, poolId: string): Standing[] => {
     if (group.length <= 1) return group;
     const criterion = policy.metricOrder[criterionIndex];
@@ -81,6 +87,10 @@ export function calculateStandings(
       if (policy.tieFallback === "deterministic_draw") {
         if (!options.randomSeed) findings.push({ code: "TSC711", severity: "ERROR", path: `/standingsPolicies/${policy.id}/tieFallback`, message: "Deterministic tie draw requires an injected, versioned random seed.", evidence: { poolId, entrants: group.map(({ entrantId }) => entrantId) } });
         else return [...group].sort((a, b) => canonicalHash(`${options.randomSeed}:${a.entrantId}`).localeCompare(canonicalHash(`${options.randomSeed}:${b.entrantId}`))).map((row) => ({ ...row, tieResolution: [...row.tieResolution, `deterministic_draw:${options.randomSeed}`] }));
+      } else if (policy.tieFallback === "manual_decision" && decisionFor(group, poolId)) {
+        const order = decisionFor(group, poolId)!;
+        return [...group].sort((a, b) => order.indexOf(a.entrantId) - order.indexOf(b.entrantId))
+          .map((row) => ({ ...row, tieResolution: [...row.tieResolution, "manual_decision"] }));
       } else if (policy.tieFallback === "manual_decision") findings.push({ code: "TSC712", severity: "ERROR", path: `/standingsPolicies/${policy.id}`, message: "Standings remain tied after every registered tiebreak and require a manual decision.", evidence: { poolId, entrants: group.map(({ entrantId }) => entrantId) } });
       else group.forEach((row) => row.tieResolution.push("shared_rank"));
       return [...group].sort((a, b) => a.entrantId.localeCompare(b.entrantId));

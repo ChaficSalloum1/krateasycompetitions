@@ -341,4 +341,124 @@ No authority conflict required product-owner direction. The smallest connected s
 
     The header, count and Studio-mode checks each fail against the previous code.
 
+49. **E3 court timeline and live court rules (read-only court timeline into guarded change · `readCourtTimeline`, `court-timeline-view.ts`, `live-operations.ts`):**
+    - **The page.** `/competitions/:id/timeline` renders on the server with no script (its CSP allows none) and no form. It shows every live fixture once, on its court, in time order, at the current operational revision, with times in the competition's timezone.
+    - **Operational truth.** The court and start come from the operational assignments, so an approved repair is what the timeline shows. A superseded revision is refused.
+    - **Changes go through Run Control only.** Each fixture and court offers "report" links. They open Run Control's existing guarded Change Review with the incident preselected, apply only values the live projection offers, and submit nothing. Finished fixtures offer none.
+    - **Court names.** Courts are named for people, as "Court 3", by one `courtLabel` on the timeline, in Run Control, on the venue display and on the participant page. Resource identities such as `venue.courts.3` had been shown to participants.
+    - **Two engine defects found while building it, both fixed.**
+      - `organiser-live` took each contest's court from the live definition, so after an approved outage Run Control would start a fixture on the closed court.
+      - The live runtime accepted `START_CONTEST` on a closed court, and on a court that already had a contest in play.
+
+      Starts are now refused until the court reopens: explicitly, or at the approved reopen time. A court also holds one contest in play at a time.
+    - **Evidence:** `court-timeline.test.ts`, `live-operations.test.ts` (closed and occupied courts, explicit reopen) and the lifecycle fuzzer, which now probes a closed-court start in each of its 120 histories. `test/browser/court-timeline.test.ts` covers the keyboard handoff, a forged fixture link, court names, public surfaces, and 320–1280px without overflow. The engine, organiser-projection, handoff and naming checks each fail against the previous code.
+
+50. **Golden path over HTTP, and what it exposed (`golden-path-http.test.ts`):**
+    - **What the test covers.** A fresh 8-pair round robin is taken through the whole path using only the HTTP API the web product uses, with no fixture helper:
+      - create, add a roster and compile;
+      - reconfigure before approval and recompile;
+      - approve, publish and go live;
+      - a guarded no-show repair and a guarded overrun repair;
+      - every fixture played to a result;
+      - close, export, restore on a fresh host with the identical closure hash, and duplicate.
+    - **Fixed on the way:**
+      - **Revising a draft's facts.** Before approval, revising the facts added a disagreeing source beside the old one and left the draft unable to compile. Revised organiser facts now supersede the earlier ones; rosters and structured decisions are kept.
+      - **Repair rest.** Live repairs placed a moved fixture straight after one of its players' fixed fixtures, with no hard rest, and kept an overrunning fixture's players only until its planned end. The independent Guard rejected those plans, so an ordinary overrun could not be repaired. Players' fixed fixtures are now pinned constraints in the repair problem, so the solver enforces collision and rest for each player, and an overrunning fixture holds its players until its reported end.
+    - **Open, recorded here and not yet fixed:**
+      1. ~~Solver speed on few courts~~: resolved by item 51.
+      2. ~~A simulated tie blocks publication~~: resolved by item 52, which supersedes item 51's rule.
+      3. ~~No page for changing facts~~: resolved by item 53.
+      4. ~~No change after approval except repairs~~: resolved before play by item 54. During live play, the guarded live repairs remain the only path.
+      5. ~~Formats a new tournament can use~~: resolved by item 52. Pools into a knockout is built generically, within the tested envelope stated there.
+
+51. **Engine reliability measured by a format benchmark (`scripts/format-benchmark.ts`, `npm run bench:formats`, run in CI):** 48 club events are created the way an organiser creates them and compiled through the product journey:
+    - round robin with 6, 8 and 12 pairs, and single elimination with 8, 16 and 32 pairs;
+    - 2, 3, 4 and 6 courts;
+    - 20- and 30-minute matches.
+
+    A case passes when it produces a Guard-passed plan within 10 s, or, when its matches cannot fit its courts and hours, is refused with that reason.
+
+    | | Before the changes | After (slowest 7.6 s on the development container) |
+    |---|---|---|
+    | Cases passing | 36/48 | 48/48 |
+    | Legal plan but over the time bar | 7 | 0 |
+    | No plan at all (12 pairs, 3–4 courts) | 3 | 0 |
+    | Manual-tie block | 1 | 0 |
+    | Impossible event | 1, unexplained | 1, refused with the numbers |
+
+    The defects, all with tests that fail against the previous code:
+    - **Plans discarded by the safety cap.** The worker stops on CP-SAT deterministic time for reproducibility, with a wall-time cap as a safety net. On a slow host, 30 deterministic units took longer than the 2 × budget + 5 s cap, and the reproducibility rule then turned a found plan into `UNKNOWN`. The cap is now 6 × budget + 10 s, and the journey budget 0.5 units.
+    - **A weak starting point.** The deterministic list scheduler places contests in a fixed order, so a round robin's rounds stretch across the whole day: a 12-pair, 4-court event finished at 20:40. CP-SAT, on one deterministic worker, never improved on it. A time-stepped greedy hint (`greedyCpSatHint`) now starts the search: each free court takes the ready contest whose players have the most contests left. The same event finishes at 16:10, against a capacity bound of about 14:30.
+    - **A lighter model with the same rules.** Allowed starts are held as domains rather than per-minute tables. Rest is one no-overlap constraint per player over contests stretched by the rest time, not a Boolean for every pair of contests. A redundant cumulative constraint bounds the finish time. Every hint variable is filled, so a complete legal hint is taken as the first solution.
+    - **Repairs on a busy court.** The minimal-change repair search pruned only on moved-contest count, so an outage on a court holding five fixtures exhausted its 100,000 nodes. It now prunes on the monotone objective prefix: moved contests, affected participants, displacement, resource changes and makespan. It stops scanning a task's candidates once displacement alone is worse, which is sound because candidates come ordered by displacement. `schedule-repair-minimality.test.ts` checks every proven minimum against brute force on generated problems, and catches an unsound variant of the prune.
+    - **Manual ties.** Superseded by item 52: the rule here still judged one simulated result set.
+    - **Explained refusals.** A plan that cannot be produced is refused with its reason (`JourneyExplainedError`), and the Studio shows it. For example: "These matches need 1,980 court-minutes (66 matches), but the courts and hours give 1,080. Add courts, shorten matches or extend the day."
+
+52. **Pools into a knockout for any event, and pool ties decided by the organiser during play:**
+    - **Generic pools into a knockout** (`generic-blueprint-definition.ts`). A tournament created in the product can be pools into a knockout, not only the fixed St Albans template:
+      - a target pool size of 3 to 8, split into even pools that differ by at most one (`evenPoolSizes`);
+      - one or more qualifiers per pool;
+      - a single-elimination knockout with byes when the qualifiers are not a power of two.
+      Like round robin, it asks for explicit scoring, tiebreak, withdrawal and draw rules. The St Albans template keeps its own definition.
+      A 12-pair event is played live from pools to the final and closed (`pools-knockout-journey.test.ts`). The benchmark adds 14 cases (12–32 pairs, 1–2 qualifiers, 2–6 courts). All 62 cases pass; the slowest takes 7.7 s on the development container. Before the tie change, 12 of the 14 new cases passed: two were blocked by a sampled tie.
+    - **Why a tie decision was needed.** With the registered tiebreaks (wins, score difference, score for), a three-way cycle in a pool of four can leave entrants level for the knockout places. Before this change, two things were wrong:
+      - Live progression then returned no graph, so the knockout never filled and the organiser had no way to decide.
+      - At plan time, the check ran the standings on one simulated result set and blocked publication only if that sample happened to tie. So whether a plan was publishable depended on dice: 16 pairs on 2 or 6 courts were blocked, on 3 or 4 were not.
+    - **Live decision.** The live command `DECIDE_STANDINGS_TIE` (event `STANDINGS_TIE_DECIDED`, in the hash-chained log with a required reason) records the organiser's order.
+      - The journey accepts it only for exactly a tie the standings leave open now (`openStandingsTies`). It cannot rerank entrants the tiebreaks already separate, or order a different set.
+      - Standings apply it only to that exact tied group (`calculateStandings` `manualOrder`).
+      - Progression then fills the knockout from it.
+      - Run Control lists open ties under "Ties to decide", with keyboard-operable reordering and a reason. A browser test decides a three-way tie on a phone-width screen (`browser/standings-tie.test.ts`).
+    - **Plan time.** Whether a manual tie can arise is a property of the policy, so it is raised deterministically: one TSC712 acknowledgement per manual-decision policy (`standingsFindingsForPublication`). A sampled tie never decides publication. The Guard classifies TSC712 as operational by code, not by message wording.
+      As a result, the reference events now require this acknowledgement at approval. Before, their "ready" depended on the sample not tying.
+
+53. **Changing a draft's facts in the Studio (`renderDraftFactsForm`, `organiser-studio-view.ts`):** every unapproved draft has a "Change the event's facts" form, filled from the current facts.
+    - **Fields.** Entrants, courts, format (with pool size and qualifiers for pools), guaranteed matches, match length, rest, start, finish, timezone, priority, and the registered scoring, ranking-tie, withdrawal and draw rules. An unchosen rule shows "Choose…".
+    - **Times.** Start and finish show as wall-clock time in the event's own timezone, which is how the server reads them back, so saving without edits never moves the event. Tests cover British Summer Time, GMT, a date that differs from UTC (Sydney), and an unknown timezone, which shows no time rather than a wrong one.
+    - **Saving.** Saving posts organiser facts to `/draft`. That replaces the earlier facts and keeps the roster, and a plan already created is set aside until it is created again.
+    - **Browser tests** (`browser/studio-facts.test.ts`):
+      - A compiled 8-pair draft is changed from 2 to 3 courts and from 25- to 20-minute matches on a phone-width screen. It is recompiled from the Studio, and the new plan passes the Guard and uses all three courts. Nothing else changes.
+      - A draft missing its four rules is completed from the page alone.
+    - **Accessibility.** Each label is a sibling of its control, tied by `for`, so a select's accessible name is its label, not the label plus the selected option.
+    - **Injected functions.** The Studio injects functions as text. The page defines an identity `__name`, so a function compiled with esbuild's name-keeping helper runs there too.
+
+54. **Changes after approval, before play (`CompetitionJourney.amend`, `POST …/amend`, Studio "Change before play"):** a published revision that is not yet live can be reopened for a change. Examples: a withdrawal, a late entry, another court, new times.
+    - **While the change is edited.** The published revision stays on record (`amendment.base`). The change is edited with the same Studio facts form and roster tools as any draft. The amendment survives every edit and a restart.
+    - **Compiling.** The change compiles as revision N+1, with a publication change set against revision N (`fromRevision: N`), not as a fresh revision 1.
+    - **Approval.** The change replaces revision N only when approved independently. Revision N then moves to `publicationHistory` with its certificate and approval hashes and who asked for the change.
+    - **Refusals.** An amendment is refused on a stale revision, before anything is published, and once live play is active. At that point, only the guarded live repairs apply.
+    - **Record verification** requires all of the following while an amendment is open:
+      - no approval, publication, live play or closure;
+      - a base whose compiled, approved and published revisions agree;
+      - any new compile to be exactly the next revision.
+    - **Tests** (`pre-play-amendment.test.ts`, `browser/studio-facts.test.ts`):
+      - An 8-pair published event loses pair 8, gains pair 9 and a third court. It is published as revision 2, activated, played to the end and closed. Its closure evidence verifies across the amendment.
+      - In a browser, the organiser changes the courts of a published event and publishes revision 2 from the Studio alone.
+
+55. **The golden path in one browser session (`browser/golden-path.test.ts`):** an organiser uses only the product's pages, with no API calls and no seeded state:
+    1. **Create:** quick setup in the creator, "Build blueprint", then "Save as draft".
+    2. **Roster:** add the entrant CSV in the Studio.
+    3. **Plan and approval:** create the certified plan (Guard passed), acknowledge the Guard findings, then approve and publish.
+    4. **Live:** start Run Control and open it.
+    5. **Play:** check in all four pairs. For each of the six fixtures, start it, record its score, finish it and confirm the result.
+    6. **Close:** confirm the four closure acknowledgements on the receipt page and create the closure, with 6 completed results and none unresolved.
+    - Live commands carry the server's real clock, so the event is scheduled for today.
+    - Each command waits for Run Control's reload of the authoritative state before the next one. Run Control does not poll, so no other request can satisfy that wait.
+
+56. **Corrections to items 52–55 after review:**
+    - **Guaranteed matches for pools into a knockout.** The definition counted the smallest pool's size, as if every entrant also played a knockout match. Only qualifiers play on, so pools of N guarantee N − 1. It now refuses a minimum above that. `pools-guarantee.test.ts` covers pools of 4, which guarantee 3, and 13 pairs with a target of 4, which make pools of 4, 3, 3 and 3 and guarantee 2. The first case fails against the previous code.
+    - **Tested envelope, not "any size".** Pools into a knockout is evidenced for:
+      - 12 to 32 entrants with a target pool size of 4, including uneven pools of 3 to 5;
+      - 1 or 2 qualifiers per pool;
+      - 2 to 6 courts;
+      - 20- and 25-minute matches (the format benchmark).
+      A 12-pair event is also played live to its close. Other target sizes from 3 to 8 are accepted by validation but have no benchmark evidence yet.
+    - **"Certified" is not used for an unapproved plan.** A Guard-passed plan awaiting approval is labelled "Guard passed — ready for approval" in the shared status vocabulary. The Studio says "Create and check plan" and "Guard-passed plan". "Certified" keeps its meaning: every registered invariant passes for a stated envelope.
+    - **Decision record: pool ties that decide progression (supersedes the rule in item 51).**
+      - *Decision.* A standings policy whose final fallback is the organiser's decision does not block publication. Approval records that ties may need a decision (TSC712, acknowledged). Actual progression is blocked until the organiser records the order of a tie that really occurs, in Run Control, with a reason.
+      - *Why.* Whether such a tie occurs depends on results that do not exist at publication. Blocking on one simulated result set made publication depend on chance. This way publication is deterministic, and no tied entrant progresses without a recorded, audited decision.
+      - *Consequences.* Every event with a manual-decision tiebreak, including the St Albans and Harbour references, requires the TSC712 acknowledgement at approval. The knockout fed by a tied pool waits for the decision.
+      - *Status.* Decided by engineering on the owner's delegation. It is open to the competition-rules owner's approval (pilot gate COMPETITION_RULES_APPROVAL).
+    - **Not yet proven: production identity and durability.** The browser golden path runs the in-memory journey on the development server. Real authentication, tenant membership and a durable PostgreSQL-backed acceptance journey on a non-production deployment are still required before the product is called deployed.
+
 Broader format/sport connection, non-pilot loser-path/hard-rematch reconstruction and a verified on-device advisory model remain governed follow-ons rather than St Albans deployment blockers. The remaining pilot gates require external authority or deployment inputs: provider/fallback selection and credentials, authorised emergency details, named-assistive-technology/outdoor accessibility acceptance, full staff/manual recovery rehearsal, production persistence/restore evidence, support assignment and final role approvals. The emergency pack cannot be declared ready until the venue/pilot safety owner supplies and approves the named responders, contacts, venue/access and evacuation facts; until then the explicit fallback is the venue's separately controlled printed safety plan. External delivery remains fail closed until the pilot owner selects credentials, a provider and its declared fallback. The executable release manifest lists every remaining gate, accountable role and fixed fallback against the exact closed rehearsal scope; no missing external fact is represented as passed.

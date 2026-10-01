@@ -27,10 +27,23 @@ def allowed_starts(task: dict[str, Any], resource: dict[str, Any], horizon: int)
     return starts
 
 
+def start_ranges(permitted: list[int]) -> list[list[int]]:
+    """The permitted start minutes as closed ranges, so CP-SAT holds a domain rather than a table."""
+    ranges: list[list[int]] = []
+    for start in permitted:
+        if ranges and start == ranges[-1][1] + 1:
+            ranges[-1][1] = start
+        else:
+            ranges.append([start, start])
+    return ranges
+
+
 def search_limits(budget_seconds: float) -> tuple[float, float]:
     """The search stops on CP-SAT's deterministic time, so the same model and pinned backend reach the
-    same answer on any machine; wall time is only a safety cap well beyond that budget."""
-    return budget_seconds, budget_seconds * 2 + 5
+    same answer on any machine; wall time is only a safety cap well beyond that budget. Deterministic
+    time runs up to several times slower than wall time on small hosts, so the cap allows six times the
+    budget: a cap that fires first turns a found plan into UNKNOWN and the organiser gets nothing."""
+    return budget_seconds, budget_seconds * 6 + 10
 
 
 def reproducible_status(status: str, wall_seconds: float, wall_cap_seconds: float) -> str:
@@ -90,7 +103,8 @@ def solve(payload: dict[str, Any]) -> dict[str, Any]:
                     continue
                 presence = model.new_bool_var(f"use:{task_id}:{resource_id}")
                 interval = model.new_optional_interval_var(starts[task_id], duration, ends[task_id], presence, f"interval:{task_id}:{resource_id}")
-                model.add_allowed_assignments([starts[task_id]], [[value] for value in permitted]).only_enforce_if(presence)
+                # The same permitted starts as before, held as a domain: far lighter than a table of minutes.
+                model.add_linear_expression_in_domain(starts[task_id], cp_model.Domain.from_intervals(start_ranges(permitted))).only_enforce_if(presence)
                 presences[(task_id, resource_id)] = presence
                 resource_intervals[resource_id].append(interval)
                 alternatives.append(presence)
@@ -103,6 +117,13 @@ def solve(payload: dict[str, Any]) -> dict[str, Any]:
             if intervals:
                 model.add_no_overlap(intervals)
 
+        # Redundant capacity bound: at any minute no more contests run than there are resources they may
+        # use. It changes no answer, but gives the search a far stronger lower bound on the finish time.
+        pool_ids = sorted({resource_id for task in tasks for resource_id in task["eligibleResourceIds"] if resource_id in resource_by_id})
+        if tasks and all(sorted(set(task["eligibleResourceIds"])) == pool_ids for task in tasks):
+            model.add_cumulative([model.new_interval_var(starts[task["id"]], int(task["durationMinutes"]), ends[task["id"]], f"pool:{task['id']}")
+                                  for task in tasks], [1] * len(tasks), len(pool_ids))
+
         for task in tasks:
             for dependency_id in sorted(set(task["dependencyIds"])):
                 if dependency_id not in task_by_id:
@@ -112,13 +133,20 @@ def solve(payload: dict[str, Any]) -> dict[str, Any]:
         rest = int(problem["minimumRestMinutes"])
         if rest < 0:
             raise ValueError("negative rest")
-        for left_index, left in enumerate(tasks):
-            for right in tasks[left_index + 1:]:
-                if not set(left["participantIds"]).intersection(right["participantIds"]):
-                    continue
-                left_first = model.new_bool_var(f"participant-order:{left['id']}:{right['id']}")
-                model.add(starts[right["id"]] >= ends[left["id"]] + rest).only_enforce_if(left_first)
-                model.add(starts[left["id"]] >= ends[right["id"]] + rest).only_enforce_if(left_first.negated())
+        # A participant's contests may not overlap and must be at least `rest` apart. Stretching each of
+        # their contests by `rest` and forbidding overlap is exactly that rule, with one constraint per
+        # participant instead of an ordering choice for every pair of their contests.
+        participant_intervals: dict[str, list[Any]] = {}
+        rest_ends: dict[str, Any] = {}
+        for task in tasks:
+            task_id = task["id"]
+            rest_ends[task_id] = model.new_int_var(0, horizon + rest, f"rest-end:{task_id}")
+            stretched = model.new_interval_var(starts[task_id], int(task["durationMinutes"]) + rest, rest_ends[task_id], f"rest:{task_id}")
+            for participant_id in sorted(set(task["participantIds"])):
+                participant_intervals.setdefault(participant_id, []).append(stretched)
+        for participant_id in sorted(participant_intervals):
+            if len(participant_intervals[participant_id]) > 1:
+                model.add_no_overlap(participant_intervals[participant_id])
 
         lock_by_task: dict[str, dict[str, Any]] = {}
         for lock in sorted(problem["locks"], key=lambda item: item["taskId"]):
@@ -136,6 +164,27 @@ def solve(payload: dict[str, Any]) -> dict[str, Any]:
 
         makespan = model.new_int_var(0, horizon, "makespan")
         model.add_max_equality(makespan, [ends[task["id"]] for task in tasks])
+
+        # A starting plan guides the search only; every constraint above still binds the answer. Every
+        # derived variable is hinted too, so a complete legal plan is taken as the first solution.
+        hints = {item["taskId"]: item for item in (payload["options"].get("hint") or []) if item["taskId"] in starts}
+        if hints:
+            hinted_ends = []
+            for task in tasks:
+                hint = hints.get(task["id"])
+                if hint is None:
+                    continue
+                start = int(hint["startMinute"]); end = start + int(task["durationMinutes"])
+                model.add_hint(starts[task["id"]], start)
+                model.add_hint(ends[task["id"]], end)
+                if task["id"] in rest_ends:
+                    model.add_hint(rest_ends[task["id"]], end + rest)
+                for (hinted_task, resource_id), presence in presences.items():
+                    if hinted_task == task["id"]:
+                        model.add_hint(presence, 1 if resource_id == hint["resourceId"] else 0)
+                hinted_ends.append(end)
+            if len(hints) == len(tasks):
+                model.add_hint(makespan, max(hinted_ends))
         model.minimize(makespan)
 
         deterministic_budget, wall_cap = search_limits(max_time_seconds)

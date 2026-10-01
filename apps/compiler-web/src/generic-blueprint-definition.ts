@@ -2,13 +2,19 @@ import { canonicalHash, type ParticipantShape, type StageDefinition, type Tourna
 import type { CompetitionBlueprint, CreationSource } from "./creation-proposal.js";
 import { workbenchDecisionValues, type CompetitionWorkbenchProjection } from "./competition-workbench.js";
 
-export const connectedBlueprintFormats = ["round_robin", "single_elimination"] as const;
+export const connectedBlueprintFormats = ["round_robin", "single_elimination", "pools_to_knockout"] as const;
 
 function participantShape(unit: CompetitionBlueprint["participantUnit"]): ParticipantShape | null {
   if (unit === "pairs") return "pair";
   if (unit === "teams") return "fixed_team";
   if (unit === "players" || unit === "athletes") return "individual";
   return null;
+}
+
+/** Pool sizes for `entrants` split as evenly as possible into pools of at most `poolSize`. */
+export function evenPoolSizes(entrants: number, poolSize: number): number[] {
+  const pools = Math.ceil(entrants / poolSize);
+  return Array.from({ length: pools }, (_, index) => Math.floor(entrants / pools) + (index < entrants % pools ? 1 : 0));
 }
 
 function isPowerOfTwo(value: number): boolean {
@@ -62,7 +68,16 @@ export function connectedBlueprintFindings(blueprint: CompetitionBlueprint): rea
   if (blueprint.sport !== "padel") findings.push("Connected generic compilation currently has an approved padel rule envelope only.");
   if (blueprint.participantUnit !== "pairs") findings.push("Connected generic padel compilation currently requires pair entrants.");
   if (!blueprint.format || !connectedBlueprintFormats.includes(blueprint.format as typeof connectedBlueprintFormats[number]))
-    findings.push("Connected generic compilation currently supports round robin and single elimination; other preserved formats remain explicit unsupported semantics.");
+    findings.push("Connected generic compilation currently supports round robin, single elimination, and pools into a knockout; other preserved formats remain explicit unsupported semantics.");
+  if (blueprint.format === "pools_to_knockout" && blueprint.participantCount) {
+    if (!blueprint.poolSize || blueprint.poolSize < 3 || blueprint.poolSize > 8)
+      findings.push("Pools into a knockout needs a pool size from 3 to 8.");
+    else if (!blueprint.qualifiersPerPool || blueprint.qualifiersPerPool < 1
+      || blueprint.qualifiersPerPool >= Math.min(...evenPoolSizes(blueprint.participantCount, blueprint.poolSize)))
+      findings.push("Choose how many from each pool reach the knockout: at least one, and fewer than the smallest pool.");
+    else if (evenPoolSizes(blueprint.participantCount, blueprint.poolSize).length * blueprint.qualifiersPerPool < 2)
+      findings.push("Pools into a knockout needs at least two knockout entrants: add pools or qualifiers per pool.");
+  }
   if (blueprint.participantCount !== null && (blueprint.participantCount < 2 || blueprint.participantCount > 64))
     findings.push("Connected round-robin and single-elimination compilation is certified only for 2 to 64 entrants.");
   if (!blueprint.resourceLabel || !["court", "courts"].includes(blueprint.resourceLabel))
@@ -79,7 +94,11 @@ export function connectedBlueprintFindings(blueprint: CompetitionBlueprint): rea
   if (blueprint.priority === "minimum_disruption")
     findings.push("Minimum disruption is a live-repair objective; choose finish on time or fair recovery for initial compilation.");
   if (blueprint.participantCount && blueprint.minimumMatches) {
-    const guaranteed = blueprint.format === "round_robin" ? blueprint.participantCount - 1 : 1;
+    const guaranteed = blueprint.format === "round_robin" ? blueprint.participantCount - 1
+      // Pools: every entrant plays the rest of its pool (smallest pool − 1). Only qualifiers play on, so a
+      // knockout match is not guaranteed to anyone who finishes outside the qualifying places.
+      : blueprint.format === "pools_to_knockout" && blueprint.poolSize
+        ? Math.min(...evenPoolSizes(blueprint.participantCount, blueprint.poolSize)) - 1 : 1;
     if (blueprint.minimumMatches > guaranteed)
       findings.push(`The selected ${blueprint.format?.replaceAll("_", " ")} format guarantees at most ${guaranteed} matches per entrant in this envelope, below the requested minimum of ${blueprint.minimumMatches}.`);
   }
@@ -94,20 +113,33 @@ export function definitionFromConnectedBlueprint(blueprint: CompetitionBlueprint
   const shape = participantShape(blueprint.participantUnit);
   if (!shape) return null;
   const stageId = "open.main";
-  const stage: StageDefinition = blueprint.format === "round_robin" ? {
+  const poolsStageId = "open.pools";
+  const pooled = blueprint.format === "pools_to_knockout";
+  const poolSizes = pooled ? evenPoolSizes(blueprint.participantCount, blueprint.poolSize!) : [];
+  const knockoutEntrants = pooled ? poolSizes.length * blueprint.qualifiersPerPool! : blueprint.participantCount;
+  const knockout: StageDefinition = {
+    id: stageId, label: pooled ? "Open knockout" : "Open single elimination", divisionId: "open", primitive: "single_elimination",
+    inputShape: shape, outputShape: shape, expectedEntrants: knockoutEntrants,
+    bracket: { entrantCount: knockoutEntrants, topology: isPowerOfTwo(knockoutEntrants) ? "power_of_two" : "byes", thirdPlaceMatch: false },
+  };
+  const stages: StageDefinition[] = blueprint.format === "round_robin" ? [{
     id: stageId, label: "Open round robin", divisionId: "open", primitive: "single_round_robin",
     inputShape: shape, outputShape: shape, expectedEntrants: blueprint.participantCount,
     pool: { poolCount: 1, sizes: [blueprint.participantCount], rounds: 1, allocation: "snake" },
-  } : {
-    id: stageId, label: "Open single elimination", divisionId: "open", primitive: "single_elimination",
+  }] : pooled ? [{
+    id: poolsStageId, label: "Open pools", divisionId: "open", primitive: "groups",
     inputShape: shape, outputShape: shape, expectedEntrants: blueprint.participantCount,
-    bracket: { entrantCount: blueprint.participantCount,
-      topology: isPowerOfTwo(blueprint.participantCount) ? "power_of_two" : "byes", thirdPlaceMatch: false },
-  };
+    pool: { poolCount: poolSizes.length, sizes: poolSizes, rounds: 1, allocation: "snake" },
+  }, knockout] : [knockout];
+  const stageIds = stages.map(({ id }) => id);
+  const rankedStageId = pooled ? poolsStageId : stageId;
+  const knockoutStructureId = "open.knockout.structure";
   const reference = sourceReference(sources);
   const evidence = [
     ["participants", "/participants", true], ["format", "/stages/0", true], ["scoring", "/scoringSystems/0", true],
-    ["tiebreak", blueprint.format === "round_robin" ? "/standingsPolicies/open.standings" : "/scoringSystems/0/tieResolution", true], ["draw", "/randomisation", true],
+    ["tiebreak", blueprint.format === "single_elimination" ? "/scoringSystems/0/tieResolution" : "/standingsPolicies/open.standings", true], ["draw", "/randomisation", true],
+    ...(pooled ? [["qualification", "/qualificationPolicies/open.qual.knockout", true] as const,
+      ["knockout-draw", `/drawPolicies/${knockoutStructureId}.draw`, true] as const] : []),
     ["schedule", "/scheduling", true], ["resources", "/resources", true],
     ["withdrawal", "/operationalPolicies/0", true],
   ] as const;
@@ -118,19 +150,30 @@ export function definitionFromConnectedBlueprint(blueprint: CompetitionBlueprint
       scoringCapabilities: ["games", "timed_matches", "tie_break"], defaultResourceType: "court" },
     participants: { count: blueprint.participantCount, shape, rosterSize: 2 },
     divisions: [{ id: "open", label: "Open", participantCount: blueprint.participantCount,
-      participantShape: shape, stageIds: [stageId] }],
-    stages: [stage],
+      participantShape: shape, stageIds }],
+    stages,
     scoringSystems: [{ id: blueprint.scoringPolicy!, adapterRule: "generic.head-to-head.total-score-no-draw",
-      version: "1.0.0", stageIds: [stageId] }],
-    standingsPolicies: blueprint.format === "round_robin" ? [{ id: "open.standings", stageIds: [stageId],
+      version: "1.0.0", stageIds }],
+    standingsPolicies: blueprint.format === "single_elimination" ? [] : [{ id: "open.standings", stageIds: [rankedStageId],
       metricOrder: [{ metric: "wins", direction: "DESC" }, { metric: "score_difference", direction: "DESC" },
-        { metric: "score_for", direction: "DESC" }], tieFallback: "manual_decision" }] : [],
-    qualificationPolicies: [], competitionStructures: [], drawPolicies: [], progressionPolicies: [],
+        { metric: "score_for", direction: "DESC" }], tieFallback: "manual_decision" }],
+    // Pool winners first, then runners-up and so on, each position ranked across pools; unequal pools
+    // are compared by percentage so a smaller pool is neither favoured nor penalised.
+    qualificationPolicies: pooled ? [{ id: "open.qual.knockout", sourceStageId: poolsStageId, destinationStructureId: knockoutStructureId,
+      outputCount: knockoutEntrants, selectors: Array.from({ length: blueprint.qualifiersPerPool! }, (_, index) =>
+        ({ type: "best_n_across_pools" as const, count: poolSizes.length, poolPosition: index + 1 })),
+      ...(new Set(poolSizes).size > 1 ? { normalization: "percentage" as const } : {}) }] : [],
+    competitionStructures: pooled ? [{ id: knockoutStructureId, label: "Open knockout", divisionId: "open",
+      targetEntrants: knockoutEntrants, stageIds: [stageId] }] : [],
+    drawPolicies: pooled ? [{ id: `${knockoutStructureId}.draw`, structureId: knockoutStructureId, placement: "optimised",
+      priorities: [{ rule: "structural_validity", strength: "HARD", priority: 1 }, { rule: "protected_byes", strength: "HARD", priority: 2 },
+        { rule: "avoid_opening_round_pool_rematch", strength: "SOFT", priority: 3, weight: 60 }] }] : [],
+    progressionPolicies: [],
     scheduling: { timezone: blueprint.timezone, start: blueprint.startsAt, finishBy: blueprint.endsAt,
       constraints: [{ id: "no.participant.overlap", rule: "participant_cannot_play_two_contests_simultaneously",
         strength: "HARD", value: true, unit: "boolean" },
       { id: "minimum.rest", rule: "minimum_rest", strength: "HARD", value: blueprint.minimumRestMinutes, unit: "minutes" }],
-      durations: [{ stageId, contestMinutes: blueprint.matchDurationMinutes, turnaroundMinutes: 0 }], objective },
+      durations: stageIds.map((id) => ({ stageId: id, contestMinutes: blueprint.matchDurationMinutes!, turnaroundMinutes: 0 })), objective },
     resources: [{ id: "venue.courts", type: "court", quantity: blueprint.resourceCount,
       availability: [{ start: blueprint.startsAt, end: blueprint.endsAt }] }],
     operationalPolicies: [{ id: "withdrawal", rule: blueprint.withdrawalPolicy!, strength: "HARD", value: true }],

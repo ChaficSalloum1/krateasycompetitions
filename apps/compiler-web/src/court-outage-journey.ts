@@ -150,9 +150,13 @@ function scheduleWithAssignments(artifacts: CourtOutageArtifacts,
   return deepFreeze({ ...unvalidated, findings, audit: { ...unvalidated.audit, validationHash: canonicalHash(findings) } });
 }
 
+/** Virtual resources carrying players' fixed contests in a repair problem; never mapped back to a court. */
+const pinnedResourcePrefix = "pinned-contest:";
+
 function repairProblem(base: LiveOperationsState, artifacts: CourtOutageArtifacts,
   currentAssignments: readonly OperationalAssignment[], request: CourtOutageProposalRequest): {
-    problem: SchedulingProblem; baseline: readonly SolverAssignment[]; affectedContestIds: readonly string[]; origin: number;
+    problem: SchedulingProblem; baseline: readonly SolverAssignment[]; pinnedTaskIds: readonly string[];
+    affectedContestIds: readonly string[]; origin: number;
   } {
   const origin = Date.parse(artifacts.spec.scheduling.start);
   const finish = artifacts.spec.scheduling.finishBy ? Date.parse(artifacts.spec.scheduling.finishBy)
@@ -180,9 +184,15 @@ function repairProblem(base: LiveOperationsState, artifacts: CourtOutageArtifact
   const affectedParticipants = new Set(affected.flatMap(({ contestId }) =>
     base.resolvedEntrants[contestId] ?? scheduledById.get(contestId)?.possibleEntrantIds ?? []));
   const minute = (instant: number) => Math.round((instant - origin) / 60_000);
-  const busy = currentAssignments.filter(({ contestId }) => !affectedIds.has(contestId));
-  const participantBusy = busy.filter(({ contestId }) => scheduledById.get(contestId)?.possibleEntrantIds
-    .some((entrantId) => affectedParticipants.has(entrantId)));
+  const restMinutes = Number(artifacts.spec.scheduling.constraints.find(({ rule, strength }) =>
+    rule === "minimum_rest" && strength === "HARD")?.value ?? 0);
+  // An overrunning contest keeps its players until its reported end, not its planned one.
+  const busy = currentAssignments.filter(({ contestId }) => !affectedIds.has(contestId)).map((assignment) =>
+    request.incidentKind === "DELAY_OVERRUN" && assignment.contestId === request.sourceContestId
+      && Date.parse(request.expectedReopenAt) > Date.parse(assignment.end)
+      ? { ...assignment, end: new Date(Date.parse(request.expectedReopenAt)).toISOString() } : assignment);
+  const participantBusy = busy.filter(({ contestId }) => (base.resolvedEntrants[contestId]
+    ?? scheduledById.get(contestId)?.possibleEntrantIds ?? []).some((entrantId) => affectedParticipants.has(entrantId)));
   const compiledProblem = compileGraphSchedulingProblem(artifacts.spec, artifacts.graph);
   if (compiledProblem.status !== "COMPILED" || !compiledProblem.problem) throw new Error("court_outage_schedule_model_unavailable");
   const authoritativeResources = new Map(compiledProblem.problem.resources.map((resource) => [resource.id, resource]));
@@ -193,8 +203,6 @@ function repairProblem(base: LiveOperationsState, artifacts: CourtOutageArtifact
       .filter(({ startMinute, endMinute }) => endMinute > startMinute),
     closures: [
       ...busy.filter(({ resourceId }) => resourceId === id).map(({ start, end }) =>
-        ({ startMinute: minute(Date.parse(start)), endMinute: minute(Date.parse(end)) })),
-      ...participantBusy.map(({ start, end }) =>
         ({ startMinute: minute(Date.parse(start)), endMinute: minute(Date.parse(end)) })),
       ...(id === request.courtId ? [{ startMinute: minute(outageStart), endMinute: minute(outageEnd) }] : []),
     ].filter(({ startMinute, endMinute }) => endMinute > startMinute),
@@ -212,10 +220,20 @@ function repairProblem(base: LiveOperationsState, artifacts: CourtOutageArtifact
   const baseline = affected.map((assignment): SolverAssignment => ({ taskId: assignment.contestId,
     resourceId: assignment.resourceId, startMinute: minute(Date.parse(assignment.start)),
     endMinute: minute(Date.parse(assignment.end)), locked: false }));
-  return { problem: { id: `court-outage:${base.definition.tournamentId}:${request.proposalId}`, tasks, resources,
-    locks: [], minimumRestMinutes: Number(artifacts.spec.scheduling.constraints.find(({ rule, strength }) =>
-      rule === "minimum_rest" && strength === "HARD")?.value ?? 0) }, baseline,
-    affectedContestIds: [...affectedIds].sort(), origin };
+  // The affected players' other contests stay where they are, but the solver must see them so that a moved
+  // contest keeps the hard rest from them and never overlaps them. Each is pinned on its own virtual
+  // resource: it constrains its players, never a court (court occupancy is already a closure above).
+  const pinned = participantBusy.map((assignment) => {
+    const startMinute = minute(Date.parse(assignment.start)); const endMinute = minute(Date.parse(assignment.end));
+    return { resource: { id: `${pinnedResourcePrefix}${assignment.contestId}`, calendars: [{ startMinute, endMinute }], closures: [] },
+      task: { id: assignment.contestId, durationMinutes: endMinute - startMinute, eligibleResourceIds: [`${pinnedResourcePrefix}${assignment.contestId}`],
+        dependencyIds: [], participantIds: [...(base.resolvedEntrants[assignment.contestId] ?? scheduledById.get(assignment.contestId)?.possibleEntrantIds ?? [])].sort() },
+      baseline: { taskId: assignment.contestId, resourceId: `${pinnedResourcePrefix}${assignment.contestId}`, startMinute, endMinute, locked: true } };
+  });
+  return { problem: { id: `court-outage:${base.definition.tournamentId}:${request.proposalId}`,
+    tasks: [...tasks, ...pinned.map(({ task }) => task)], resources: [...resources, ...pinned.map(({ resource }) => resource)],
+    locks: [], minimumRestMinutes: restMinutes }, baseline: [...baseline, ...pinned.map(({ baseline }) => baseline)],
+    pinnedTaskIds: pinned.map(({ task }) => task.id).sort(), affectedContestIds: [...affectedIds].sort(), origin };
 }
 
 export function proposeCourtOutageRepair(baseOperationalRevision: number, base: LiveOperationsState,
@@ -232,8 +250,11 @@ export function proposeCourtOutageRepair(baseOperationalRevision: number, base: 
     proposedAt: request.proposedAt, liveState: base, liveCommand: { kind: "CLOSE_COURT", courtId: request.courtId,
       reason: request.reason, expectedReopenAt: request.expectedReopenAt, commandId: `${request.proposalId}.close-court`,
       expectedVersion: base.version, actorId: request.proposedBy, occurredAt: request.proposedAt },
-    repairRequest: { problem: derived.problem, baseline: derived.baseline }, maxSearchNodes: 100_000 });
-  const repairAssignments = new Map((liveChange.repair.assignments ?? []).map((assignment) => [assignment.taskId, assignment]));
+    repairRequest: { problem: derived.problem, baseline: derived.baseline, pinnedTaskIds: derived.pinnedTaskIds }, maxSearchNodes: 100_000 });
+  // Only the affected contests move; pinned contests are constraints, not results.
+  const movable = new Set(derived.affectedContestIds);
+  const repairAssignments = new Map((liveChange.repair.assignments ?? []).filter(({ taskId }) => movable.has(taskId))
+    .map((assignment) => [assignment.taskId, assignment]));
   const operationalAssignments = currentAssignments.map((assignment) => {
     const repaired = repairAssignments.get(assignment.contestId);
     return repaired ? { contestId: assignment.contestId, resourceId: repaired.resourceId,

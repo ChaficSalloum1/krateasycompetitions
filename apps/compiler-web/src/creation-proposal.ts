@@ -24,6 +24,24 @@ export type CreationSource =
   | { readonly mode: "csv"; readonly text: string }
   | { readonly mode: "xlsx"; readonly fileName: string; readonly base64: string };
 
+/**
+ * The approved St Albans milestone: 47 padel pairs, seven courts, pools of four with one qualifier,
+ * no mandatory rest and 30-minute slots. It keeps its own approved definition (two cups, featured
+ * durations); every other event of a connected format is built generically from the organiser's facts.
+ */
+export function isStAlbansMilestoneTemplate(blueprint: CompetitionBlueprint): boolean {
+  return blueprint.sport === "padel" && blueprint.participantUnit === "pairs" && blueprint.participantCount === 47
+    && blueprint.resourceCount === 7 && ["court", "courts"].includes(blueprint.resourceLabel ?? "courts")
+    && blueprint.format === "pools_to_knockout" && blueprint.poolSize === 4 && blueprint.qualifiersPerPool === 1
+    && blueprint.minimumRestMinutes === 0 && blueprint.matchDurationMinutes === 30;
+}
+
+/** Formats built generically from the organiser's facts and roster (as opposed to a fixed template). */
+export function usesGenericRoster(blueprint: CompetitionBlueprint): boolean {
+  return blueprint.format === "round_robin" || blueprint.format === "single_elimination"
+    || (blueprint.format === "pools_to_knockout" && !isStAlbansMilestoneTemplate(blueprint));
+}
+
 export interface CompetitionBlueprint {
   readonly name: string | null;
   readonly sport: string | null;
@@ -259,7 +277,7 @@ export function createCompetitionProposal(source: CreationSource): Readonly<Crea
     questions.push(question("endsAt", "Choose a finish time after the start time.", "The event window is currently impossible."));
   if (blueprint.matchDurationMinutes === null) questions.push(question("matchDurationMinutes", "How long should one match slot be?", "Duration is required for a schedule, including changeover if applicable."));
   if (blueprint.minimumRestMinutes === null) questions.push(question("minimumRestMinutes", "What minimum rest must a participant receive?", "Rest is a hard fairness constraint, not a hidden default."));
-  if (blueprint.format === "round_robin" || blueprint.format === "single_elimination") {
+  if (usesGenericRoster(blueprint)) {
     if (!blueprint.timezone) questions.push(question("timezone", "Which IANA timezone governs this competition?", "Local reporting and hard-stop times need an explicit civil-time authority."));
     if (!blueprint.scoringPolicy) questions.push(question("scoringPolicy", "Which registered scoring policy decides a match?", "Scoring semantics cannot be inferred from the sport name."));
     if (!blueprint.tiebreakPolicy) questions.push(question("tiebreakPolicy", "How are tied standings or match outcomes resolved?", "A tied result cannot silently choose an advancing entrant."));

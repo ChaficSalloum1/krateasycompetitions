@@ -188,7 +188,7 @@ test("advertised but unconnected semantics remain explicit and fail closed", () 
     startsAt: "2026-10-18T08:00:00.000Z", endsAt: "2026-10-18T17:00:00.000Z",
   } });
   assert.equal(unsupported.status, "NEEDS_INPUT");
-  assert.ok(unsupported.supportFindings.some((finding) => finding.includes("round robin and single elimination")));
+  assert.ok(unsupported.supportFindings.some((finding) => finding.includes("round robin, single elimination, and pools into a knockout")));
   assert.throws(() => journey.compile(unsupported.id, unsupported.draftVersion), /journey_not_ready/);
 
   const oversized = journey.create({ mode: "quick", value: { ...policy, name: "Unproven Scale",

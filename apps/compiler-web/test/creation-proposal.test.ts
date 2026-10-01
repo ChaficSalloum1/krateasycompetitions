@@ -4,11 +4,16 @@ import { createCompetitionProposal, parseCreationProposalPayload } from "../src/
 import { creatorHtml } from "../src/creator-view.js";
 import { productHtml } from "../src/product-view.js";
 
+/** A pools-into-knockout event off the St Albans template runs on the generic rules, so it must state them. */
+const GENERIC_POLICY_FIELDS = ["drawPolicy", "scoringPolicy", "tiebreakPolicy", "timezone", "withdrawalPolicy"];
+const askedPolicies = (questions: readonly { field?: unknown }[]) =>
+  questions.map(({ field }) => String(field)).filter((field) => GENERIC_POLICY_FIELDS.includes(field)).sort();
+
 test("plain language produces the same explicit blueprint used by structured entry", () => {
   const text = "Create a padel tournament called Sunday Social for 16 pairs on 4 courts. Pools of 4 into knockout, top 2 per pool. At least 3 matches, matches last 25 minutes, 20 minutes rest. Start 2026-10-18 09:00 and finish by 2026-10-18 18:00. Prioritise fair recovery.";
   const proposal = createCompetitionProposal({ mode: "language", text });
-  assert.equal(proposal.status, "READY_TO_COMPILE");
-  assert.equal(proposal.compilationCanStart, true);
+  assert.equal(proposal.status, "NEEDS_INPUT", "the shape is understood; only the registered rules remain to be chosen");
+  assert.deepEqual(askedPolicies(proposal.questions), GENERIC_POLICY_FIELDS);
   assert.equal(proposal.approvalRequired, true);
   assert.deepEqual({ count: proposal.blueprint.participantCount, unit: proposal.blueprint.participantUnit,
     resources: proposal.blueprint.resourceCount, format: proposal.blueprint.format, rest: proposal.blueprint.minimumRestMinutes },
@@ -38,7 +43,8 @@ test("YAML uses the same blueprint normalisation without executable semantics", 
     "qualifiersPerPool: 2", "minimumMatches: 3", "minimumRestMinutes: 20", "matchDurationMinutes: 25",
     "startsAt: 2026-10-18T09:00:00.000Z", "endsAt: 2026-10-18T18:00:00.000Z", "priority: fair_recovery",
   ].join("\n") });
-  assert.equal(proposal.status, "READY_TO_COMPILE");
+  assert.equal(proposal.status, "NEEDS_INPUT");
+  assert.deepEqual(askedPolicies(proposal.questions), GENERIC_POLICY_FIELDS);
   assert.equal(proposal.blueprint.participantCount, 16);
   assert.equal(proposal.blueprint.format, "pools_to_knockout");
 });

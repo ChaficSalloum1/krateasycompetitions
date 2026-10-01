@@ -25,6 +25,9 @@ import {
   simulateGraph,
   simulateOperationalRisk,
   validateSchedule,
+  classifyCompetitionGuardFinding,
+  COMPETITION_GUARD_SEVERITY_POLICY,
+  standingsFindingsForPublication,
 } from "../src/index.js";
 
 const context = {
@@ -266,4 +269,30 @@ test("a configured bracket is not mistaken for an executable double-elimination 
 test("random source produces a stable replay sequence", () => {
   const left = deterministicRandom("seed"); const right = deterministicRandom("seed");
   assert.deepEqual(Array.from({ length: 10 }, () => left.next()), Array.from({ length: 10 }, () => right.next()));
+});
+
+test("a manual-decision tie is raised from the policy, never from one sampled result set", () => {
+  const sampledTie = { code: "TSC712", severity: "ERROR" as const, path: "/standingsPolicies/final", message: "tied", evidence: { poolId: "P1", entrants: ["A", "B"] } };
+  const other = { code: "TSC711", severity: "ERROR" as const, path: "/standingsPolicies/final/tieFallback", message: "seed" };
+  const none = { qualificationPolicies: [], progressionPolicies: [] };
+  const manual = { id: "final", stageIds: ["pools"], tieFallback: "manual_decision" as const };
+
+  const withSample = standingsFindingsForPublication(none, manual, [sampledTie, other]);
+  const withoutSample = standingsFindingsForPublication(none, manual, [other]);
+  assert.deepEqual(withSample, withoutSample, "whether the simulation happened to tie changes nothing");
+  const [untouched, finalTie] = withSample;
+  assert.deepEqual(untouched, other, "other standings findings are unchanged");
+  assert.equal(finalTie!.severity, "WARNING");
+  assert.match(finalTie!.message, /at close/);
+  assert.equal(classifyCompetitionGuardFinding(finalTie!), "OPERATIONAL");
+  assert.equal(COMPETITION_GUARD_SEVERITY_POLICY.OPERATIONAL, "ACKNOWLEDGE", "…and must be acknowledged at approval");
+
+  const qualifying = { ...none, qualificationPolicies: [{ sourceStageId: "pools" }] } as never;
+  const progression = standingsFindingsForPublication(qualifying, manual, [sampledTie]);
+  assert.equal(progression.length, 1);
+  assert.equal(progression[0]!.severity, "WARNING", "the organiser decides a progression tie live, so it does not block a legal plan");
+  assert.match(progression[0]!.message, /Run Control/);
+
+  assert.deepEqual(standingsFindingsForPublication(none, { ...manual, tieFallback: "deterministic_draw" }, [other]), [other],
+    "a policy that never leaves a tie to the organiser raises nothing");
 });

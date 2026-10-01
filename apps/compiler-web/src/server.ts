@@ -21,7 +21,7 @@ import { compilerHtml } from "./ui.js";
 import { creatorHtml } from "./creator-view.js";
 import { productHtml } from "./product-view.js";
 import { createCompetitionProposal, parseCreationProposalPayload } from "./creation-proposal.js";
-import { CompetitionJourney, parseConnectedLiveCommand, parseCreationSource,
+import { CompetitionJourney, JourneyExplainedError, parseConnectedLiveCommand, parseCreationSource,
   type CompetitionJourneyOptions } from "./competition-journey.js";
 import { renderCompetitionGuardPreflight } from "./guard-preflight-view.js";
 import { renderCompetitionPortfolio, renderCompetitionPortfolioUnavailable } from "./competition-portfolio-view.js";
@@ -32,6 +32,7 @@ import { playerHtml } from "./player-view.js";
 import { participantRecoveryHtml } from "./participant-recovery-view.js";
 import { participantOperationsHtml, venueDisplayHtml } from "./attention-views.js";
 import { renderRunControl, runControlHtml } from "./run-control-view.js";
+import { renderCourtTimeline, renderCourtTimelineUnavailable } from "./court-timeline-view.js";
 import { organiserContextOf, withDemoBanner } from "./design-system.js";
 import { verifyOfflineEventPack } from "./offline-event-pack.js";
 import { renderPrintableManualFallback } from "./manual-fallback-view.js";
@@ -761,6 +762,28 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end(renderCloseIntegrityReceipt(competitionId, organiserContextOf(competitionJourney.read(competitionId)!)));
         return;
       }
+      const timelinePage = !production && /^\/competitions\/([^/?#]+)\/timeline$/.exec(request.url ?? "");
+      if (timelinePage && request.method === "GET") {
+        const competitionId = decodeURIComponent(timelinePage[1]!);
+        const snapshot = competitionJourney.read(competitionId);
+        if (!snapshot) {
+          json(response, 404, { apiVersion: "1.0", error: "journey_not_found" });
+          return;
+        }
+        const context = organiserContextOf(snapshot);
+        // Read-only and script-free: the page renders the server projection and carries no command.
+        let html: string; let status = 200;
+        if (context.operationalRevision === null || !snapshot.compiled) { html = renderCourtTimelineUnavailable(context); status = 409; }
+        else html = renderCourtTimeline(competitionJourney.readCourtTimeline({ organizationId, competitionId,
+          expectedOperationalRevision: context.operationalRevision }), context, snapshot.compiled.timezone);
+        response.writeHead(status, {
+          "content-type": "text/html; charset=utf-8", "cache-control": "no-store",
+          "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+          "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
+        });
+        response.end(html);
+        return;
+      }
       const journeyPage = !production && /^\/competitions\/([^/?#]+)$/.exec(request.url ?? "");
       if (journeyPage && request.method === "GET") {
         const competitionId = decodeURIComponent(journeyPage[1]!);
@@ -846,7 +869,7 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
         response.end(html);
         return;
       }
-      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|edit-preview|edit-apply|compile|approve|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|participant-access-rotate|participant-access-revoke|participant-recovery-code|participant-recover|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
+      const journeyApi = !production && /^\/v1\/competition-journey\/([^/?#]+)(?:\/(draft|sources|source-remove|edit-preview|edit-apply|compile|approve|amend|live-activate|live-command|no-show-preview|no-show-approve|court-outage-preview|court-outage-approve|delay-preview|delay-approve|participant-access|participant-access-rotate|participant-access-revoke|participant-recovery-code|participant-recover|offline-pack|operational-incident|operational-transition|operational-clearance|operational-transfer|close|closure-bundle|duplicate))?(?:\?[^#]*)?$/.exec(request.url ?? "");
       if (journeyApi) {
         const competitionId = decodeURIComponent(journeyApi[1]!);
         const operation = journeyApi[2];
@@ -923,6 +946,13 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
             || !command.acknowledgedFindingCodes.every((value) => typeof value === "string")) throw new Error("invalid_journey_command");
           json(response, 200, competitionJourney.approve(competitionId, command.expectedRevision as number,
             "local.organiser", command.acknowledgedFindingCodes as string[]));
+          return;
+        }
+        if (operation === "amend") {
+          if (Object.keys(command).some((key) => key !== "expectedPublishedRevision")
+            || !Number.isSafeInteger(command.expectedPublishedRevision)) throw new Error("invalid_journey_command");
+          json(response, 200, competitionJourney.amend(competitionId, command.expectedPublishedRevision as number,
+            "local.organiser"));
           return;
         }
         if (operation === "live-activate") {
@@ -1261,7 +1291,8 @@ export function createCompilerServer(options: CompilerServerOptions = {}) {
       json(response, 404, { error: "not_found" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown_error";
-      json(response, message === "request_too_large" ? 413 : 400, { error: message });
+      const explanation = error instanceof JourneyExplainedError ? { explanation: error.explanation } : {};
+      json(response, message === "request_too_large" ? 413 : 400, { error: message, ...explanation });
     }
   });
 }
