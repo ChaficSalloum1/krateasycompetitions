@@ -43,6 +43,32 @@ function localInstant(date: string, time: string, timeZone: string): string {
   return new Date(instant).toISOString();
 }
 
+/**
+ * An event wall-clock time ("HH:MM") as the instant it names within the event: on the local date the
+ * event starts, or the next one for an event that runs past midnight. Null when the time is not in the
+ * event, or does not exist that day because the clocks go forward.
+ */
+export function eventTimeInstant(startsAt: string, endsAt: string, timeZone: string, time: string): string | null {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return null;
+  const start = localParts(startsAt, timeZone);
+  const firstDay = Date.UTC(Number(start.year), Number(start.month) - 1, Number(start.day));
+  for (const offset of [0, 1]) {
+    const date = new Date(firstDay + offset * 86_400_000).toISOString().slice(0, 10);
+    const instant = localInstant(date, `${time}:00`, timeZone);
+    const back = localParts(instant, timeZone);
+    // A wall time skipped by a clock change resolves to another time; it is refused, never shifted.
+    if (`${back.year}-${back.month}-${back.day}` !== date || `${back.hour}:${back.minute}` !== time) continue;
+    if (Date.parse(instant) >= Date.parse(startsAt) && Date.parse(instant) <= Date.parse(endsAt)) return instant;
+  }
+  return null;
+}
+
+/** An instant's wall-clock time ("HH:MM") in the event's timezone. */
+export function eventLocalTime(instant: string, timeZone: string): string {
+  const parts = localParts(instant, timeZone);
+  return `${parts.hour}:${parts.minute}`;
+}
+
 function shiftToEventDate(instant: string, originalStart: string, eventDate: string, timeZone: string): string {
   const parts = localParts(instant, timeZone); const start = localParts(originalStart, timeZone);
   const originalDay = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day));

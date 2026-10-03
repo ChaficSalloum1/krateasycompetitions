@@ -2,6 +2,7 @@ import { canonicalHash, type SchedulingDefinition, type TournamentSpec, type Val
 import type { CompetitionGraph, ContestNode, ScheduleSolution, ScheduledContest } from "./types.js";
 import { calculateSchedulingLowerBounds } from "./lower-bounds.js";
 import { deriveContestEntrantsIndependently, deriveQualificationOccupancy } from "./independent-entrants.js";
+import { protectedAssignmentFindings, protectedAssignments, resourceUnitDefinitions, resourceUnitFindings } from "./schedule-controls.js";
 
 const minutes = (value: number) => value * 60_000;
 const iso = (value: number) => new Date(value).toISOString();
@@ -75,10 +76,9 @@ export function possibleEntrants(graph: CompetitionGraph): Map<string, Set<strin
 interface ResourceUnit { id: string; type: string; availability: Array<[number, number]>; }
 
 function units(spec: TournamentSpec): ResourceUnit[] {
-  return spec.resources.flatMap((resource) => Array.from({ length: resource.quantity }, (_, index) => ({
-    id: `${resource.id}.${index + 1}`, type: resource.type,
-    availability: resource.availability.map(({ start, end }) => [Date.parse(start), Date.parse(end)] as [number, number]),
-  })));
+  return resourceUnitDefinitions(spec).map(({ id, type, availability }) => ({
+    id, type, availability: availability.map(({ start, end }) => [Date.parse(start), Date.parse(end)] as [number, number]),
+  }));
 }
 
 function fits(start: number, end: number, resource: ResourceUnit, scheduled: ScheduledContest[]): boolean {
@@ -87,9 +87,11 @@ function fits(start: number, end: number, resource: ResourceUnit, scheduled: Sch
 }
 
 function lockedStarts(spec: TournamentSpec): Map<string, number> {
-  return new Map(spec.scheduling.constraints
-    .filter(({ id, rule, strength, value }) => rule === "locked_match_start" && strength === "HARD" && id.startsWith("lock.") && typeof value === "string")
-    .map(({ id, value }) => [id.slice("lock.".length), Date.parse(value as string)]));
+  return new Map([...protectedAssignments(spec).values()].flatMap(({ contestId, start }) => start === undefined ? [] : [[contestId, start] as const]));
+}
+
+function pinnedResources(spec: TournamentSpec): Map<string, string> {
+  return new Map([...protectedAssignments(spec).values()].flatMap(({ contestId, resourceId }) => resourceId === undefined ? [] : [[contestId, resourceId] as const]));
 }
 
 interface RequiredResourceRule { readonly stageId: string; readonly round: string; readonly resourceId: string; }
@@ -105,7 +107,8 @@ function requiredResourceRules(spec: TournamentSpec): RequiredResourceRule[] {
   });
 }
 
-function requiredResourceId(spec: TournamentSpec, node: ContestNode): string | undefined {
+/** The unit a stage/round's HARD `required_resource` rule names for this contest, if any. */
+export function requiredResourceId(spec: TournamentSpec, node: ContestNode): string | undefined {
   return requiredResourceRules(spec).find(({ stageId, round }) => stageId === node.stageId && round === node.round)?.resourceId;
 }
 
@@ -135,8 +138,10 @@ function requiredResourceConstraintFindings(spec: TournamentSpec, graph: Competi
 function enforceRequiredResources(spec: TournamentSpec, graph: CompetitionGraph, scheduled: ScheduledContest[],
   resources: readonly ResourceUnit[]): void {
   const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
+  // Only a protection that pins a court forbids moving a contest to another court; a protected start does not.
+  const protectedIds = new Set(pinnedResources(spec).keys());
   for (const entry of [...scheduled].sort((left, right) => left.contestId.localeCompare(right.contestId))) {
-    const node = nodes.get(entry.contestId); if (!node) continue;
+    const node = nodes.get(entry.contestId); if (!node || protectedIds.has(node.id)) continue;
     const requiredId = requiredResourceId(spec, node); if (!requiredId || entry.resourceId === requiredId) continue;
     const required = resources.find(({ id }) => id === requiredId); if (!required) continue;
     const start = Date.parse(entry.start); const end = Date.parse(entry.end);
@@ -149,7 +154,7 @@ function enforceRequiredResources(spec: TournamentSpec, graph: CompetitionGraph,
     let possible = true;
     for (const conflict of conflicts.sort((left, right) => left.start.localeCompare(right.start) || left.contestId.localeCompare(right.contestId))) {
       const conflictNode = nodes.get(conflict.contestId);
-      if (!conflictNode || requiredResourceId(spec, conflictNode)) { possible = false; break; }
+      if (!conflictNode || requiredResourceId(spec, conflictNode) || protectedIds.has(conflictNode.id)) { possible = false; break; }
       const conflictStart = Date.parse(conflict.start); const conflictEnd = Date.parse(conflict.end);
       const replacement = resources.filter(({ type, id }) => type === conflictNode.requiredResourceType && id !== requiredId)
         .sort((left, right) => left.id === entry.resourceId ? -1 : right.id === entry.resourceId ? 1 : left.id.localeCompare(right.id))
@@ -176,8 +181,10 @@ function alignHeadlineFinals(spec: TournamentSpec, graph: CompetitionGraph, sche
   const headlineStages = headlineFinalStageIds(spec);
   if (!headlineStages.size || !scheduled.length) return;
   const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
+  const protectedIds = new Set(protectedAssignments(spec).keys());
   const finish = Math.max(...scheduled.map(({ end }) => Date.parse(end)));
   const candidates = scheduled.filter(({ contestId }) => {
+    if (protectedIds.has(contestId)) return false;
     const node = nodes.get(contestId);
     return node?.kind === "contest" && node.round.toLowerCase() === "final" && headlineStages.has(node.stageId);
   }).sort((left, right) => left.contestId.localeCompare(right.contestId));
@@ -207,7 +214,32 @@ export function solveSchedule(spec: TournamentSpec, graph: CompetitionGraph): Sc
   const readyEnd = new Map<string, number>();
   const participantLastEnd = new Map<string, number>();
   const locks = lockedStarts(spec);
+  const pinned = pinnedResources(spec);
   const scheduled: ScheduledContest[] = [];
+  // Protected starts are reserved before greedy placement: an ordinary contest may not take a pinned
+  // court at a protected time, nor leave too few courts of the type for the time-only protections then.
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const reservations = [...locks].flatMap(([contestId, start]) => {
+    const node = nodeById.get(contestId);
+    return node?.kind === "contest" && Number.isFinite(start) ? [{ contestId, start, end: start + minutes(durationFor(node, spec.scheduling)),
+      type: node.requiredResourceType, resourceId: pinned.get(contestId) }] : [];
+  });
+  const placedIds = new Set<string>();
+  const respectsReservations = (contestId: string, resource: ResourceUnit, start: number, end: number) => {
+    const open = reservations.filter((entry) => entry.contestId !== contestId && !placedIds.has(entry.contestId));
+    for (const reservation of open) {
+      if (start >= reservation.end || end <= reservation.start) continue;
+      if (reservation.resourceId === resource.id) return false;
+      if (reservation.resourceId !== undefined || reservation.type !== resource.type) continue;
+      const contenders = open.filter((other) => other.resourceId === undefined && other.type === reservation.type
+        && other.start < reservation.end && other.end > reservation.start).length;
+      const free = resourceUnits.filter((unit) => unit.type === reservation.type && unit.id !== resource.id
+        && !open.some((other) => other.resourceId === unit.id && other.start < reservation.end && other.end > reservation.start)
+        && fits(reservation.start, reservation.end, unit, scheduled)).length;
+      if (free < contenders) return false;
+    }
+    return true;
+  };
   const startFloor = Date.parse(spec.scheduling.start);
   const minimumRest = Number(spec.scheduling.constraints.find(({ rule, strength }) => rule === "minimum_rest" && strength === "HARD")?.value ?? 0);
   // Any feeder entrant can qualify into a contest reached by a `complete` edge, so hard rest must also
@@ -232,8 +264,10 @@ export function solveSchedule(spec: TournamentSpec, graph: CompetitionGraph): Sc
       continue;
     }
     while (cursor + duration <= hardLimit) {
-      chosen = resourceUnits.filter(({ type }) => type === node.requiredResourceType)
-        .find((resource) => fits(cursor, cursor + duration, resource, scheduled));
+      const requiredId = requiredResourceId(spec, node);
+      chosen = resourceUnits.filter(({ type, id }) => type === node.requiredResourceType && (!pinned.has(node.id) || pinned.get(node.id) === id))
+        .sort((left, right) => Number(right.id === requiredId) - Number(left.id === requiredId))
+        .find((resource) => fits(cursor, cursor + duration, resource, scheduled) && respectsReservations(node.id, resource, cursor, cursor + duration));
       if (chosen || lockedStart !== undefined) break;
       cursor += minutes(5);
     }
@@ -244,7 +278,7 @@ export function solveSchedule(spec: TournamentSpec, graph: CompetitionGraph): Sc
       continue;
     }
     const entry: ScheduledContest = { contestId: node.id, resourceId: chosen.id, start: iso(cursor), end: iso(cursor + duration), possibleEntrantIds: [...(potentials.get(node.id) ?? [])].sort() };
-    scheduled.push(entry); readyEnd.set(node.id, cursor + duration);
+    scheduled.push(entry); placedIds.add(node.id); readyEnd.set(node.id, cursor + duration);
     for (const id of entry.possibleEntrantIds) participantLastEnd.set(id, cursor + duration);
   }
   alignHeadlineFinals(spec, graph, scheduled, resourceUnits, dependencies);
@@ -268,7 +302,9 @@ function ancestorReady(id: string, scheduled: Map<string, ScheduledContest>, dep
 }
 
 export function validateSchedule(spec: TournamentSpec, graph: CompetitionGraph, solution: ScheduleSolution): ValidationFinding[] {
-  const findings: ValidationFinding[] = [...requiredResourceConstraintFindings(spec, graph)];
+  const findings: ValidationFinding[] = [...requiredResourceConstraintFindings(spec, graph),
+    ...resourceUnitFindings(spec), ...protectedAssignmentFindings(spec, graph)];
+  const pinned = pinnedResources(spec);
   const actualNodes = graph.nodes.filter(({ kind }) => kind === "contest");
   const nodeMap = new Map(graph.nodes.map((node) => [node.id, node]));
   const scheduledMap = new Map(solution.contests.map((entry) => [entry.contestId, entry]));
@@ -293,6 +329,9 @@ export function validateSchedule(spec: TournamentSpec, graph: CompetitionGraph, 
     if (start < dependencyEnd) findings.push({ code: "TSV405", severity: "ERROR", path: `/schedule/${entry.contestId}`, message: "Contest starts before a dependency can complete." });
     const lockedStart = locks.get(entry.contestId);
     if (lockedStart !== undefined && start !== lockedStart) findings.push({ code: "TSV407", severity: "ERROR", path: `/schedule/${entry.contestId}`, message: "Contest does not start at its declared hard lock.", evidence: { expectedStart: iso(lockedStart), actualStart: entry.start } });
+    const pinnedId = pinned.get(entry.contestId);
+    if (pinnedId !== undefined && entry.resourceId !== pinnedId) findings.push({ code: "TSV412", severity: "ERROR", path: `/schedule/${entry.contestId}`,
+      message: "Contest is not on the resource its protected assignment names.", evidence: { expectedResourceId: pinnedId, actualResourceId: entry.resourceId } });
     const requiredId = requiredResourceId(spec, node);
     if (requiredId && entry.resourceId !== requiredId) findings.push({ code: "TSV410", severity: "ERROR", path: `/schedule/${entry.contestId}`,
       message: "Contest is not assigned to its declared hard resource.", evidence: { expectedResourceId: requiredId, actualResourceId: entry.resourceId } });

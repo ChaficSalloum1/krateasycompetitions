@@ -1,3 +1,4 @@
+import { resourceUnitDefinitions } from "./schedule-controls.js";
 import type { RequirementStatus, RuleStrength, ValidationFinding } from "@tournament-os/tournament-schema";
 import { analyzeParticipantPaths } from "./analytics.js";
 import type { ScenarioResult, SlotSource } from "./types.js";
@@ -112,13 +113,13 @@ export function buildBlueprintView(scenario: ScenarioResult): BlueprintView {
     durationMinutes: (Date.parse(entry.end) - Date.parse(entry.start)) / 60_000, possibleEntrantIds: [...entry.possibleEntrantIds].sort(),
     accessibilityLabel: `${entry.contestId} on ${entry.resourceId}, starts ${entry.start}, ends ${entry.end}.`, debugId: debugId("schedule", entry.contestId),
   }));
-  const utilisation = scenario.spec.resources.flatMap((resource) => Array.from({ length: resource.quantity }, (_, index) => {
-    const resourceId = `${resource.id}.${index + 1}`;
+  const utilisation = resourceUnitDefinitions(scenario.spec).map((unit) => {
+    const resourceId = unit.id;
     const busyMinutes = timeline.filter((entry) => entry.resourceId === resourceId).reduce((sum, entry) => sum + entry.durationMinutes, 0);
-    const availableMinutes = resource.availability.reduce((sum, window) => sum + (Date.parse(window.end) - Date.parse(window.start)) / 60_000, 0);
+    const availableMinutes = unit.availability.reduce((sum, window) => sum + (Date.parse(window.end) - Date.parse(window.start)) / 60_000, 0);
     const ratio = availableMinutes > 0 ? busyMinutes / availableMinutes : 0;
     return { resourceId, busyMinutes, availableMinutes, ratio, accessibilityLabel: `${resourceId} is scheduled for ${busyMinutes} of ${availableMinutes} available minutes, ${Math.round(ratio * 100)} percent utilisation.` };
-  })).sort((a, b) => a.resourceId.localeCompare(b.resourceId));
+  }).sort((a, b) => a.resourceId.localeCompare(b.resourceId));
 
   const simulation = scenario.simulation;
   const expected = scenario.graph.generatedActualContestCount - new Set(simulation?.skippedConditionalContestIds ?? []).size;

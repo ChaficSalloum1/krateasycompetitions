@@ -5,6 +5,8 @@ export interface SolverResource { readonly id: string; readonly calendars: reado
 export interface SolverTask {
   readonly id: string; readonly durationMinutes: number; readonly eligibleResourceIds: readonly string[];
   readonly dependencyIds: readonly string[]; readonly participantIds: readonly string[];
+  /** A protected start on any eligible resource. */
+  readonly fixedStartMinute?: number;
 }
 export interface ScheduleLock { readonly taskId: string; readonly resourceId: string; readonly startMinute: number; }
 export interface SchedulingProblem {
@@ -67,6 +69,7 @@ function topologicalTasks(problem: SchedulingProblem): SolverTask[] {
     if (!task.id.trim() || taskMap.has(task.id)) throw new Error(`Task ids must be non-empty and unique: ${task.id}`);
     if (!Number.isInteger(task.durationMinutes) || task.durationMinutes <= 0) throw new Error(`Task ${task.id} has invalid duration`);
     if (!task.eligibleResourceIds.length) throw new Error(`Task ${task.id} has no eligible resource`);
+    if (task.fixedStartMinute !== undefined && (!Number.isInteger(task.fixedStartMinute) || task.fixedStartMinute < 0)) throw new Error(`Task ${task.id} has an invalid fixed start`);
     taskMap.set(task.id, task);
   }
   const resourceIds = new Set<string>();
@@ -125,8 +128,10 @@ function placementsFor(task: SolverTask, resources: ReadonlyMap<string, SolverRe
   for (const resourceId of [...task.eligibleResourceIds].sort()) {
     const resource = resources.get(resourceId)!;
     for (const window of [...resource.calendars].sort((a, b) => a.startMinute - b.startMinute || a.endMinute - b.endMinute)) {
-      for (let start = window.startMinute; start + task.durationMinutes <= window.endMinute; start += granularity) {
+      const starts = task.fixedStartMinute === undefined ? undefined : [task.fixedStartMinute];
+      for (let start = starts?.[0] ?? window.startMinute; start + task.durationMinutes <= window.endMinute; start += starts ? Number.POSITIVE_INFINITY : granularity) {
         const end = start + task.durationMinutes;
+        if (start < window.startMinute) break;
         if (resourceAllows(resource, start, end)) placements.push({ taskId: task.id, resourceId, startMinute: start, endMinute: end, locked: false });
       }
     }
@@ -156,6 +161,7 @@ function validateSolution(problem: SchedulingProblem, assignments: readonly Solv
     const task = taskMap.get(assignment.taskId); const resource = resourceMap.get(assignment.resourceId);
     if (!task || !resource || !task.eligibleResourceIds.includes(assignment.resourceId)) { errors.push(`Invalid resource assignment for ${assignment.taskId}.`); continue; }
     if (assignment.endMinute - assignment.startMinute !== task.durationMinutes || !resourceAllows(resource, assignment.startMinute, assignment.endMinute)) errors.push(`Invalid timing for ${assignment.taskId}.`);
+    if (task.fixedStartMinute !== undefined && assignment.startMinute !== task.fixedStartMinute) errors.push(`Fixed start violation for ${assignment.taskId}.`);
     for (const dependencyId of task.dependencyIds) if (assignment.startMinute < (assignmentMap.get(dependencyId)?.endMinute ?? Number.POSITIVE_INFINITY)) {
       errors.push(`Dependency violation for ${assignment.taskId}.`);
     }

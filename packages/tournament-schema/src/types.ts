@@ -342,6 +342,8 @@ export interface ResourceDefinition {
   type: string;
   quantity: number;
   availability: Array<{ start: string; end: string }>;
+  /** Opening hours for individual units (1-based), replacing `availability` for that unit; each must lie inside it. */
+  unitAvailability?: Array<{ unit: number; availability: Array<{ start: string; end: string }> }>;
 }
 
 export interface OperationalPolicy {

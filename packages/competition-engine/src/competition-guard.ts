@@ -1,3 +1,4 @@
+import { resourceUnitDefinitions } from "./schedule-controls.js";
 import {
   canonicalHash,
   deepFreeze,
@@ -201,8 +202,9 @@ function accountingFor(graph: CompetitionGraph, schedule: ScheduleSolution, spec
   const unexpectedContestIds = [...new Set(scheduledIds.filter((id) => !requiredIdSet.has(id)))].sort();
   const occupiedMinutes = schedule.contests.reduce((total, contest) =>
     total + Math.max(0, (Date.parse(contest.end) - Date.parse(contest.start)) / 60_000), 0);
-  const availableResourceMinutes = spec.resources.reduce((total, resource) => total + resource.quantity * resource.availability.reduce(
-    (resourceTotal, window) => resourceTotal + Math.max(0, (Date.parse(window.end) - Date.parse(window.start)) / 60_000), 0), 0);
+  const windowMinutes = (windows: readonly { start: string; end: string }[]) => windows.reduce((total, window) =>
+    total + Math.max(0, (Date.parse(window.end) - Date.parse(window.start)) / 60_000), 0);
+  const availableResourceMinutes = resourceUnitDefinitions(spec).reduce((total, unit) => total + windowMinutes(unit.availability), 0);
   const starts = schedule.contests.map(({ start }) => Date.parse(start)).filter(Number.isFinite);
   const finishes = schedule.contests.map(({ end }) => Date.parse(end)).filter(Number.isFinite);
   const stageById = new Map(spec.stages.map((stage) => [stage.id, stage]));
@@ -234,17 +236,16 @@ function accountingFor(graph: CompetitionGraph, schedule: ScheduleSolution, spec
   }).sort((left, right) => left.divisionId.localeCompare(right.divisionId)
     || left.stageId.localeCompare(right.stageId) || (left.poolId ?? "").localeCompare(right.poolId ?? "")
     || left.round.localeCompare(right.round));
-  const resourceLedger = spec.resources.flatMap((resource) => Array.from({ length: resource.quantity }, (_, index) => {
-    const resourceId = `${resource.id}.${index + 1}`;
+  const resourceLedger = resourceUnitDefinitions(spec).map((unit) => {
+    const resourceId = unit.id; const resource = unit;
     const contests = schedule.contests.filter((contest) => contest.resourceId === resourceId);
-    const availableMinutes = resource.availability.reduce((total, window) => total
-      + Math.max(0, (Date.parse(window.end) - Date.parse(window.start)) / 60_000), 0);
+    const availableMinutes = windowMinutes(unit.availability);
     const occupied = contests.reduce((total, contest) => total
       + Math.max(0, (Date.parse(contest.end) - Date.parse(contest.start)) / 60_000), 0);
     return { resourceId, resourceType: resource.type,
       scheduledContestIds: contests.map(({ contestId }) => contestId).sort(), occupiedMinutes: occupied,
       availableMinutes, spareCapacityMinutes: availableMinutes - occupied };
-  })).sort((left, right) => left.resourceId.localeCompare(right.resourceId));
+  }).sort((left, right) => left.resourceId.localeCompare(right.resourceId));
   const unscheduledContestIds = requiredIds.filter((id) => !uniqueScheduledIds.has(id));
   const requiredMinutes = contestLedger.reduce((total, row) => total + row.requiredOccupiedMinutes, 0);
   const base = {

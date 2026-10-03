@@ -66,6 +66,7 @@ export * from "./scheduling-quality.js";
 export * from "./scenario.js";
 export * from "./scenario-comparison.js";
 export * from "./scheduler.js";
+export * from "./schedule-controls.js";
 export * from "./simulation.js";
 export * from "./sport-semantics.js";
 export * from "./sport-rule-packs.js";
